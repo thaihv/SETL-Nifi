@@ -1,5 +1,5 @@
-# A Smartcity Platform using microservices
-**This code is used as the boilerplate code for Smart City platform project. It includes microservices:**
+# A Platform for SETL
+**This code is a fork of Apache Nifi to leverage this platform to use with spatial data:**
  1. A real time service for archiving data from sensors (MQTT) or applications (HTTP).The techstack is used:
     * Kafka
     * Mosquitto
