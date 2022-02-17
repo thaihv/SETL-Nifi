@@ -1,0 +1,43 @@
+# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://help.github.com/actions/language-and-framework-guides/building-and-testing-java-with-maven
+
+name: Build & Deployment
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+    - 'README.md'
+    - 'docs/**'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    env:
+      VERSION: '0.0.1'
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up JDK 8
+      uses: actions/setup-java@v2
+      with:
+        java-version: '8'
+        distribution: 'adopt'
+        architecture: x64
+    - name: Build with Maven
+      run: mvn clean install -DskipTests
+    - name: Docker Login
+      env:
+        DOCKER_USER: ${{secrets.DOCKER_USERNAME}}
+        DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
+      run: |
+        docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
+    - name: Build SETL-Nifi Image
+      working-directory: ./nifi-docker/dockerhub
+      run: docker build . --file Dockerfile --tag thaihv/setl-nifi:$VERSION      
+    - name: Docker Push SETL-Nifi    
+      run: docker push thaihv/setl-nifi:$VERSION        
+        
+        
