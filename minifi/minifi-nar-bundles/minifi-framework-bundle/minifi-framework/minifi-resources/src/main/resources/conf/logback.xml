@@ -88,6 +88,7 @@
         Logger for capturing Bootstrap logs and MiNiFi's standard error and standard out.
     -->
     <logger name="org.apache.nifi.minifi.bootstrap" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
     <logger name="org.apache.nifi.minifi.bootstrap.Command" level="INFO" additivity="false">
@@ -97,16 +98,19 @@
 
     <!-- Everything written to MiNiFi's Standard Out will be logged with the logger org.apache.nifi.minifi.StdOut at INFO level -->
     <logger name="org.apache.nifi.minifi.StdOut" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
     
     <!-- Everything written to MiNiFi's Standard Error will be logged with the logger org.apache.nifi.minifi.StdErr at ERROR level -->
 	<logger name="org.apache.nifi.minifi.StdErr" level="ERROR" additivity="false">
+		<appender-ref ref="CONSOLE" />
     	<appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
 
 
     <root level="INFO">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="APP_FILE"/>
     </root>
     

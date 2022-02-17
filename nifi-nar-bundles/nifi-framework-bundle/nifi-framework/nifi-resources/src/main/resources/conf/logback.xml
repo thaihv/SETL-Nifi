@@ -148,6 +148,7 @@
 
     <!-- These log messages would normally go to the USER_FILE log, but they belong in the APP_FILE -->
     <logger name="org.apache.nifi.web.security.requests" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="APP_FILE"/>
     </logger>
 
@@ -157,29 +158,37 @@
         user-log appender.
     -->
     <logger name="org.apache.nifi.web.security" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.apache.nifi.web.api.config" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.apache.nifi.authorization" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.apache.nifi.cluster.authorization" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.apache.nifi.web.api.AccessResource" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.springframework.security.saml.log" level="WARN" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
     <logger name="org.opensaml" level="WARN" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="USER_FILE"/>
     </logger>
 
     <!-- Web Server Request Log -->
     <logger name="org.apache.nifi.web.server.RequestLog" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="REQUEST_FILE"/>
     </logger>
 
@@ -187,6 +196,7 @@
         Logger for capturing Bootstrap logs and NiFi's standard error and standard out.
     -->
     <logger name="org.apache.nifi.bootstrap" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
     <logger name="org.apache.nifi.bootstrap.Command" level="INFO" additivity="false">
@@ -196,15 +206,18 @@
 
     <!-- Everything written to NiFi's Standard Out will be logged with the logger org.apache.nifi.StdOut at INFO level -->
     <logger name="org.apache.nifi.StdOut" level="INFO" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
 
     <!-- Everything written to NiFi's Standard Error will be logged with the logger org.apache.nifi.StdErr at ERROR level -->
     <logger name="org.apache.nifi.StdErr" level="ERROR" additivity="false">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="BOOTSTRAP_FILE" />
     </logger>
 
     <root level="INFO">
+    	<appender-ref ref="CONSOLE" />
         <appender-ref ref="APP_FILE" />
     </root>
 

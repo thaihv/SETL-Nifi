@@ -16,6 +16,9 @@ rem    See the License for the specific language governing permissions and
 rem    limitations under the License.
 rem
 
+
+call %~sdp0\nifi-registry-env.bat
+
 rem Use JAVA_HOME if it's set; otherwise, just use java
 
 if "%JAVA_HOME%" == "" goto noJavaHome
@@ -31,7 +34,6 @@ set JAVA_EXE=java
 goto startNiFiRegistry
 
 :startNiFiRegistry
-set NIFI_REGISTRY_ROOT=%~dp0..
 pushd "%NIFI_REGISTRY_ROOT%\"
 set LIB_DIR=%NIFI_REGISTRY_ROOT%\lib
 set SHARED_DIR=%NIFI_REGISTRY_ROOT%\lib\shared
@@ -39,7 +41,7 @@ set BOOTSTRAP_DIR=%NIFI_REGISTRY_ROOT%\lib\bootstrap
 set CONF_DIR=%NIFI_REGISTRY_ROOT%\conf
 
 set BOOTSTRAP_CONF_FILE=%CONF_DIR%\bootstrap.conf
-set JAVA_ARGS=-Dorg.apache.nifi.registry.bootstrap.config.file=%BOOTSTRAP_CONF_FILE%
+set JAVA_ARGS=-Dorg.apache.nifi.registry.bootstrap.config.log.dir=%NIFI_REGISTRY_LOG_DIR% -Dorg.apache.nifi.registry.bootstrap.config.file=%BOOTSTRAP_CONF_FILE%
 
 SET JAVA_PARAMS=-cp %CONF_DIR%;%LIB_DIR%\*;%SHARED_DIR%\*;%BOOTSTRAP_DIR%\* -Xms512m -Xmx1024m %JAVA_ARGS% org.apache.nifi.registry.NiFiRegistry
 set BOOTSTRAP_ACTION=run

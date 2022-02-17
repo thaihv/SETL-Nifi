@@ -301,7 +301,7 @@
         </plugins>
     </build>
     <profiles>
-        <profile>
+        <!-- profile>
             <id>nifi-registry-web-ui-skip-windows</id>
             <activation>
               <os>
@@ -334,7 +334,7 @@
                     </plugin>
                 </plugins>
             </build>
-        </profile>
+        </profile-->
         <profile>
             <id>jsUnitTests</id>
             <activation>
