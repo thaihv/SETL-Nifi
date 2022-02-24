@@ -38,6 +38,12 @@ jobs:
       run: docker build . --file Dockerfile --tag thaihv/setl-nifi:$VERSION      
     - name: Docker Push SETL-Nifi    
       run: docker push thaihv/setl-nifi:$VERSION
+     
+    - name: Build SETL-Minifi Image
+      working-directory: ./minifi/minifi-docker/dockerhub
+      run: docker build . --file Dockerfile --tag thaihv/setl-minifi:$VERSION      
+    - name: Docker Push SETL-Minifi    
+      run: docker push thaihv/setl-minifi:$VERSION           
       
     - name: Build SETL-Registry Image
       working-directory: ./nifi-registry/nifi-registry-docker-maven/dockermaven
