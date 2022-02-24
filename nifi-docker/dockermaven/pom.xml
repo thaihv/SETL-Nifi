@@ -46,6 +46,7 @@
                                 <id>default</id>
                                 <goals>
                                     <goal>build</goal>
+                                    <goal>push</goal>
                                 </goals>
                                 <configuration>
                                     <buildArgs>
@@ -59,7 +60,7 @@
                                         <NIFI_TOOLKIT_BINARY>target/nifi-toolkit-${nifi.version}-bin.zip</NIFI_TOOLKIT_BINARY>
                                         <NIFI_SCRIPTS>target/sh</NIFI_SCRIPTS>
                                     </buildArgs>
-                                    <repository>apache/nifi</repository>
+                                    <repository>thaihv/setl-nifi</repository>
                                     <tag>${project.version}-dockermaven</tag>
                                 </configuration>
                             </execution>
