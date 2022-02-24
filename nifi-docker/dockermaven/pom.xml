@@ -61,7 +61,7 @@
                                         <NIFI_SCRIPTS>target/sh</NIFI_SCRIPTS>
                                     </buildArgs>
                                     <repository>thaihv/setl-nifi</repository>
-                                    <tag>${project.version}-dockermaven</tag>
+                                    <tag>0.0.1</tag>
                                 </configuration>
                             </execution>
                         </executions>
