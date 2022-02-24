@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      VERSION: '0.0.1'
+      VERSION: '1.16.0'
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 8
@@ -33,9 +33,9 @@ jobs:
         DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
       run: |
         docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
-    - name: Build & Push SETL-Nifi Image
+    - name: Docker Build SETL-Nifi Image
       working-directory: ./nifi-docker/dockermaven
       run: mvn -P docker clean install      
-   
-        
-        
+
+    - name: Docker Push SETL-Nifi Image to Docker Hub    
+      run: docker push thaihv/setl-nifi:1.16.0-SNAPSHOT-dockermaven
