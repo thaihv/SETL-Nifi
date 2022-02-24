@@ -27,19 +27,19 @@ echo "Deleting any existing nifi-${TAG}-integration-test containers"
 docker ps -qaf Name="nifi-${TAG}-integration-test" | xargs --no-run-if-empty docker rm -f;
 
 echo "Checking that all files are owned by NiFi"
-test -z "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c "find /opt/nifi ! -user nifi")"
+test -z "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c "find /opt/nifi ! -user nifi")"
 
 echo "Checking environment variables"
-test "/opt/nifi/nifi-current" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c 'echo -n $NIFI_HOME')"
-test "/opt/nifi/nifi-current" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c "readlink \${NIFI_BASE_DIR}/nifi-${VERSION}")"
-test "/opt/nifi/nifi-toolkit-current" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c "readlink \${NIFI_BASE_DIR}/nifi-toolkit-${VERSION}")"
+test "/opt/nifi/nifi-current" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c 'echo -n $NIFI_HOME')"
+test "/opt/nifi/nifi-current" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c "readlink \${NIFI_BASE_DIR}/nifi-${VERSION}")"
+test "/opt/nifi/nifi-toolkit-current" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c "readlink \${NIFI_BASE_DIR}/nifi-toolkit-${VERSION}")"
 
-test "/opt/nifi/nifi-current/logs" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c 'echo -n $NIFI_LOG_DIR')"
-test "/opt/nifi/nifi-current/run" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c 'echo -n $NIFI_PID_DIR')"
-test "/opt/nifi" = "$(docker run --rm --entrypoint /bin/bash "apache/nifi:${TAG}" -c 'echo -n $NIFI_BASE_DIR')"
+test "/opt/nifi/nifi-current/logs" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c 'echo -n $NIFI_LOG_DIR')"
+test "/opt/nifi/nifi-current/run" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c 'echo -n $NIFI_PID_DIR')"
+test "/opt/nifi" = "$(docker run --rm --entrypoint /bin/bash "thaihv/setl-nifi:${TAG}" -c 'echo -n $NIFI_BASE_DIR')"
 
 echo "Starting NiFi container..."
-docker run -d --name "nifi-${TAG}-integration-test" "apache/nifi:${TAG}"
+docker run -d --name "nifi-${TAG}-integration-test" "thaihv/setl-nifi:${TAG}"
 
 IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "nifi-${TAG}-integration-test")
 
