@@ -37,6 +37,12 @@ jobs:
       working-directory: ./nifi-docker/dockerhub
       run: docker build . --file Dockerfile --tag thaihv/setl-nifi:$VERSION      
     - name: Docker Push SETL-Nifi    
-      run: docker push thaihv/setl-nifi:$VERSION        
+      run: docker push thaihv/setl-nifi:$VERSION
+      
+    - name: Build SETL-Registry Image
+      working-directory: ./nifi-registry/nifi-registry-docker-maven/dockermaven
+      run: docker build . --file Dockerfile --tag thaihv/setl-nifi-registry:$VERSION      
+    - name: Docker Push SETL-Registry    
+      run: docker push thaihv/setl-nifi-registry:$VERSION              
         
         
