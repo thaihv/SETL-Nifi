@@ -53,4 +53,4 @@ jobs:
       
     - name: Docker Push SETL-Minifi Image
       working-directory: ./minifi/minifi-docker/dockermaven
-      run: docker push thaihv/setl-minifi:$VERSION    
+      run: docker push thaihv/setl-minifi:latest    
