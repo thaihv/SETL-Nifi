@@ -31,6 +31,7 @@ limitations under the License.
 
     <properties>
         <minifi.version>${project.version}</minifi.version>
+        <setl.version>0.0.1</setl.version>
     </properties>
 
     <profiles>
@@ -52,10 +53,10 @@ limitations under the License.
                             </execution>
                         </executions>
                         <configuration>
-                            <imageName>apacheminifi</imageName>
+                            <imageName>setl-minifi</imageName>
                             <dockerDirectory>${project.basedir}/dockermaven</dockerDirectory>
                             <imageTags>
-                               <imageTag>${minifi.version}</imageTag>
+                               <imageTag>${setl.version}</imageTag>
                             </imageTags>
                             <buildArgs>
                                 <UID>1000</UID>
