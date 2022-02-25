@@ -21,7 +21,7 @@
 
     <artifactId>dockermaven</artifactId>
     <properties>
-        <setl.verion>0.0.1</setl.verion>
+        <setl.version>0.0.1</setl.version>
     </properties>
     <profiles>
         <profile>
@@ -47,7 +47,7 @@
                                         <NIFI_REGISTRY_BINARY>target/nifi-registry-${project.version}-bin.zip</NIFI_REGISTRY_BINARY>
                                     </buildArgs>
                                     <repository>thaihv/setl-nifi-registry</repository>
-                                    <tag>${setl.verion}</tag>
+                                    <tag>${setl.version}</tag>
                                 </configuration>
                             </execution>
                         </executions>
@@ -89,7 +89,7 @@
                                 <configuration>
                                     <skip>${skipTests}</skip>
                                     <arguments>
-                                        <argument>${setl.verion}</argument>
+                                        <argument>${setl.version}</argument>
                                         <argument>${project.version}</argument>
                                     </arguments>
                                     <executable>${project.basedir}/integration-test.sh</executable>
