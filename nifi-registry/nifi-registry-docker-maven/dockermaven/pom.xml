@@ -43,8 +43,8 @@
                                         <NIFI_REGISTRY_VERSION>${project.version}</NIFI_REGISTRY_VERSION>
                                         <NIFI_REGISTRY_BINARY>target/nifi-registry-${project.version}-bin.zip</NIFI_REGISTRY_BINARY>
                                     </buildArgs>
-                                    <repository>apache/nifi-registry</repository>
-                                    <tag>${project.version}-dockermaven</tag>
+                                    <repository>thaihv/setl-nifi-registry</repository>
+                                    <tag>0.0.1</tag>
                                 </configuration>
                             </execution>
                         </executions>

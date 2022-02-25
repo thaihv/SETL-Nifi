@@ -25,17 +25,17 @@ container_name=nifi-registry-${TAG}-integration-test
 trap "{ docker ps -qaf Name=${container_name} | xargs docker rm -f; }" EXIT
 
 echo "Checking that all files are owned by NiFi"
-test -z $(docker run --rm --entrypoint /bin/bash apache/nifi-registry:${TAG} -c "find /opt/nifi-registry ! -user nifi")
+test -z $(docker run --rm --entrypoint /bin/bash thaihv/setl-nifi-registry:${TAG} -c "find /opt/nifi-registry ! -user nifi")
 
 echo "Checking environment variables"
-test "/opt/nifi-registry/nifi-registry-current" = "$(docker run --rm --entrypoint /bin/bash apache/nifi-registry:${TAG} -c 'echo -n $NIFI_REGISTRY_HOME')"
-test "/opt/nifi-registry/nifi-registry-current" = "$(docker run --rm --entrypoint /bin/bash apache/nifi-registry:${TAG} -c "readlink \${NIFI_REGISTRY_BASE_DIR}/nifi-registry-${VERSION}")"
+test "/opt/nifi-registry/nifi-registry-current" = "$(docker run --rm --entrypoint /bin/bash thaihv/setl-nifi-registry:${TAG} -c 'echo -n $NIFI_REGISTRY_HOME')"
+test "/opt/nifi-registry/nifi-registry-current" = "$(docker run --rm --entrypoint /bin/bash thaihv/setl-nifi-registry:${TAG} -c "readlink \${NIFI_REGISTRY_BASE_DIR}/nifi-registry-${VERSION}")"
 
-test "/opt/nifi-registry" = "$(docker run --rm --entrypoint /bin/bash apache/nifi-registry:${TAG} -c 'echo -n $NIFI_REGISTRY_BASE_DIR')"
+test "/opt/nifi-registry" = "$(docker run --rm --entrypoint /bin/bash thaihv/setl-nifi-registry:${TAG} -c 'echo -n $NIFI_REGISTRY_BASE_DIR')"
 
 echo "Starting NiFi Registry container..."
 
-docker run -d --name ${container_name} apache/nifi-registry:${TAG}
+docker run -d --name ${container_name} thaihv/setl-nifi-registry:${TAG}
 
 IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${container_name})
 
