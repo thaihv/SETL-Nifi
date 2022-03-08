@@ -56,5 +56,5 @@ jobs:
         script: |  
           docker-compose -f nifi-compose.yml stop
           docker pull thaihv/setl-nifi:$VERSION
-          docker-compose -f nifi-compose.yml up -d nifi
+          docker-compose -f nifi-compose.yml up -d
           echo 'Deployment successful to Digital Ocean' 
