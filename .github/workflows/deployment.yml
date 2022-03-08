@@ -26,7 +26,7 @@ jobs:
         distribution: 'adopt'
         architecture: x64
     - name: Build with Maven
-      run: mvn clean install -DskipTests
+      run: mvn -T 2.0C clean install -DskipTests
     - name: Docker Login
       env:
         DOCKER_USER: ${{secrets.DOCKER_USERNAME}}
@@ -54,7 +54,7 @@ jobs:
         key: ${{secrets.SSH_PRIVATE_KEY}} 
         username: ${{ secrets.SSH_USERNAME }}     
         script: |  
-          docker-compose -f nifi-compose.yml stop nifi
+          docker-compose -f nifi-compose.yml stop
           docker pull thaihv/setl-nifi:$VERSION
           docker-compose -f nifi-compose.yml up -d nifi
           echo 'Deployment successful to Digital Ocean' 
