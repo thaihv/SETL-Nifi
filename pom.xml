@@ -801,6 +801,7 @@
                                     <message>Dependencies outside of Apache NiFi must not use SNAPSHOT versions</message>
                                     <failWhenParentIsSnapshot>false</failWhenParentIsSnapshot>
                                     <excludes>
+                                    	<exclude>com.jdvn.setl.geos:*</exclude>
                                         <exclude>org.apache.nifi:*</exclude>
                                         <exclude>org.apache.nifi.minifi:*</exclude>
                                         <exclude>org.apache.nifi.registry:*</exclude>
