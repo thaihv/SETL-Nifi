@@ -47,10 +47,3 @@ jobs:
     - name: Docker Push SETL-Nifi-Registry Image to Docker Hub    
       run: docker push thaihv/setl-nifi-registry:$VERSION
 
-    - name: Docker Build SETL-Minifi Image
-      working-directory: ./minifi/minifi-docker
-      run: mvn -P docker clean install
-      
-    - name: Docker Push SETL-Minifi Image
-      working-directory: ./minifi/minifi-docker/dockermaven
-      run: docker push thaihv/setl-minifi:$VERSION    
