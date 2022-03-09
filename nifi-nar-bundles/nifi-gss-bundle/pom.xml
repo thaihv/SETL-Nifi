@@ -28,6 +28,8 @@
     <packaging>pom</packaging>
 
     <modules>
+        <module>nifi-gss-processors</module>
+        <module>nifi-gss-processors-nar</module>
         <module>nifi-gss-api</module>
         <module>nifi-gss-api-nar</module>
         <module>nifi-gss</module>
