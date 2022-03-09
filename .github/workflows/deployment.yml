@@ -47,14 +47,3 @@ jobs:
     - name: Docker Push SETL-Nifi-Registry Image to Docker Hub    
       run: docker push thaihv/setl-nifi-registry:$VERSION
 
-    - name: Deploy To DigitalOcean  
-      uses: appleboy/ssh-action@v0.1.4
-      with:
-        host: ${{secrets.SSH_HOST}} 
-        key: ${{secrets.SSH_PRIVATE_KEY}} 
-        username: ${{ secrets.SSH_USERNAME }}     
-        script: |  
-          docker-compose -f nifi-compose.yml stop
-          docker pull thaihv/setl-nifi:$VERSION
-          docker-compose -f nifi-compose.yml up -d
-          echo 'Deployment successful to Digital Ocean' 
