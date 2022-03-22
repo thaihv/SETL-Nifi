@@ -22,6 +22,11 @@
         <version>1.16.0-SNAPSHOT</version>
     </parent>
 
+
+    <properties>
+        <geotools.version>26.3</geotools.version>
+    </properties>
+    
     <groupId>com.jdvn.setl.geos</groupId>
     <artifactId>nifi-shapefile-bundle</artifactId>
     <version>1.0-SNAPSHOT</version>
