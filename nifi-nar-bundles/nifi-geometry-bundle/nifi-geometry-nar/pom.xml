@@ -22,7 +22,7 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>nifi-shapefile-nar</artifactId>
+    <artifactId>nifi-geometry-nar</artifactId>
     <packaging>nar</packaging>
     <properties>
         <maven.javadoc.skip>true</maven.javadoc.skip>
@@ -32,7 +32,7 @@
     <dependencies>
         <dependency>
             <groupId>com.jdvn.setl.geos</groupId>
-            <artifactId>nifi-shapefile-processors</artifactId>
+            <artifactId>nifi-geometry-processors</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
     </dependencies>

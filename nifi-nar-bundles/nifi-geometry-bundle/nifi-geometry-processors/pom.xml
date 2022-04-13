@@ -20,7 +20,7 @@
 		<version>1.0-SNAPSHOT</version>
 	</parent>
 
-	<artifactId>nifi-shapefile-processors</artifactId>
+	<artifactId>nifi-geometry-processors</artifactId>
 	<packaging>jar</packaging>
 
 	<dependencies>

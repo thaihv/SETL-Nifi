@@ -110,7 +110,7 @@
         <module>nifi-hashicorp-vault-bundle</module>
         <module>nifi-stateless-processor-bundle</module>
         <module>nifi-geohash-bundle</module>
-        <module>nifi-shapefile-bundle</module>
+        <module>nifi-geometry-bundle</module>
         <module>nifi-gss-bundle</module>
         <module>nifi-geopackage-bundle</module>
     </modules>
