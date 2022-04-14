@@ -14,3 +14,7 @@
 # limitations under the License.
 com.jdvn.setl.geos.processors.shapefile.ShpReader
 com.jdvn.setl.geos.processors.shapefile.ShpWriter
+com.jdvn.setl.geos.processors.geopackage.GeoPackageReader
+com.jdvn.setl.geos.processors.geopackage.GeoPackageWriter
+com.jdvn.setl.geos.processors.gss.FetchGSS
+com.jdvn.setl.geos.processors.gss.PutGSS
