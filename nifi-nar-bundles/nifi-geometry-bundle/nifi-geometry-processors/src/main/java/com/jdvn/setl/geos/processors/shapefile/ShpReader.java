@@ -16,6 +16,10 @@
  */
 package com.jdvn.setl.geos.processors.shapefile;
 
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -32,6 +36,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+
+import javax.imageio.ImageIO;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -57,11 +63,21 @@ import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.FeatureSource;
-import org.geotools.feature.FeatureCollection;
-import org.geotools.feature.FeatureIterator;
+import org.geotools.geometry.jts.ReferencedEnvelope;
+import org.geotools.map.FeatureLayer;
+import org.geotools.map.Layer;
+import org.geotools.map.MapContent;
+import org.geotools.map.MapViewport;
+import org.geotools.referencing.CRS;
+import org.geotools.renderer.GTRenderer;
+import org.geotools.renderer.lite.StreamingRenderer;
+import org.geotools.styling.SLD;
+import org.geotools.styling.Style;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
-import org.opengis.filter.Filter;
+import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
+
 
 @Tags({ "shape file", "wkt", "json", "geospatial" })
 @CapabilityDescription("Read data from a given shape file and represent geospatial data in WKT format.")
@@ -249,25 +265,46 @@ public class ShpReader extends AbstractProcessor {
         }
         
         
-        Map<String, Object> map = new HashMap<>();
+        Map<String, Object> mapAttrs = new HashMap<>();
         try {
-			map.put("url", file.toURI().toURL());
-	        DataStore dataStore = DataStoreFinder.getDataStore(map);
+			mapAttrs.put("url", file.toURI().toURL());
+	        DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 	        String typeName = dataStore.getTypeNames()[0];
 
-	        FeatureSource<SimpleFeatureType, SimpleFeature> source = dataStore.getFeatureSource(typeName);
-	        Filter filter = Filter.INCLUDE; // ECQL.toFilter("BBOX(THE_GEOM, 10,20,30,40)")
+	        FeatureSource<SimpleFeatureType, SimpleFeature> featureSource = dataStore.getFeatureSource(typeName);
+//	        Filter filter = Filter.INCLUDE; // ECQL.toFilter("BBOX(THE_GEOM, 10,20,30,40)")
+//
+//	        FeatureCollection<SimpleFeatureType, SimpleFeature> collection = featureSource.getFeatures(filter);
+//	        try (FeatureIterator<SimpleFeature> features = collection.features()) {
+//	            while (features.hasNext()) {
+//	                SimpleFeature feature = features.next();
+//	                System.out.print(feature.getID());
+//	                System.out.print(": ");
+//	                System.out.println(feature.getDefaultGeometryProperty().getValue());
+//	            }
+//	        }		
+	        
+	        Style style = SLD.createSimpleStyle(featureSource.getSchema());
+	        Layer layer = new FeatureLayer(featureSource, style);
+	        
+	        //Step 1: Create map
+	        MapContent map = new MapContent();
+	        map.setTitle("Geometry block");
 
-	        FeatureCollection<SimpleFeatureType, SimpleFeature> collection = source.getFeatures(filter);
-	        try (FeatureIterator<SimpleFeature> features = collection.features()) {
-	            while (features.hasNext()) {
-	                SimpleFeature feature = features.next();
-	                System.out.print(feature.getID());
-	                System.out.print(": ");
-	                System.out.println(feature.getDefaultGeometryProperty().getValue());
-	            }
-	        }			
-		} catch (IOException e) {
+	        //Step 2: Set projection
+	        CoordinateReferenceSystem crs = CRS.decode("EPSG:5179"); 
+	        MapViewport vp = map.getViewport();
+	        vp.setCoordinateReferenceSystem(crs);
+	        
+	      //Step 3: Add layers to map
+	        //CoordinateReferenceSystem mapCRS = map.getCoordinateReferenceSystem();
+	        map.addLayer(layer);	        
+	        //Step 4: Save image
+	        saveImage(map, "C:\\Download\\setl_out\\geometry.jpg", 800);
+	        
+	        
+	        
+		} catch (IOException | FactoryException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -370,4 +407,39 @@ public class ShpReader extends AbstractProcessor {
 	protected boolean isDirectory(final File file) {
 		return file.isDirectory();
 	}
+
+	public void saveImage(final MapContent map, final String file, final int imageWidth) {
+
+	    GTRenderer renderer = new StreamingRenderer();
+	    renderer.setMapContent(map);
+
+	    Rectangle imageBounds = null;
+	    ReferencedEnvelope mapBounds = null;
+	    try {
+	        mapBounds = map.getMaxBounds();
+	        double heightToWidth = mapBounds.getSpan(1) / mapBounds.getSpan(0);
+	        imageBounds = new Rectangle(
+	                0, 0, imageWidth, (int) Math.round(imageWidth * heightToWidth));
+
+	    } catch (Exception e) {
+	        // failed to access map layers
+	        throw new RuntimeException(e);
+	    }
+
+	    BufferedImage image = new BufferedImage(imageBounds.width, imageBounds.height, BufferedImage.TYPE_INT_RGB);
+
+	    Graphics2D gr = image.createGraphics();
+	    gr.setPaint(Color.WHITE);
+	    gr.fill(imageBounds);
+
+	    try {
+	        renderer.paint(gr, imageBounds, mapBounds);
+	        File fileToSave = new File(file);
+	        ImageIO.write(image, "jpeg", fileToSave);
+
+	    } catch (IOException e) {
+	        throw new RuntimeException(e);
+	    }
+	}
+	
 }
