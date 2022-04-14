@@ -18,6 +18,12 @@ jobs:
     env:
       VERSION: '0.0.1'
     steps:
+    - name: Clean Disk to avoid full capability
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
     - uses: actions/checkout@v2
     - name: Set up JDK 8
       uses: actions/setup-java@v2
