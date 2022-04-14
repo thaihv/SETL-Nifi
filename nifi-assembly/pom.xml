@@ -833,12 +833,6 @@ language governing permissions and limitations under the License. -->
         </dependency>
         <dependency>
             <groupId>com.jdvn.setl.geos</groupId>
-            <artifactId>nifi-geopackage-nar</artifactId>
-            <version>1.0-SNAPSHOT</version>
-            <type>nar</type>
-        </dependency>        
-        <dependency>
-            <groupId>com.jdvn.setl.geos</groupId>
             <artifactId>nifi-gss-api-nar</artifactId>
             <version>1.0-SNAPSHOT</version>
             <type>nar</type>

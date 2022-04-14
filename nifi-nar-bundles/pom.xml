@@ -112,7 +112,6 @@
         <module>nifi-geohash-bundle</module>
         <module>nifi-geometry-bundle</module>
         <module>nifi-gss-bundle</module>
-        <module>nifi-geopackage-bundle</module>
     </modules>
 
     <build>
