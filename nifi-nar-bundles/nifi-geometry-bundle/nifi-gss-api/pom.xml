@@ -18,29 +18,18 @@
 
     <parent>
         <groupId>com.jdvn.setl.geos</groupId>
-        <artifactId>nifi-gss-bundle</artifactId>
+        <artifactId>nifi-geometry-bundle</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>nifi-gss-api-nar</artifactId>
-    <packaging>nar</packaging>
-    <properties>
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-        <source.skip>true</source.skip>
-    </properties>
+    <artifactId>nifi-gss-api</artifactId>
+    <packaging>jar</packaging>
 
     <dependencies>
         <dependency>
             <groupId>org.apache.nifi</groupId>
-            <artifactId>nifi-standard-services-api-nar</artifactId>
-            <version>1.16.0-SNAPSHOT</version>
-            <type>nar</type>
-        </dependency>
-        <dependency>
-            <groupId>com.jdvn.setl.geos</groupId>
-            <artifactId>nifi-gss-api</artifactId>
-            <version>1.0-SNAPSHOT</version>
+            <artifactId>nifi-api</artifactId>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
-
 </project>

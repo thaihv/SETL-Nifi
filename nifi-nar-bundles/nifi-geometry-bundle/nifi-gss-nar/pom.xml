@@ -18,43 +18,29 @@
 
     <parent>
         <groupId>com.jdvn.setl.geos</groupId>
-        <artifactId>nifi-gss-bundle</artifactId>
+        <artifactId>nifi-geometry-bundle</artifactId>
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>nifi-gss</artifactId>
-    <packaging>jar</packaging>
+    <artifactId>nifi-gss-nar</artifactId>
+    <packaging>nar</packaging>
+    <properties>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <source.skip>true</source.skip>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>com.jdvn.setl.geos</groupId>
-            <artifactId>nifi-gss-api</artifactId>
+            <artifactId>nifi-gss-api-nar</artifactId>
+            <version>1.0-SNAPSHOT</version>
+            <type>nar</type>
+        </dependency>
+        <dependency>
+            <groupId>com.jdvn.setl.geos</groupId>
+            <artifactId>nifi-gss</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-        <dependency>
-            <groupId>org.apache.nifi</groupId>
-            <artifactId>nifi-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.nifi</groupId>
-            <artifactId>nifi-processor-utils</artifactId>
-            <version>1.15.3</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.nifi</groupId>
-            <artifactId>nifi-mock</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
+
 </project>

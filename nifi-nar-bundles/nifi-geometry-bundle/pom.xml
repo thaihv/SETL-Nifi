@@ -36,6 +36,10 @@
         <module>nifi-geometry-processors</module>
         <module>nifi-geometry-nar</module>
         <module>nifi-geometry-viewer</module>
+        <module>nifi-gss-api</module>
+        <module>nifi-gss-api-nar</module>
+        <module>nifi-gss</module>
+        <module>nifi-gss-nar</module>
     </modules>
 
 </project>
