@@ -48,7 +48,6 @@ org.apache.nifi.processors.standard.ForkRecord
 org.apache.nifi.processors.standard.GenerateFlowFile
 org.apache.nifi.processors.standard.GenerateTableFetch
 org.apache.nifi.processors.standard.GetFile
-org.apache.nifi.processors.standard.GetShapeFileData
 org.apache.nifi.processors.standard.GetFTP
 org.apache.nifi.processors.standard.GetHTTP
 org.apache.nifi.processors.standard.GetJMSQueue

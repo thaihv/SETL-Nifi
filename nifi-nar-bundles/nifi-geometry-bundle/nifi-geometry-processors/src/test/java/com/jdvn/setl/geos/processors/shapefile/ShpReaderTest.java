@@ -17,12 +17,20 @@
 package com.jdvn.setl.geos.processors.shapefile;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
@@ -37,39 +45,100 @@ public class ShpReaderTest {
         TestRunners.newTestRunner(ShpReader.class);
     }
     @Test
-    public void testFilePickedUp() throws IOException {
-        final File directory = new File("target/test/data/in");
-        deleteDirectory(directory);
-        assertTrue("Unable to create test data directory " + directory.getAbsolutePath(), directory.exists() || directory.mkdirs());
-
+    public void testShapeFilesListPickedUp() throws IOException {
+        final File directory = new File("src/test/resources/koreanmap");
         final File inFile = new File("src/test/resources/koreanmap/LV14_SPBD_BULD.shp");
+        final Path inPath = inFile.toPath();
+        final File destFile = new File(directory, inFile.getName());
+        final Path targetPath = destFile.toPath();
+        final Path absTargetPath = targetPath.toAbsolutePath();
+        final String absTargetPathStr = absTargetPath.getParent() + "/";
+        Files.copy(inPath, targetPath);
 
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
-        runner.setProperty(ShpReader.FILENAME, inFile.getAbsolutePath());
+        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
+        //runner.setProperty(ShpReader.FILE_FILTER, "[^\\.].shp");
+        runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_ENTRC.shp");
+        
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);  // Batch Size = 10 default
+        final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
+
+        final String path = successFiles.get(0).getAttribute("path");
+        assertEquals("/", path);
+        final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.ABSOLUTE_PATH.key());
+        assertEquals(absTargetPathStr, absolutePath);    	
+    	
+
+    }
+    @Test
+    public void testAShapeFilePickedUp() throws IOException {
+        final File directory = new File("src/test/resources/koreanmap");
+
+        final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
+        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
+        runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_BULD.shp");
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);
         final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
-        successFiles.get(0).assertContentEquals("Hello, World!".getBytes("UTF-8"));
 
         final String path = successFiles.get(0).getAttribute("path");
         assertEquals("/", path);
-
+        final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
+        System.out.print(absolutePath);
     }
-    private void deleteDirectory(final File directory) throws IOException {
-        if (directory != null && directory.exists()) {
-            for (final File file : directory.listFiles()) {
-                if (file.isDirectory()) {
-                    deleteDirectory(file);
-                }
+    @Test
+    public void testAttributes() throws IOException {
+        final File directory = new File("src/test/resources/admzone");
+        final File inFile = new File("src/test/resources/admzone/ADMZONE.shp");
+        final Path inPath = inFile.toPath();
+        final File destFile = new File(directory, inFile.getName());
+        final Path targetPath = destFile.toPath();
+        Files.copy(inPath, targetPath);
 
-                assertTrue("Could not delete " + file.getAbsolutePath(), file.delete());
+        boolean verifyLastModified = false;
+        try {
+            destFile.setLastModified(1000000000);
+            verifyLastModified = true;
+        } catch (Exception doNothing) {
+        }
+
+        final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
+        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
+        runner.setProperty(ShpReader.FILE_FILTER, "ADMZONE.shp");
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);
+        final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
+
+        if (verifyLastModified) {
+            try {
+                final DateFormat formatter = new SimpleDateFormat(ShpReader.FILE_MODIFY_DATE_ATTR_FORMAT, Locale.US);
+                final Date fileModifyTime = formatter.parse(successFiles.get(0).getAttribute("file.lastModifiedTime"));
+                assertEquals(new Date(1000000000), fileModifyTime);
+            } catch (ParseException e) {
+                fail();
             }
         }
     }
     @Test
-    public void testProcessor() {
+    public void testDefaultProperties() throws IOException {
+        final File directory = new File("C:\\Download\\setl_in");
 
-    }
+        final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
+        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
+        runner.setProperty(ShpReader.FILE_FILTER, "HaNoi_communes.shp");
+        runner.run();
 
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);
+        final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
+
+        final String path = successFiles.get(0).getAttribute("path");
+        assertEquals("/", path);
+        final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
+        System.out.print(absolutePath);
+
+    }    
 }

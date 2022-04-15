@@ -21,25 +21,40 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.FileFilter;
 import java.io.IOException;
-import java.nio.file.CopyOption;
+import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributeView;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileOwnerAttributeView;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.ListIterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 import javax.imageio.ImageIO;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -48,18 +63,17 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.logging.LogLevel;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.FeatureSource;
@@ -79,6 +93,7 @@ import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 
+
 @Tags({ "shape file", "wkt", "json", "geospatial" })
 @CapabilityDescription("Read data from a given shape file and represent geospatial data in WKT format.")
 @SeeAlso({ ShpWriter.class })
@@ -87,327 +102,383 @@ import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 public class ShpReader extends AbstractProcessor {
 
-	static final AllowableValue COMPLETION_NONE = new AllowableValue("None", "None", "Leave the file as-is");
-	static final AllowableValue COMPLETION_MOVE = new AllowableValue("Move File", "Move File",
-			"Moves the file to the directory specified by the <Move Destination Directory> property");
-	static final AllowableValue COMPLETION_DELETE = new AllowableValue("Delete File", "Delete File",
-			"Deletes the original file from the file system");
-
-	static final AllowableValue CONFLICT_REPLACE = new AllowableValue("Replace File", "Replace File",
-			"The newly ingested file should replace the existing file in the Destination Directory");
-	static final AllowableValue CONFLICT_KEEP_INTACT = new AllowableValue("Keep Existing", "Keep Existing",
-			"The existing file should in the Destination Directory should stay intact and the newly "
-					+ "ingested file should be deleted");
-	static final AllowableValue CONFLICT_FAIL = new AllowableValue("Fail", "Fail",
-			"The existing destination file should remain intact and the incoming FlowFile should be routed to failure");
-	static final AllowableValue CONFLICT_RENAME = new AllowableValue("Rename", "Rename",
-			"The existing destination file should remain intact. The newly ingested file should be moved to the "
-					+ "destination directory but be renamed to a random filename");
-
-	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("File to Fetch")
-			.description("The fully-qualified filename of the file to fetch from the file system")
-			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.defaultValue("${absolute.path}/${filename}").required(true).build();
-	static final PropertyDescriptor COMPLETION_STRATEGY = new PropertyDescriptor.Builder().name("Completion Strategy")
-			.description(
-					"Specifies what to do with the original file on the file system once it has been pulled into NiFi")
-			.expressionLanguageSupported(ExpressionLanguageScope.NONE)
-			.allowableValues(COMPLETION_NONE, COMPLETION_MOVE, COMPLETION_DELETE)
-			.defaultValue(COMPLETION_NONE.getValue()).required(true).build();
-	static final PropertyDescriptor MOVE_DESTINATION_DIR = new PropertyDescriptor.Builder()
-			.name("Move Destination Directory")
-			.description(
-					"The directory to the move the original file to once it has been fetched from the file system. This property is ignored unless the Completion Strategy is set to \"Move File\". "
-							+ "If the directory does not exist, it will be created.")
-			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR).required(false).build();
-	static final PropertyDescriptor CONFLICT_STRATEGY = new PropertyDescriptor.Builder().name("Move Conflict Strategy")
-			.description(
-					"If Completion Strategy is set to Move File and a file already exists in the destination directory with the same name, this property specifies "
-							+ "how that naming conflict should be resolved")
-			.allowableValues(CONFLICT_RENAME, CONFLICT_REPLACE, CONFLICT_KEEP_INTACT, CONFLICT_FAIL)
-			.defaultValue(CONFLICT_RENAME.getValue()).required(true).build();
-	static final PropertyDescriptor FILE_NOT_FOUND_LOG_LEVEL = new PropertyDescriptor.Builder()
-			.name("Log level when file not found")
-			.description("Log level to use in case the file does not exist when the processor is triggered")
-			.allowableValues(LogLevel.values()).defaultValue(LogLevel.ERROR.toString()).required(true).build();
-    static final PropertyDescriptor PERM_DENIED_LOG_LEVEL = new PropertyDescriptor.Builder()
-            .name("Log level when permission denied")
-            .description("Log level to use in case user " + System.getProperty("user.name") + " does not have sufficient permissions to read the file")
-            .allowableValues(LogLevel.values())
-            .defaultValue(LogLevel.ERROR.toString())
+    public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
+            .name("Input Directory")
+            .description("The input directory from which to pull files")
+            .required(true)
+            .addValidator(StandardValidators.createDirectoryExistsValidator(true, false))
+            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .build();
+    public static final PropertyDescriptor RECURSE = new PropertyDescriptor.Builder()
+            .name("Recurse Subdirectories")
+            .description("Indicates whether or not to pull files from subdirectories")
+            .required(true)
+            .allowableValues("true", "false")
+            .defaultValue("true")
+            .build();
+    public static final PropertyDescriptor FILE_FILTER = new PropertyDescriptor.Builder()
+            .name("File Filter")
+            .description("Only files whose names match the given regular expression will be picked up")
+            .required(true)
+            .defaultValue("[^\\.].*")
+            .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
+            .build();
+    public static final PropertyDescriptor PATH_FILTER = new PropertyDescriptor.Builder()
+            .name("Path Filter")
+            .description("When " + RECURSE.getName() + " is true, then only subdirectories whose path matches the given regular expression will be scanned")
+            .required(false)
+            .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
+            .build();    
+    public static final PropertyDescriptor KEEP_SOURCE_FILE = new PropertyDescriptor.Builder()
+            .name("Keep Source File")
+            .description("If true, the file is not deleted after it has been copied to the Content Repository; "
+                    + "this causes the file to be picked up continually and is useful for testing purposes.  "
+                    + "If not keeping original NiFi will need write permissions on the directory it is pulling "
+                    + "from otherwise it will ignore the file.")
+            .required(true)
+            .allowableValues("true", "false")
+            .defaultValue("true")
+            .build();    
+    public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
+            .name("Batch Size")
+            .description("The maximum number of files to pull in each iteration")
+            .required(true)
+            .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
+            .defaultValue("10")
+            .build();    
+    static final PropertyDescriptor INCLUDE_ZERO_RECORD_FLOWFILES = new PropertyDescriptor.Builder()
+            .name("include-zero-record-flowfiles")
+            .displayName("Include Zero Record FlowFiles")
+            .description("When running the SQL statement against an incoming FlowFile, if the result has no data, "
+                + "this property specifies whether or not a FlowFile will be sent to the corresponding relationship")
+            .expressionLanguageSupported(ExpressionLanguageScope.NONE)
+            .allowableValues("true", "false")
+            .defaultValue("true")
             .required(true)
             .build();
-	static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
-			.description("Shape file is routed to success").build();
-	static final Relationship REL_NOT_FOUND = new Relationship.Builder().name("not.found").description(
-			"Any FlowFile that could not be fetched from the file system because the file could not be found will be transferred to this Relationship.")
-			.build();
-	static final Relationship REL_PERMISSION_DENIED = new Relationship.Builder().name("permission.denied").description(
-			"Any FlowFile that could not be fetched from the file system due to the user running NiFi not having sufficient permissions will be transferred to this Relationship.")
-			.build();
-	static final Relationship REL_FAILURE = new Relationship.Builder().name("failure").description(
-			"Any FlowFile that could not be fetched from the file system for any reason other than insufficient permissions or the file not existing will be transferred to this Relationship.")
-			.build();
-	private List<PropertyDescriptor> descriptors;
+    public static final PropertyDescriptor IGNORE_HIDDEN_FILES = new PropertyDescriptor.Builder()
+            .name("Ignore Hidden Files")
+            .description("Indicates whether or not hidden files should be ignored")
+            .allowableValues("true", "false")
+            .defaultValue("true")
+            .required(true)
+            .build();
+    public static final PropertyDescriptor POLLING_INTERVAL = new PropertyDescriptor.Builder()
+            .name("Polling Interval")
+            .description("Indicates how long to wait before performing a directory listing")
+            .required(true)
+            .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
+            .defaultValue("0 sec")
+            .build();    
+    public static final String FILE_CREATION_TIME_ATTRIBUTE = "file.creationTime";
+    public static final String FILE_LAST_MODIFY_TIME_ATTRIBUTE = "file.lastModifiedTime";
+    public static final String FILE_LAST_ACCESS_TIME_ATTRIBUTE = "file.lastAccessTime";
+    public static final String FILE_OWNER_ATTRIBUTE = "file.owner";
+    public static final String FILE_GROUP_ATTRIBUTE = "file.group";
+    public static final String FILE_PERMISSIONS_ATTRIBUTE = "file.permissions";
+    public static final String FILE_MODIFY_DATE_ATTR_FORMAT = "yyyy-MM-dd'T'HH:mm:ssZ";
 
-	private Set<Relationship> relationships;
+    public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success").description("All files are routed to success").build();
 
-	@Override
-	protected void init(final ProcessorInitializationContext context) {
-		descriptors = new ArrayList<>();
-		descriptors.add(FILENAME);
-		descriptors.add(COMPLETION_STRATEGY);
-		descriptors.add(MOVE_DESTINATION_DIR);
-		descriptors.add(CONFLICT_STRATEGY);
-		descriptors.add(FILE_NOT_FOUND_LOG_LEVEL);
-		descriptors.add(PERM_DENIED_LOG_LEVEL);
-		descriptors = Collections.unmodifiableList(descriptors);
+    private List<PropertyDescriptor> properties;
+    private Set<Relationship> relationships;
+    private final AtomicReference<FileFilter> fileFilterRef = new AtomicReference<>();
 
-		relationships = new HashSet<>();
-		relationships.add(REL_SUCCESS);
-		relationships.add(REL_NOT_FOUND);
-		relationships.add(REL_PERMISSION_DENIED);
-		relationships.add(REL_FAILURE);
-		relationships = Collections.unmodifiableSet(relationships);
-	}
+    private final BlockingQueue<File> fileQueue = new LinkedBlockingQueue<>();
+    private final Set<File> inProcess = new HashSet<>();    // guarded by queueLock
+    private final Set<File> recentlyProcessed = new HashSet<>();    // guarded by queueLock
+    private final Lock queueLock = new ReentrantLock();
 
-	@Override
-	public Set<Relationship> getRelationships() {
-		return this.relationships;
-	}
+    private final Lock listingLock = new ReentrantLock();
 
-	@Override
-	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-		return descriptors;
-	}
+    private final AtomicLong queueLastUpdated = new AtomicLong(0L);
 
-	@OnScheduled
-	public void onScheduled(final ProcessContext context) {
+    @Override
+    protected void init(final ProcessorInitializationContext context) {
+        final List<PropertyDescriptor> properties = new ArrayList<>();
+        properties.add(DIRECTORY);
+        properties.add(FILE_FILTER);
+        properties.add(PATH_FILTER);
+        properties.add(BATCH_SIZE);
+        properties.add(KEEP_SOURCE_FILE);
+        properties.add(RECURSE);
+        properties.add(POLLING_INTERVAL);
+        properties.add(IGNORE_HIDDEN_FILES);
+        this.properties = Collections.unmodifiableList(properties);
 
-	}
+        final Set<Relationship> relationships = new HashSet<>();
+        relationships.add(REL_SUCCESS);
+        this.relationships = Collections.unmodifiableSet(relationships);
+    }
+
+    @Override
+    protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+        return properties;
+    }
+
+    @Override
+    public Set<Relationship> getRelationships() {
+        return relationships;
+    }
+
+    @OnScheduled
+    public void onScheduled(final ProcessContext context) {
+        fileFilterRef.set(createFileFilter(context));
+        fileQueue.clear();
+    }
 
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
-		FlowFile flowFile = session.get();
-		// TODO implement
-        final StopWatch stopWatch = new StopWatch(true);
-        final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions(flowFile).getValue();
-        final LogLevel levelFileNotFound = LogLevel.valueOf(context.getProperty(FILE_NOT_FOUND_LOG_LEVEL).getValue());
-        final LogLevel levelPermDenied = LogLevel.valueOf(context.getProperty(PERM_DENIED_LOG_LEVEL).getValue());
-        final File file = new File(filename);
 
-        // Verify that file system is reachable and file exists
-        Path filePath = file.toPath();
-        if (!Files.exists(filePath) && !Files.notExists(filePath)){ // see https://docs.oracle.com/javase/tutorial/essential/io/check.html for more details
-            getLogger().log(levelFileNotFound, "Could not fetch file {} from file system for {} because the existence of the file cannot be verified; routing to failure",
-                    new Object[] {file, flowFile});
-            session.transfer(session.penalize(flowFile), REL_FAILURE);
-            return;
-        } else if (!Files.exists(filePath)) {
-            getLogger().log(levelFileNotFound, "Could not fetch file {} from file system for {} because the file does not exist; routing to not.found", new Object[] {file, flowFile});
-            session.getProvenanceReporter().route(flowFile, REL_NOT_FOUND);
-            session.transfer(session.penalize(flowFile), REL_NOT_FOUND);
-            return;
-        }
+        final File directory = new File(context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue());
+        final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
+        final ComponentLog logger = getLogger();
 
-        // Verify read permission on file
-        final String user = System.getProperty("user.name");
-        if (!isReadable(file)) {
-            getLogger().log(levelPermDenied, "Could not fetch file {} from file system for {} due to user {} not having sufficient permissions to read the file; routing to permission.denied",
-                new Object[] {file, flowFile, user});
-            session.getProvenanceReporter().route(flowFile, REL_PERMISSION_DENIED);
-            session.transfer(session.penalize(flowFile), REL_PERMISSION_DENIED);
-            return;
-        }
+        if (fileQueue.size() < 100) {
+            final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
+            if ((queueLastUpdated.get() < System.currentTimeMillis() - pollingMillis) && listingLock.tryLock()) {
+                try {
+                    final Set<File> listing = performListing(directory, fileFilterRef.get(), context.getProperty(RECURSE).asBoolean().booleanValue());
 
-        // If configured to move the file and fail if unable to do so, check that the existing file does not exist and that we have write permissions
-        // for the parent file.
-        final String completionStrategy = context.getProperty(COMPLETION_STRATEGY).getValue();
-        final String targetDirectoryName = context.getProperty(MOVE_DESTINATION_DIR).evaluateAttributeExpressions(flowFile).getValue();
-        if (targetDirectoryName != null) {
-            final File targetDir = new File(targetDirectoryName);
-            if (COMPLETION_MOVE.getValue().equalsIgnoreCase(completionStrategy)) {
-                if (targetDir.exists() && (!isWritable(targetDir) || !isDirectory(targetDir))) {
-                    getLogger().error("Could not fetch file {} from file system for {} because Completion Strategy is configured to move the original file to {}, "
-                        + "but that is not a directory or user {} does not have permissions to write to that directory",
-                        new Object[] {file, flowFile, targetDir, user});
-                    session.transfer(flowFile, REL_FAILURE);
-                    return;
-                }
-
-                if (!targetDir.exists()) {
+                    queueLock.lock();
                     try {
-                        Files.createDirectories(targetDir.toPath());
-                    } catch (Exception e) {
-                        getLogger().error("Could not fetch file {} from file system for {} because Completion Strategy is configured to move the original file to {}, "
-                                        + "but that directory does not exist and could not be created due to: {}",
-                                new Object[] {file, flowFile, targetDir, e.getMessage()}, e);
-                        session.transfer(flowFile, REL_FAILURE);
-                        return;
-                    }
-                }
+                        listing.removeAll(inProcess);
+                        if (!keepingSourceFile) {
+                            listing.removeAll(recentlyProcessed);
+                        }
 
-                final String conflictStrategy = context.getProperty(CONFLICT_STRATEGY).getValue();
+                        fileQueue.clear();
+                        fileQueue.addAll(listing);
 
-                if (CONFLICT_FAIL.getValue().equalsIgnoreCase(conflictStrategy)) {
-                    final File targetFile = new File(targetDir, file.getName());
-                    if (targetFile.exists()) {
-                        getLogger().error("Could not fetch file {} from file system for {} because Completion Strategy is configured to move the original file to {}, "
-                            + "but a file with name {} already exists in that directory and the Move Conflict Strategy is configured for failure",
-                            new Object[] {file, flowFile, targetDir, file.getName()});
-                        session.transfer(flowFile, REL_FAILURE);
-                        return;
+                        queueLastUpdated.set(System.currentTimeMillis());
+                        recentlyProcessed.clear();
+
+                        if (listing.isEmpty()) {
+                            context.yield();
+                        }
+                    } finally {
+                        queueLock.unlock();
                     }
+                } finally {
+                    listingLock.unlock();
                 }
             }
         }
-        
-        
-        Map<String, Object> mapAttrs = new HashMap<>();
+
+        final int batchSize = context.getProperty(BATCH_SIZE).asInteger();
+        final List<File> files = new ArrayList<>(batchSize);
+        queueLock.lock();
         try {
-			mapAttrs.put("url", file.toURI().toURL());
-	        DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-	        String typeName = dataStore.getTypeNames()[0];
+            fileQueue.drainTo(files, batchSize);
+            if (files.isEmpty()) {
+                return;
+            } else {
+                inProcess.addAll(files);
+            }
+        } finally {
+            queueLock.unlock();
+        }
 
-	        FeatureSource<SimpleFeatureType, SimpleFeature> featureSource = dataStore.getFeatureSource(typeName);
-//	        Filter filter = Filter.INCLUDE; // ECQL.toFilter("BBOX(THE_GEOM, 10,20,30,40)")
-//
-//	        FeatureCollection<SimpleFeatureType, SimpleFeature> collection = featureSource.getFeatures(filter);
-//	        try (FeatureIterator<SimpleFeature> features = collection.features()) {
-//	            while (features.hasNext()) {
-//	                SimpleFeature feature = features.next();
-//	                System.out.print(feature.getID());
-//	                System.out.print(": ");
-//	                System.out.println(feature.getDefaultGeometryProperty().getValue());
-//	            }
-//	        }		
-	        
-	        Style style = SLD.createSimpleStyle(featureSource.getSchema());
-	        Layer layer = new FeatureLayer(featureSource, style);
-	        
-	        //Step 1: Create map
-	        MapContent map = new MapContent();
-	        map.setTitle("Geometry block");
+        final ListIterator<File> itr = files.listIterator();
+        FlowFile flowFile = null;
+        try {
+            final Path directoryPath = directory.toPath();
+            while (itr.hasNext()) {
+                final File file = itr.next();
+                final Path filePath = file.toPath();
+                final Path relativePath = directoryPath.relativize(filePath.getParent());
+                String relativePathString = relativePath.toString() + "/";
+                if (relativePathString.isEmpty()) {
+                    relativePathString = "./";
+                }
+                final Path absPath = filePath.toAbsolutePath();
+                final String absPathString = absPath.getParent().toString() + "/";
 
-	        //Step 2: Set projection
-	        CoordinateReferenceSystem crs = CRS.decode("EPSG:5179"); 
-	        MapViewport vp = map.getViewport();
-	        vp.setCoordinateReferenceSystem(crs);
-	        
-	      //Step 3: Add layers to map
-	        //CoordinateReferenceSystem mapCRS = map.getCoordinateReferenceSystem();
-	        map.addLayer(layer);	        
-	        //Step 4: Save image
-	        saveImage(map, "C:\\Download\\setl_out\\geometry.jpg", 800);
-	        
-	        
-	        
+                flowFile = session.create();
+                final long importStart = System.nanoTime();
+                flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
+                final long importNanos = System.nanoTime() - importStart;
+                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+
+                flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), file.getName());
+                flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), relativePathString);
+                flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), absPathString);
+                Map<String, String> attributes = getAttributesFromFile(filePath);
+                if (attributes.size() > 0) {
+                    flowFile = session.putAllAttributes(flowFile, attributes);
+                }
+
+                session.getProvenanceReporter().receive(flowFile, file.toURI().toString(), importMillis);
+                
+                createMapFromShapeFile(file,"EPSG:5179");
+                session.transfer(flowFile, REL_SUCCESS);
+                logger.info("added {} to flow", new Object[]{flowFile});
+
+                if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
+                    queueLock.lock();
+                    try {
+                        while (itr.hasNext()) {
+                            final File nextFile = itr.next();
+                            fileQueue.add(nextFile);
+                            inProcess.remove(nextFile);
+                        }
+                    } finally {
+                        queueLock.unlock();
+                    }
+                }
+            }
+        } catch (final Exception e) {
+            logger.error("Failed to retrieve files due to {}", e);
+
+            // anything that we've not already processed needs to be put back on the queue
+            if (flowFile != null) {
+                session.remove(flowFile);
+            }
+        } finally {
+            queueLock.lock();
+            try {
+                inProcess.removeAll(files);
+                recentlyProcessed.addAll(files);
+            } finally {
+                queueLock.unlock();
+            }
+        }
+    }        
+
+	
+    private FileFilter createFileFilter(final ProcessContext context) {
+        final boolean ignoreHidden = context.getProperty(IGNORE_HIDDEN_FILES).asBoolean();
+        final Pattern filePattern = Pattern.compile(context.getProperty(FILE_FILTER).getValue());
+        final String indir = context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue();
+        final boolean recurseDirs = context.getProperty(RECURSE).asBoolean();
+        final String pathPatternStr = context.getProperty(PATH_FILTER).getValue();
+        final Pattern pathPattern = (!recurseDirs || pathPatternStr == null) ? null : Pattern.compile(pathPatternStr);
+        final boolean keepOriginal = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
+
+        return new FileFilter() {
+            @Override
+            public boolean accept(final File file) {
+                if (ignoreHidden && file.isHidden()) {
+                    return false;
+                }
+                if (pathPattern != null) {
+                    Path reldir = Paths.get(indir).relativize(file.toPath()).getParent();
+                    if (reldir != null && !reldir.toString().isEmpty()) {
+                        if (!pathPattern.matcher(reldir.toString()).matches()) {
+                            return false;
+                        }
+                    }
+                }
+                //Verify that we have at least read permissions on the file we're considering grabbing
+                if (!Files.isReadable(file.toPath())) {
+                    return false;
+                }
+
+                //Verify that if we're not keeping original that we have write permissions on the directory the file is in
+                if (keepOriginal == false && !Files.isWritable(file.toPath().getParent())) {
+                    return false;
+                }
+                return filePattern.matcher(file.getName()).matches();
+            }
+        };
+    }
+
+    private Set<File> performListing(final File directory, final FileFilter filter, final boolean recurseSubdirectories) {
+        Path p = directory.toPath();
+        if (!Files.isWritable(p) || !Files.isReadable(p)) {
+            throw new IllegalStateException("Directory '" + directory + "' does not have sufficient permissions (i.e., not writable and readable)");
+        }
+        final Set<File> queue = new HashSet<>();
+        if (!directory.exists()) {
+            return queue;
+        }
+
+        final File[] children = directory.listFiles();
+        if (children == null) {
+            return queue;
+        }
+
+        for (final File child : children) {
+            if (child.isDirectory()) {
+                if (recurseSubdirectories) {
+                    queue.addAll(performListing(child, filter, recurseSubdirectories));
+                }
+            } else if (filter.accept(child)) {
+                queue.add(child);
+            }
+        }
+
+        return queue;
+    }	
+    protected Map<String, String> getAttributesFromFile(final Path file) {
+        Map<String, String> attributes = new HashMap<>();
+        try {
+            FileStore store = Files.getFileStore(file);
+            if (store.supportsFileAttributeView("basic")) {
+                try {
+                    final DateFormat formatter = new SimpleDateFormat(FILE_MODIFY_DATE_ATTR_FORMAT, Locale.US);
+                    BasicFileAttributeView view = Files.getFileAttributeView(file, BasicFileAttributeView.class);
+                    BasicFileAttributes attrs = view.readAttributes();
+                    attributes.put(FILE_LAST_MODIFY_TIME_ATTRIBUTE, formatter.format(new Date(attrs.lastModifiedTime().toMillis())));
+                    attributes.put(FILE_CREATION_TIME_ATTRIBUTE, formatter.format(new Date(attrs.creationTime().toMillis())));
+                    attributes.put(FILE_LAST_ACCESS_TIME_ATTRIBUTE, formatter.format(new Date(attrs.lastAccessTime().toMillis())));
+                } catch (Exception ignore) {
+                } // allow other attributes if these fail
+            }
+            if (store.supportsFileAttributeView("owner")) {
+                try {
+                    FileOwnerAttributeView view = Files.getFileAttributeView(file, FileOwnerAttributeView.class);
+                    attributes.put(FILE_OWNER_ATTRIBUTE, view.getOwner().getName());
+                } catch (Exception ignore) {
+                } // allow other attributes if these fail
+            }
+            if (store.supportsFileAttributeView("posix")) {
+                try {
+                    PosixFileAttributeView view = Files.getFileAttributeView(file, PosixFileAttributeView.class);
+                    attributes.put(FILE_PERMISSIONS_ATTRIBUTE, PosixFilePermissions.toString(view.readAttributes().permissions()));
+                    attributes.put(FILE_GROUP_ATTRIBUTE, view.readAttributes().group().getName());
+                } catch (Exception ignore) {
+                } // allow other attributes if these fail
+            }
+        } catch (IOException ioe) {
+            // well then this FlowFile gets none of these attributes
+        }
+
+        return attributes;
+    }    
+
+	public void createMapFromShapeFile(final File shpFile, String epsgCRS) {
+		Map<String, Object> mapAttrs = new HashMap<>();
+		try {
+			mapAttrs.put("url", shpFile.toURI().toURL());
+			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+			String typeName = dataStore.getTypeNames()[0];
+
+			FeatureSource<SimpleFeatureType, SimpleFeature> featureSource = dataStore.getFeatureSource(typeName);
+
+			Style style = SLD.createSimpleStyle(featureSource.getSchema());
+			Layer layer = new FeatureLayer(featureSource, style);
+
+			// Step 1: Create map
+			MapContent map = new MapContent();
+			map.setTitle("Geometry block");
+
+			// Step 2: Set projection
+			CoordinateReferenceSystem crs = CRS.decode(epsgCRS);
+			MapViewport vp = map.getViewport();
+			vp.setCoordinateReferenceSystem(crs);
+
+			// Step 3: Add layers to map
+			map.addLayer(layer);
+			// Step 4: Save image
+			saveImage(map, "C:\\Download\\setl_out\\"+ shpFile.getName() + ".jpg", 800);
+			map.dispose();
+
 		} catch (IOException | FactoryException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-
-
-        // import content from file system
-        try (final FileInputStream fis = new FileInputStream(file)) {
-            flowFile = session.importFrom(fis, flowFile);
-        } catch (final IOException ioe) {
-            getLogger().error("Could not fetch file {} from file system for {} due to {}; routing to failure", new Object[] {file, flowFile, ioe.toString()}, ioe);
-            session.transfer(session.penalize(flowFile), REL_FAILURE);
-            return;
-        }
-
-        session.getProvenanceReporter().fetch(flowFile, file.toURI().toString(), "Replaced content of FlowFile with contents of " + file.toURI(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-        session.transfer(flowFile, REL_SUCCESS);
-
-        // It is critical that we commit the session before we perform the Completion Strategy. Otherwise, we could have a case where we
-        // ingest the file, delete/move the file, and then NiFi is restarted before the session is committed. That would result in data loss.
-        // As long as we commit the session right here, before we perform the Completion Strategy, we are safe.
-        final FlowFile fetched = flowFile;
-        session.commitAsync(() -> {
-            performCompletionAction(completionStrategy, file, targetDirectoryName, fetched, context);
-        });		
 	}
-    private void performCompletionAction(final String completionStrategy, final File file, final String targetDirectoryName, final FlowFile flowFile, final ProcessContext context) {
-        // Attempt to perform the Completion Strategy action
-        Exception completionFailureException = null;
-        if (COMPLETION_DELETE.getValue().equalsIgnoreCase(completionStrategy)) {
-            // convert to path and use Files.delete instead of file.delete so that if we fail, we know why
-            try {
-                delete(file);
-            } catch (final IOException ioe) {
-                completionFailureException = ioe;
-            }
-        } else if (COMPLETION_MOVE.getValue().equalsIgnoreCase(completionStrategy)) {
-            final File targetDirectory = new File(targetDirectoryName);
-            final File targetFile = new File(targetDirectory, file.getName());
-            try {
-                if (targetFile.exists()) {
-                    final String conflictStrategy = context.getProperty(CONFLICT_STRATEGY).getValue();
-                    if (CONFLICT_KEEP_INTACT.getValue().equalsIgnoreCase(conflictStrategy)) {
-                        // don't move, just delete the original
-                        Files.delete(file.toPath());
-                    } else if (CONFLICT_RENAME.getValue().equalsIgnoreCase(conflictStrategy)) {
-                        // rename to add a random UUID but keep the file extension if it has one.
-                        final String simpleFilename = targetFile.getName();
-                        final String newName;
-                        if (simpleFilename.contains(".")) {
-                            newName = StringUtils.substringBeforeLast(simpleFilename, ".") + "-" + UUID.randomUUID().toString() + "." + StringUtils.substringAfterLast(simpleFilename, ".");
-                        } else {
-                            newName = simpleFilename + "-" + UUID.randomUUID().toString();
-                        }
-
-                        move(file, new File(targetDirectory, newName), false);
-                    } else if (CONFLICT_REPLACE.getValue().equalsIgnoreCase(conflictStrategy)) {
-                        move(file, targetFile, true);
-                    }
-                } else {
-                    move(file, targetFile, false);
-                }
-            } catch (final IOException ioe) {
-                completionFailureException = ioe;
-            }
-        }
-
-        // Handle completion failures
-        if (completionFailureException != null) {
-            getLogger().warn("Successfully fetched the content from {} for {} but failed to perform Completion Action due to {}; routing to success",
-                new Object[] {file, flowFile, completionFailureException}, completionFailureException);
-        }
-    }
-	protected void move(final File source, final File target, final boolean overwrite) throws IOException {
-		final File targetDirectory = target.getParentFile();
-
-		// convert to path and use Files.move instead of file.renameTo so that if we
-		// fail, we know why
-		final Path targetPath = target.toPath();
-		if (!targetDirectory.exists()) {
-			Files.createDirectories(targetDirectory.toPath());
-		}
-
-		final CopyOption[] copyOptions = overwrite ? new CopyOption[] { StandardCopyOption.REPLACE_EXISTING }
-				: new CopyOption[] {};
-		Files.move(source.toPath(), targetPath, copyOptions);
-	}
-
-	protected void delete(final File file) throws IOException {
-		Files.delete(file.toPath());
-	}
-
-	protected boolean isReadable(final File file) {
-		return file.canRead();
-	}
-
-	protected boolean isWritable(final File file) {
-		return file.canWrite();
-	}
-
-	protected boolean isDirectory(final File file) {
-		return file.isDirectory();
-	}
-
 	public void saveImage(final MapContent map, final String file, final int imageWidth) {
 
 	    GTRenderer renderer = new StreamingRenderer();
@@ -426,6 +497,7 @@ public class ShpReader extends AbstractProcessor {
 	        throw new RuntimeException(e);
 	    }
 
+	    if (imageBounds.height <= 0) imageBounds.height = imageBounds.width;
 	    BufferedImage image = new BufferedImage(imageBounds.width, imageBounds.height, BufferedImage.TYPE_INT_RGB);
 
 	    Graphics2D gr = image.createGraphics();
