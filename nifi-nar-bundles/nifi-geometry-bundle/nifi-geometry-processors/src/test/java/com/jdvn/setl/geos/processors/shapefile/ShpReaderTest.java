@@ -35,6 +35,7 @@ import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 
@@ -57,12 +58,12 @@ public class ShpReaderTest {
 
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
         runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
-        //runner.setProperty(ShpReader.FILE_FILTER, "[^\\.].shp");
-        runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_ENTRC.shp");
+        runner.setProperty(ShpReader.FILE_FILTER, ".*\\.shp");
+        //runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_BULD.shp");
         
         runner.run();
 
-        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);  // Batch Size = 10 default
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 3);  // Batch Size = 10 default
         final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
 
         final String path = successFiles.get(0).getAttribute("path");
@@ -73,6 +74,7 @@ public class ShpReaderTest {
 
     }
     @Test
+    @Ignore
     public void testAShapeFilePickedUp() throws IOException {
         final File directory = new File("src/test/resources/koreanmap");
 

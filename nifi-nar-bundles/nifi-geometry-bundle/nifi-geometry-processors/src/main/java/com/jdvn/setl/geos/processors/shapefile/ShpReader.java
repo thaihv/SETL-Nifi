@@ -23,6 +23,7 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.io.Serializable;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -74,9 +75,23 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.serialization.SimpleRecordSchema;
+import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.MapRecord;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
-import org.geotools.data.FeatureSource;
+import org.geotools.data.DefaultTransaction;
+import org.geotools.data.Transaction;
+import org.geotools.data.shapefile.ShapefileDataStore;
+import org.geotools.data.shapefile.ShapefileDataStoreFactory;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.data.simple.SimpleFeatureStore;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.map.FeatureLayer;
 import org.geotools.map.Layer;
@@ -310,8 +325,9 @@ public class ShpReader extends AbstractProcessor {
 
                 session.getProvenanceReporter().receive(flowFile, file.toURI().toString(), importMillis);
                 
-                createMapFromShapeFile(file,"EPSG:5179");
-                session.transfer(flowFile, REL_SUCCESS);
+                getDataFromShapeFile(file,"EPSG:5179");
+                
+                session.transfer(flowFile, REL_SUCCESS);                
                 logger.info("added {} to flow", new Object[]{flowFile});
 
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
@@ -447,21 +463,115 @@ public class ShpReader extends AbstractProcessor {
         return attributes;
     }    
 
-	public void createMapFromShapeFile(final File shpFile, String epsgCRS) {
+	public void getDataFromShapeFile(final File shpFile, String epsgCRS) {
 		Map<String, Object> mapAttrs = new HashMap<>();
 		try {
 			mapAttrs.put("url", shpFile.toURI().toURL());
 			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 			String typeName = dataStore.getTypeNames()[0];
 
-			FeatureSource<SimpleFeatureType, SimpleFeature> featureSource = dataStore.getFeatureSource(typeName);
+			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+
+			SimpleFeatureType schema = featureSource.getSchema();
+
+	        final List<RecordField> fields = new ArrayList<>();
+	        for (int i = 0; i < schema.getAttributeCount(); i++)
+	        {
+	        	String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+	        	String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+	        	System.out.println("Name: " + fieldName + "  Type: " + schema.getDescriptor(i).getType().getBinding().getTypeName());
+	        	
+	        	DataType dataType;
+	        	switch (fieldType) {
+	        	  case "Long":
+	        		dataType = RecordFieldType.LONG.getDataType();
+	        	    break;
+	        	  case "String":
+	        		  dataType = RecordFieldType.STRING.getDataType();
+	        	    break;
+	        	  case "Double":
+	        		  dataType = RecordFieldType.DOUBLE.getDataType();
+	        	    break;	    
+	        	  case "Boolean":
+	        		  dataType = RecordFieldType.BOOLEAN.getDataType();
+	        	    break;
+	        	  case "Byte":
+	        		  dataType = RecordFieldType.BYTE.getDataType();
+	        	    break;	        	    
+	        	  case "Character":
+	        		  dataType = RecordFieldType.CHAR.getDataType();
+	        	    break;	     
+	        	  case "Integer":
+	        		  dataType = RecordFieldType.INT.getDataType();
+	        	    break;	  
+	        	  case "Float":
+	        		  dataType = RecordFieldType.FLOAT.getDataType();
+	        	    break;		        	    
+	        	  case "Number":
+	        		  dataType = RecordFieldType.BIGINT.getDataType();
+	        	    break;	  
+	        	  case "Date":
+	        		  dataType = RecordFieldType.DATE.getDataType();
+	        	    break;		        	    
+	        	  case "Time":
+	        		  dataType = RecordFieldType.TIME.getDataType();
+	        	    break;	        	    
+	        	  case "Timestamp":
+	        		  dataType = RecordFieldType.TIMESTAMP.getDataType();
+	        	    break;
+	        	  case "Short":
+	        		  dataType = RecordFieldType.SHORT.getDataType();
+	        	    break;			        	    
+	        	  default:
+	        		  dataType = RecordFieldType.STRING.getDataType();
+	        	}	        	
+	        	fields.add(new RecordField(fieldName, dataType));
+	        }
+
+	        
+			
+			SimpleFeatureCollection features = featureSource.getFeatures();
+			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
+			SimpleFeature feature = null;
+			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
+			final Record records = new MapRecord(recordSchema, Collections.singletonMap("name", "John Doe"));
+
+		    try {
+		        while (it.hasNext()) {
+		            feature = it.next();
+		            System.out.println("Feature ---> :");
+		            for (int i = 0; i < feature.getAttributeCount(); i++) {
+		            	System.out.println(feature.getAttribute(i));
+		            }
+
+		        }
+
+//                transformed = session.write(transformed, new OutputStreamCallback() {
+//                    @Override
+//                    public void process(final OutputStream out) throws IOException {
+//
+//						
+//						final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+//						final BlockingQueue<BinaryEncoder> encoderPool = new LinkedBlockingQueue<>(32);
+//
+//						try (final RecordSetWriter writer = new WriteAvroResultWithExternalSchema(avroSchema,
+//								recordSchema, new NopSchemaAccessWriter(), out, encoderPool, getLogger())) {
+//							writer.write(RecordSet.of(recordSchema, records));
+//						}
+//                    }
+//                });
+		        
+		    } finally {
+		        it.close();
+		    }			
+            
 
 			Style style = SLD.createSimpleStyle(featureSource.getSchema());
 			Layer layer = new FeatureLayer(featureSource, style);
 
 			// Step 1: Create map
 			MapContent map = new MapContent();
-			map.setTitle("Geometry block");
+			map.setTitle("Geometry Block");
 
 			// Step 2: Set projection
 			CoordinateReferenceSystem crs = CRS.decode(epsgCRS);
@@ -471,15 +581,19 @@ public class ShpReader extends AbstractProcessor {
 			// Step 3: Add layers to map
 			map.addLayer(layer);
 			// Step 4: Save image
-			saveImage(map, "C:\\Download\\setl_out\\"+ shpFile.getName() + ".jpg", 800);
+//			mapToImage(map, "C:\\Download\\setl_out\\"+ shpFile.getName() + ".jpg", 800);
+//			File shpTarget = new File("C:\\Download\\setl_out\\"+ shpFile.getName());
+//			featureSourceToShapefile(shpTarget, featureSource);
+			
 			map.dispose();
 
 		} catch (IOException | FactoryException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+
 	}
-	public void saveImage(final MapContent map, final String file, final int imageWidth) {
+	public void mapToImage(final MapContent map, final String file, final int imageWidth) {
 
 	    GTRenderer renderer = new StreamingRenderer();
 	    renderer.setMapContent(map);
@@ -513,5 +627,50 @@ public class ShpReader extends AbstractProcessor {
 	        throw new RuntimeException(e);
 	    }
 	}
-	
+	public void featureSourceToShapefile(File file,  SimpleFeatureSource featureSource ) {
+		
+        ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
+
+        Map<String, Serializable> params = new HashMap<>();
+        try {
+			params.put("url", file.toURI().toURL());
+	        params.put("create spatial index", Boolean.TRUE);
+	        ShapefileDataStore newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
+	        newDataStore.createSchema(featureSource.getSchema());
+	        /*
+	         * Write the features to the shapefile
+	         */
+	        Transaction transaction = new DefaultTransaction("create");
+
+	        String typeName = newDataStore.getTypeNames()[0];
+	        SimpleFeatureSource featureTarget = newDataStore.getFeatureSource(typeName);
+
+	        if (featureTarget instanceof SimpleFeatureStore) {
+	            SimpleFeatureStore featureStore = (SimpleFeatureStore) featureTarget;
+	            SimpleFeatureCollection collection = featureSource.getFeatures();
+	            
+	            featureStore.setTransaction(transaction);
+	            try {
+	                featureStore.addFeatures(collection);
+	                transaction.commit();
+	            } catch (Exception problem) {
+	                problem.printStackTrace();
+	                transaction.rollback();
+	            } finally {
+	                transaction.close();
+	            }
+	            System.exit(0); // success!
+	        } else {
+	            System.out.println(typeName + " does not support read/write access");
+	            System.exit(1);
+	        }	        
+	        
+	        
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		
+	}	
 }
