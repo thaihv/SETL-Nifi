@@ -35,7 +35,6 @@ import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 
@@ -64,6 +63,7 @@ public class ShpReaderTest {
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 3);  // Batch Size = 10 default
+        runner.assertTransferCount(ShpReader.REL_SUCCESS, 3);
         final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
 
         final String path = successFiles.get(0).getAttribute("path");
@@ -74,7 +74,6 @@ public class ShpReaderTest {
 
     }
     @Test
-    @Ignore
     public void testAShapeFilePickedUp() throws IOException {
         final File directory = new File("src/test/resources/koreanmap");
 
@@ -89,7 +88,9 @@ public class ShpReaderTest {
         final String path = successFiles.get(0).getAttribute("path");
         assertEquals("/", path);
         final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
-        System.out.print(absolutePath);
+        System.out.println(absolutePath);
+        final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
+        System.out.println(mimeType);
     }
     @Test
     public void testAttributes() throws IOException {
@@ -140,7 +141,9 @@ public class ShpReaderTest {
         final String path = successFiles.get(0).getAttribute("path");
         assertEquals("/", path);
         final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
-        System.out.print(absolutePath);
+        System.out.println(absolutePath);
+        final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
+        System.out.println(mimeType);
 
     }    
 }

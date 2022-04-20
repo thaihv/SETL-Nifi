@@ -354,8 +354,9 @@ public class ShpReader extends AbstractProcessor {
                 });                
                 session.remove(flowFile);
                 session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);  
-                session.transfer(transformed, REL_SUCCESS);      
-                     
+                //transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/geo-wkt");
+                session.transfer(transformed, REL_SUCCESS);   
+
                 logger.info("added {} to flow", new Object[]{transformed});
 
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
