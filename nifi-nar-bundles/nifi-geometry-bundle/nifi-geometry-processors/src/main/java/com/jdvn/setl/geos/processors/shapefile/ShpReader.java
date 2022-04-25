@@ -58,7 +58,7 @@ import java.util.regex.Pattern;
 import javax.imageio.ImageIO;
 
 import org.apache.avro.Schema;
-import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.file.CodecFactory;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -68,7 +68,7 @@ import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.avro.AvroTypeUtil;
-import org.apache.nifi.avro.WriteAvroResultWithExternalSchema;
+import org.apache.nifi.avro.WriteAvroResultWithSchema;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
@@ -81,16 +81,15 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
-import org.apache.nifi.schema.access.NopSchemaAccessWriter;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.serialization.record.RecordSet;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.DefaultTransaction;
@@ -336,19 +335,19 @@ public class ShpReader extends AbstractProcessor {
                 /* Get ShapeFile data and transfer to session in Avro Format*/
                 FlowFile transformed = session.create(flowFile);
                 
-                final ArrayList<Record> records = getRecordsFromShapeFile(file);
+                final List<Record> records = getRecordsFromShapeFile(file);
                 RecordSchema recordSchema = records.get(0).getSchema();                
                 transformed = session.write(transformed, new OutputStreamCallback() {
                     @Override
                     public void process(final OutputStream out) throws IOException {
-
             			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-            			final BlockingQueue<BinaryEncoder> encoderPool = new LinkedBlockingQueue<>(32);
-            			@SuppressWarnings("resource")
-						final RecordSetWriter writer = new WriteAvroResultWithExternalSchema(avroSchema, recordSchema, new NopSchemaAccessWriter(), out, encoderPool, getLogger());      
-            			Record[] rs = new Record[records.size()];
-            			rs = records.toArray(rs); 		
-            			writer.write(RecordSet.of(recordSchema, rs));
+            			@SuppressWarnings("resource")  
+            			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            			
+//            			Record[] rs = new Record[records.size()];
+//            			rs = records.toArray(rs); 		
+//            			writer.write(RecordSet.of(recordSchema, rs));
+            			
+            			writer.write(new ListRecordSet(recordSchema, records));
 
                     }
                 });                

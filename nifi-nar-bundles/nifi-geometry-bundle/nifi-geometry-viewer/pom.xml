@@ -80,6 +80,11 @@
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>
         </dependency>            
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-avro-record-utils</artifactId>
+            <version>1.16.0-SNAPSHOT</version>
+        </dependency>	        
     </dependencies>
 
 </project>
