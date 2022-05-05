@@ -37,6 +37,7 @@
 		"properties": properties
 		});
 	}
-	L.geoJSON(geojson, {style: geomStyle}).addTo(map);		
+	let geoJsonLayer = L.geoJSON(geojson, {style: geomStyle}).addTo(map);
+	map.fitBounds(geoJsonLayer.getBounds());
 	
 </script>

@@ -95,8 +95,8 @@ public class GeometryViewerController extends HttpServlet {
 							final String formattedRecord = genericData.toString(record);
 							sb.append(formattedRecord);
 							sb.append(",");
-							// Do not format more than 10 MB of content.
-							if (sb.length() > 1024 * 1024 * 20) {
+							// Do not format more than 16 MB of content.
+							if (sb.length() > 1024 * 1024 * 16) {
 								break;
 							}
 						}

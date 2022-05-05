@@ -100,6 +100,7 @@ import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.data.simple.SimpleFeatureStore;
+import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.map.FeatureLayer;
 import org.geotools.map.Layer;
@@ -110,11 +111,14 @@ import org.geotools.renderer.GTRenderer;
 import org.geotools.renderer.lite.StreamingRenderer;
 import org.geotools.styling.SLD;
 import org.geotools.styling.Style;
+import org.locationtech.jts.geom.Coordinate;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.NoSuchAuthorityCodeException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opengis.referencing.operation.MathTransform;
+import org.opengis.referencing.operation.TransformException;
 
 
 
@@ -503,6 +507,9 @@ public class ShpReader extends AbstractProcessor {
 
 			SimpleFeatureType schema = featureSource.getSchema();
 
+		    CoordinateReferenceSystem sourceCRS = schema.getCoordinateReferenceSystem();
+		    System.out.println("CRS is : " + sourceCRS);
+		    
 			final List<RecordField> fields = new ArrayList<>();
 			for (int i = 0; i < schema.getAttributeCount(); i++) {
 				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
@@ -681,5 +688,20 @@ public class ShpReader extends AbstractProcessor {
 			e.printStackTrace();
 		}
 
-	}	
+	}
+
+	public Coordinate transformCoordinateBasedOnCrs(CoordinateReferenceSystem sourceCRS,
+			CoordinateReferenceSystem targetCRS, Coordinate in) {
+		Coordinate out = in;
+
+		try {
+			MathTransform transform = CRS.findMathTransform(sourceCRS, targetCRS);
+			JTS.transform(in, out, transform);
+		} catch (TransformException | FactoryException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return out;
+
+	}
 }

@@ -34,8 +34,13 @@ import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.geotools.referencing.CRS;
 import org.junit.Before;
 import org.junit.Test;
+import org.locationtech.jts.geom.Coordinate;
+import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opengis.referencing.operation.TransformException;
 
 
 public class ShpReaderTest {
@@ -95,7 +100,7 @@ public class ShpReaderTest {
     @Test
     public void testAttributes() throws IOException {
         final File directory = new File("src/test/resources/admzone");
-        final File inFile = new File("src/test/resources/admzone/ADMZONE.shp");
+        final File inFile = new File("src/test/resources/admzone/SPC_DIT_ADMZONE.shp");
         final Path inPath = inFile.toPath();
         final File destFile = new File(directory, inFile.getName());
         final Path targetPath = destFile.toPath();
@@ -110,7 +115,7 @@ public class ShpReaderTest {
 
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
         runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
-        runner.setProperty(ShpReader.FILE_FILTER, "ADMZONE.shp");
+        runner.setProperty(ShpReader.FILE_FILTER, "SPC_DIT_ADMZONE.shp");
         runner.run();
 
         runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);
@@ -145,5 +150,52 @@ public class ShpReaderTest {
         final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
         System.out.println(mimeType);
 
-    }    
+    }   
+    @Test
+    public void testProjectedKoreanCoordinatesToDecimalDegree() throws FactoryException, TransformException {
+        //Korea EPSG:5179 -> EPSG:4326 CONVERSION
+
+    	final ShpReader toTest = new ShpReader();
+    	
+        CoordinateReferenceSystem sourceCRS = CRS.decode("EPSG:5179");
+        CoordinateReferenceSystem targetCRS = CRS.decode("EPSG:4326");
+
+        double coordinateX = 1307285;
+        double coordinateY = 2229260;
+
+        // EPSG:5179 Y , X
+        Coordinate in = new Coordinate(coordinateY, coordinateX); 
+        Coordinate result = toTest.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
+        
+        double expectedLongitude = 131.0999928;
+        double expectedLatitude = 40.0099721;
+
+        System.out.println("EPSG : 5179 -->4326");
+        System.out.println(result);
+        assertEquals(expectedLongitude, result.getY(), 0.00001);
+        assertEquals(expectedLatitude, result.getX(), 0.00001);
+    } 
+    @Test
+    public void testProjectedVN2000ToEPSG4326() throws FactoryException, TransformException {
+        //VN2000 EPSG:3405 -> EPSG:4326 CONVERSION
+
+    	final ShpReader toTest = new ShpReader();
+    	
+        CoordinateReferenceSystem sourceCRS = CRS.decode("EPSG:3405");
+        CoordinateReferenceSystem targetCRS = CRS.decode("EPSG:4326");
+
+        double coordinateX = 547486.6400756836;
+        double coordinateY = 2348240.210083008;
+        // EPSG:3405 X , Y
+        Coordinate in = new Coordinate(coordinateX, coordinateY); 
+        Coordinate result = toTest.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
+
+        double expectedLongitude = 105.4595182204;
+        double expectedLatitude =  21.23415875713;
+
+        System.out.println("EPSG : 3405 --> 4326");
+        System.out.println(result);
+        assertEquals(expectedLongitude, result.getY(), 0.00001);
+        assertEquals(expectedLatitude, result.getX(), 0.00001);
+    }        
 }

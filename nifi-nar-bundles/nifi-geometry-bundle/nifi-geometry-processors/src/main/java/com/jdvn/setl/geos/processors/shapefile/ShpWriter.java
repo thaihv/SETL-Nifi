@@ -16,33 +16,14 @@
  */
 package com.jdvn.setl.geos.processors.shapefile;
 
-import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.annotation.behavior.ReadsAttribute;
-import org.apache.nifi.annotation.behavior.ReadsAttributes;
-import org.apache.nifi.annotation.behavior.WritesAttribute;
-import org.apache.nifi.annotation.behavior.WritesAttributes;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.annotation.documentation.CapabilityDescription;
-import org.apache.nifi.annotation.documentation.SeeAlso;
-import org.apache.nifi.annotation.documentation.Tags;
-import org.apache.nifi.processor.AbstractProcessor;
-import org.apache.nifi.processor.ProcessContext;
-import org.apache.nifi.processor.ProcessSession;
-import org.apache.nifi.processor.ProcessorInitializationContext;
-import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.exception.ProcessException;
-import org.apache.nifi.processor.util.StandardValidators;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,6 +32,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+
+import org.apache.nifi.annotation.behavior.ReadsAttribute;
+import org.apache.nifi.annotation.behavior.ReadsAttributes;
+import org.apache.nifi.annotation.behavior.WritesAttribute;
+import org.apache.nifi.annotation.behavior.WritesAttributes;
+import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.SeeAlso;
+import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.components.PropertyDescriptor;
+import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.ProcessorInitializationContext;
+import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.exception.ProcessException;
+import org.apache.nifi.processor.util.StandardValidators;
+import org.geotools.data.DefaultTransaction;
+import org.geotools.data.Transaction;
+import org.geotools.data.shapefile.ShapefileDataStore;
+import org.geotools.data.shapefile.ShapefileDataStoreFactory;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.data.simple.SimpleFeatureStore;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Tags({ "shape file", "wkt", "json", "geospatial" })
 @CapabilityDescription("Write geospatial data into a given shape file.")
@@ -161,5 +170,48 @@ public class ShpWriter extends AbstractProcessor {
 
 		return os.toByteArray();
 	}
+	public void writeFeatureSourceToShapefile(File file, SimpleFeatureSource featureSource) {
 
+		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
+
+		Map<String, Serializable> params = new HashMap<>();
+		try {
+			params.put("url", file.toURI().toURL());
+			params.put("create spatial index", Boolean.TRUE);
+			ShapefileDataStore newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
+			newDataStore.createSchema(featureSource.getSchema());
+			/*
+			 * Write the features to the shapefile
+			 */
+			Transaction transaction = new DefaultTransaction("create");
+
+			String typeName = newDataStore.getTypeNames()[0];
+			SimpleFeatureSource featureTarget = newDataStore.getFeatureSource(typeName);
+
+			if (featureTarget instanceof SimpleFeatureStore) {
+				SimpleFeatureStore featureStore = (SimpleFeatureStore) featureTarget;
+				SimpleFeatureCollection collection = featureSource.getFeatures();
+
+				featureStore.setTransaction(transaction);
+				try {
+					featureStore.addFeatures(collection);
+					transaction.commit();
+				} catch (Exception problem) {
+					problem.printStackTrace();
+					transaction.rollback();
+				} finally {
+					transaction.close();
+				}
+				System.exit(0); // success!
+			} else {
+				System.out.println(typeName + " does not support read/write access");
+				System.exit(1);
+			}
+
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}	
 }
