@@ -25,7 +25,8 @@ import java.io.InputStream;
 public interface ViewableContent {
 
     public static final String CONTENT_REQUEST_ATTRIBUTE = "org.apache.nifi.web.content";
-
+    public static final String GEO_CONTENT_CRS = "CRS";
+    
     public enum DisplayMode {
 
         Original,

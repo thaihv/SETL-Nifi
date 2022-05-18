@@ -35,11 +35,26 @@
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-framework-api</artifactId>
-        </dependency>
+        </dependency>  
         <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>javax.servlet-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-web-content-access</artifactId>
+            <version>1.16.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-framework-authorization</artifactId>
+            <version>1.16.0-SNAPSHOT</version>
+        </dependency>                
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-framework-authorization-providers</artifactId>
+            <version>1.16.0-SNAPSHOT</version>
+        </dependency>             
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
@@ -93,43 +108,7 @@
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-record-serialization-services</artifactId>
             <version>1.16.0-SNAPSHOT</version>
-        </dependency>             
-		<dependency>
-			<groupId>org.geotools</groupId>
-			<artifactId>geotools</artifactId>
-			<version>${geotools.version}</version>
-			<type>pom</type>
-		</dependency>
-		<dependency>
-			<groupId>org.geotools</groupId>
-			<artifactId>gt-shapefile</artifactId>
-			<version>${geotools.version}</version>
-		</dependency>
-        <dependency>
-            <groupId>org.geotools</groupId>
-            <artifactId>gt-swing</artifactId>
-            <version>${geotools.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.geotools</groupId>
-            <artifactId>gt-geotiff</artifactId>
-            <version>${geotools.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.geotools</groupId>
-            <artifactId>gt-image</artifactId>
-            <version>${geotools.version}</version>
-        </dependency>      
-        <dependency>
-            <groupId>org.geotools</groupId>
-            <artifactId>gt-epsg-hsql</artifactId>
-            <version>${geotools.version}</version>                 
-        </dependency>    
-		<dependency>
-		    <groupId>org.geotools</groupId>
-		    <artifactId>gt-epsg-wkt</artifactId>
-			<version>${geotools.version}</version> 
-		</dependency>          
+        </dependency>                      
     </dependencies>
 	<repositories>
 		<repository>

@@ -36,14 +36,13 @@ import org.apache.nifi.web.ViewableContent;
 import org.apache.nifi.web.ViewableContent.DisplayMode;
 import org.joda.time.DateTime;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class GeometryViewerController extends HttpServlet {
 
 	private static final long serialVersionUID = 1L;
 	private static final Set<String> supportedMimeTypes = new HashSet<>();
-
+	
     static {
         supportedMimeTypes.add("application/avro+geowkt");
     }
@@ -66,7 +65,7 @@ public class GeometryViewerController extends HttpServlet {
 				request.setAttribute("content", formatted);
 				request.getRequestDispatcher("/WEB-INF/jsp/geometry.jsp").include(request, response);
 			} else {
-				if ("application/avro+geowkt".equals(contentType)) {
+				if ("application/avro+geowkt".equals(contentType)) {		            
 					final StringBuilder sb = new StringBuilder();
 					sb.append("[");
 					// Use Avro conversions to display logical type values in human readable way.
@@ -117,6 +116,7 @@ public class GeometryViewerController extends HttpServlet {
 					contentType = "application/json";
 					request.setAttribute("mode", contentType);
 					request.setAttribute("content", formatted);
+					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS));
 					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
 
 				} else {
@@ -188,4 +188,5 @@ public class GeometryViewerController extends HttpServlet {
 		return bufferedImg;
     	
     }
+
 }

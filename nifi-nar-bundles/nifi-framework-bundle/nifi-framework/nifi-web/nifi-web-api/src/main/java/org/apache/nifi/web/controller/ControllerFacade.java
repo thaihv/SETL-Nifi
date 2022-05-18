@@ -1363,13 +1363,16 @@ public class ControllerFacade implements Authorizable {
             if (filename == null) {
                 filename = event.getFlowFileUuid();
             }
-
             // get the mime-type
             final String type = attributes.get(CoreAttributes.MIME_TYPE.key());
 
             // get the content
             final InputStream content = flowController.getContent(event, contentDirection, user.getIdentity(), uri);
-            return new DownloadableContent(filename, type, content);
+            
+            DownloadableContent result = new DownloadableContent(filename, type, content);
+            if (attributes.get("CRS") != null)
+            	result.setCrs(attributes.get("CRS"));
+            return result;
         } catch (final ContentNotFoundException cnfe) {
             throw new ResourceNotFoundException("Unable to find the specified content.");
         } catch (final IOException ioe) {

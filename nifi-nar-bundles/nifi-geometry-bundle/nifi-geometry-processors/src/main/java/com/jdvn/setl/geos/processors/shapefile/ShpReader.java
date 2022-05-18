@@ -338,7 +338,7 @@ public class ShpReader extends AbstractProcessor {
 
                 /* Get ShapeFile data and transfer to session in Avro Format*/
                 FlowFile transformed = session.create(flowFile);
-                
+                CoordinateReferenceSystem myCrs = getCRSFromShapeFile(file);
                 final List<Record> records = getRecordsFromShapeFile(file);
                 RecordSchema recordSchema = records.get(0).getSchema();                
                 transformed = session.write(transformed, new OutputStreamCallback() {
@@ -346,17 +346,13 @@ public class ShpReader extends AbstractProcessor {
                     public void process(final OutputStream out) throws IOException {
             			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
             			@SuppressWarnings("resource")  
-            			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            			
-//            			Record[] rs = new Record[records.size()];
-//            			rs = records.toArray(rs); 		
-//            			writer.write(RecordSet.of(recordSchema, rs));
-            			
+            			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
             			writer.write(new ListRecordSet(recordSchema, records));
-
                     }
                 });                
                 session.remove(flowFile);
                 session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+                transformed = session.putAttribute(transformed, "CRS", myCrs.toWKT());
                 transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                 session.transfer(transformed, REL_SUCCESS);   
 
@@ -502,14 +498,8 @@ public class ShpReader extends AbstractProcessor {
 			mapAttrs.put("url", shpFile.toURI().toURL());
 			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 			String typeName = dataStore.getTypeNames()[0];
-
 			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-
 			SimpleFeatureType schema = featureSource.getSchema();
-
-		    CoordinateReferenceSystem sourceCRS = schema.getCoordinateReferenceSystem();
-		    System.out.println("CRS is : " + sourceCRS);
-		    
 			final List<RecordField> fields = new ArrayList<>();
 			for (int i = 0; i < schema.getAttributeCount(); i++) {
 				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
@@ -586,6 +576,26 @@ public class ShpReader extends AbstractProcessor {
 		return returnRs;
 	}
 
+	public CoordinateReferenceSystem getCRSFromShapeFile(final File shpFile) {
+		Map<String, Object> mapAttrs = new HashMap<>();
+		CoordinateReferenceSystem cRS = null;
+		try {
+			mapAttrs.put("url", shpFile.toURI().toURL());
+			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+			String typeName = dataStore.getTypeNames()[0];
+
+			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+
+			SimpleFeatureType schema = featureSource.getSchema();
+			cRS = schema.getCoordinateReferenceSystem();
+			dataStore.dispose();
+		} catch(IOException e) {
+
+			e.printStackTrace();
+		}
+		
+		return cRS;
+	}
 	public void createMapFromShapeFile(SimpleFeatureSource featureSource, String epsgCRS, String imgOutFile,
 			int imageWidth) {
 

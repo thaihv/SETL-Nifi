@@ -16,18 +16,19 @@
  */
 package org.apache.nifi.web;
 
-import com.ibm.icu.text.CharsetDetector;
-import com.ibm.icu.text.CharsetMatch;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.regex.Pattern;
+
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.UriBuilder;
+
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -41,6 +42,9 @@ import org.apache.tika.metadata.TikaCoreProperties;
 import org.apache.tika.mime.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.ibm.icu.text.CharsetDetector;
+import com.ibm.icu.text.CharsetMatch;
 
 /**
  * Controller servlet for viewing content. This is responsible for generating
@@ -60,6 +64,9 @@ public class ContentViewerController extends HttpServlet {
     private static final String FORWARDED_CONTEXT_HTTP_HEADER = "X-Forwarded-Context";
     private static final String FORWARDED_PREFIX_HTTP_HEADER = "X-Forwarded-Prefix";
 
+    private static final Pattern PROVENANCE_CONTENT_URI_PATTERN = Pattern
+            .compile("/provenance-events/([0-9]+)/content/((?:input)|(?:output)).*");
+    
   /**
      * Gets the content and defers to registered viewers to generate the markup.
      *
@@ -218,6 +225,8 @@ public class ContentViewerController extends HttpServlet {
                 if (contentViewerUri == null) {
                     request.getRequestDispatcher("/WEB-INF/jsp/no-viewer.jsp").include(request, response);
                 } else {
+                	if (downloadableContent.isGeoContent())
+                		request.setAttribute(ViewableContent.GEO_CONTENT_CRS,downloadableContent.getCrs());
                     // create a request attribute for accessing the content
                     request.setAttribute(ViewableContent.CONTENT_REQUEST_ATTRIBUTE, new ViewableContent() {
                         @Override
@@ -288,6 +297,7 @@ public class ContentViewerController extends HttpServlet {
                     }
 
                     // remove the request attribute
+                    request.removeAttribute(ViewableContent.GEO_CONTENT_CRS);
                     request.removeAttribute(ViewableContent.CONTENT_REQUEST_ATTRIBUTE);
                 }
             }

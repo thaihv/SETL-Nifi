@@ -149,6 +149,8 @@ public class ShpReaderTest {
         System.out.println(absolutePath);
         final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
         System.out.println(mimeType);
+        final String myCRS = successFiles.get(0).getAttribute("CRS");
+        System.out.println(myCRS);        
 
     }   
     @Test
@@ -197,5 +199,13 @@ public class ShpReaderTest {
         System.out.println(result);
         assertEquals(expectedLongitude, result.getY(), 0.00001);
         assertEquals(expectedLatitude, result.getX(), 0.00001);
-    }        
+    }     
+    @Test
+    public void testCRSFromShapfile() {
+
+    	final File inFile = new File("src/test/resources/admzone/SPC_DIT_ADMZONE.shp");
+    	final ShpReader toTest = new ShpReader();
+    	CoordinateReferenceSystem result = toTest.getCRSFromShapeFile(inFile);
+        System.out.println(result.toWKT());
+    }     
 }

@@ -25,6 +25,7 @@ public final class DownloadableContent {
 
     private final String filename;
     private final String type;
+    private String crs = null;
     private final InputStream content;
 
     public DownloadableContent(String filename, String type, InputStream content) {
@@ -50,8 +51,29 @@ public final class DownloadableContent {
     public String getType() {
         return type;
     }
-
+    
     /**
+     * The coordinate system information of the geo content.
+     *
+     * @return the content crs
+     */
+    public String getCrs() {
+		return crs;
+	}
+    /**
+     * Set coordinate system information for the geo content.
+     *
+     * @param the crs of geo content
+     */
+	public void setCrs(String crs) {
+		this.crs = crs;
+	}
+
+	public boolean isGeoContent() {
+		return crs == null ? false : true;
+		
+	}
+	/**
      * The content stream.
      *
      * @return the input stream of the content
