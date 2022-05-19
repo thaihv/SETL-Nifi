@@ -28,6 +28,7 @@ import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.io.DatumReader;
 import org.apache.nifi.avro.AvroReaderWithEmbeddedSchema;
 import org.apache.nifi.avro.AvroRecordReader;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordFieldType;
@@ -116,7 +117,7 @@ public class GeometryViewerController extends HttpServlet {
 					contentType = "application/json";
 					request.setAttribute("mode", contentType);
 					request.setAttribute("content", formatted);
-					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS));
+					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
 					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
 
 				} else {

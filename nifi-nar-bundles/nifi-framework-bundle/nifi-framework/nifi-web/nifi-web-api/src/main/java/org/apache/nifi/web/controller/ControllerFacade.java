@@ -69,6 +69,7 @@ import org.apache.nifi.extension.manifest.parser.ExtensionManifestParser;
 import org.apache.nifi.flow.VersionedProcessGroup;
 import org.apache.nifi.flowfile.FlowFilePrioritizer;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.groups.ProcessGroupCounts;
 import org.apache.nifi.groups.RemoteProcessGroup;
@@ -1370,8 +1371,8 @@ public class ControllerFacade implements Authorizable {
             final InputStream content = flowController.getContent(event, contentDirection, user.getIdentity(), uri);
             
             DownloadableContent result = new DownloadableContent(filename, type, content);
-            if (attributes.get("CRS") != null)
-            	result.setCrs(attributes.get("CRS"));
+            if (attributes.get(GeoAttributes.CRS.key()) != null)
+            	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
             return result;
         } catch (final ContentNotFoundException cnfe) {
             throw new ResourceNotFoundException("Unable to find the specified content.");

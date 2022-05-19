@@ -73,6 +73,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -352,7 +353,7 @@ public class ShpReader extends AbstractProcessor {
                 });                
                 session.remove(flowFile);
                 session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-                transformed = session.putAttribute(transformed, "CRS", myCrs.toWKT());
+                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                 transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                 session.transfer(transformed, REL_SUCCESS);   
 
