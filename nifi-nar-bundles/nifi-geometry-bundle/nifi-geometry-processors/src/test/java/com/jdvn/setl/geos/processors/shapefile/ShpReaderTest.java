@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
@@ -78,6 +79,33 @@ public class ShpReaderTest {
     	
 
     }
+    @Test
+    public void testGeoSpatialDataFlow() throws IOException {
+        final File directory = new File("src/test/resources/admzone");
+        final File inFile = new File("src/test/resources/admzone/CRIMINAL_TRACE.shp");
+        final Path inPath = inFile.toPath();
+        final File destFile = new File(directory, inFile.getName());
+        final Path targetPath = destFile.toPath();
+        final Path absTargetPath = targetPath.toAbsolutePath();
+        final String absTargetPathStr = absTargetPath.getParent() + "/";
+        Files.copy(inPath, targetPath);
+
+        final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
+        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
+        //runner.setProperty(ShpReader.FILE_FILTER, ".*\\.shp");
+        runner.setProperty(ShpReader.FILE_FILTER, "CRIMINAL_TRACE.shp");
+        
+        runner.run();
+
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);  // Batch Size = 10 default
+        runner.assertTransferCount(ShpReader.REL_SUCCESS, 1);
+        final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
+        System.out.println(successFiles.get(0).getContent());
+
+        final String crs = successFiles.get(0).getAttribute(GeoAttributes.CRS.key());
+        System.out.println("Geo Data CRS: " + crs);
+	
+    }    
     @Test
     public void testAShapeFilePickedUp() throws IOException {
         final File directory = new File("src/test/resources/koreanmap");
@@ -149,9 +177,6 @@ public class ShpReaderTest {
         System.out.println(absolutePath);
         final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
         System.out.println(mimeType);
-        final String myCRS = successFiles.get(0).getAttribute("CRS");
-        System.out.println(myCRS);        
-
     }   
     @Test
     public void testProjectedKoreanCoordinatesToDecimalDegree() throws FactoryException, TransformException {
@@ -200,12 +225,5 @@ public class ShpReaderTest {
         assertEquals(expectedLongitude, result.getY(), 0.00001);
         assertEquals(expectedLatitude, result.getX(), 0.00001);
     }     
-    @Test
-    public void testCRSFromShapfile() {
 
-    	final File inFile = new File("src/test/resources/admzone/SPC_DIT_ADMZONE.shp");
-    	final ShpReader toTest = new ShpReader();
-    	CoordinateReferenceSystem result = toTest.getCRSFromShapeFile(inFile);
-        System.out.println(result.toWKT());
-    }     
 }

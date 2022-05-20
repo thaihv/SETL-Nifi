@@ -24,7 +24,6 @@ import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.Serializable;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -93,14 +92,9 @@ import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
-import org.geotools.data.DefaultTransaction;
-import org.geotools.data.Transaction;
-import org.geotools.data.shapefile.ShapefileDataStore;
-import org.geotools.data.shapefile.ShapefileDataStoreFactory;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
-import org.geotools.data.simple.SimpleFeatureStore;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.map.FeatureLayer;
@@ -655,52 +649,6 @@ public class ShpReader extends AbstractProcessor {
 		}
 		map.dispose();
 	}
-
-	public void writeFeatureSourceToShapefile(File file, SimpleFeatureSource featureSource) {
-
-		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
-
-		Map<String, Serializable> params = new HashMap<>();
-		try {
-			params.put("url", file.toURI().toURL());
-			params.put("create spatial index", Boolean.TRUE);
-			ShapefileDataStore newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
-			newDataStore.createSchema(featureSource.getSchema());
-			/*
-			 * Write the features to the shapefile
-			 */
-			Transaction transaction = new DefaultTransaction("create");
-
-			String typeName = newDataStore.getTypeNames()[0];
-			SimpleFeatureSource featureTarget = newDataStore.getFeatureSource(typeName);
-
-			if (featureTarget instanceof SimpleFeatureStore) {
-				SimpleFeatureStore featureStore = (SimpleFeatureStore) featureTarget;
-				SimpleFeatureCollection collection = featureSource.getFeatures();
-
-				featureStore.setTransaction(transaction);
-				try {
-					featureStore.addFeatures(collection);
-					transaction.commit();
-				} catch (Exception problem) {
-					problem.printStackTrace();
-					transaction.rollback();
-				} finally {
-					transaction.close();
-				}
-				System.exit(0); // success!
-			} else {
-				System.out.println(typeName + " does not support read/write access");
-				System.exit(1);
-			}
-
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
-	}
-
 	public Coordinate transformCoordinateBasedOnCrs(CoordinateReferenceSystem sourceCRS,
 			CoordinateReferenceSystem targetCRS, Coordinate in) {
 		Coordinate out = in;
