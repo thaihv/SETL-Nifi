@@ -20,8 +20,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -44,6 +47,8 @@ import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.Validator;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -54,7 +59,9 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
+import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
 import org.geotools.data.DefaultTransaction;
 import org.geotools.data.Transaction;
 import org.geotools.data.shapefile.ShapefileDataStore;
@@ -62,6 +69,20 @@ import org.geotools.data.shapefile.ShapefileDataStoreFactory;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.data.simple.SimpleFeatureStore;
+import org.geotools.feature.simple.SimpleFeatureBuilder;
+import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
+import org.geotools.geometry.jts.JTSFactoryFinder;
+import org.geotools.referencing.CRS;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.MultiLineString;
+import org.locationtech.jts.io.ParseException;
+import org.locationtech.jts.io.WKTReader;
+import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
+
 
 @Tags({ "shape file", "wkt", "json", "geospatial" })
 @CapabilityDescription("Write geospatial data into a given shape file.")
@@ -212,35 +233,36 @@ public class ShpWriter extends AbstractProcessor {
     }
 
     @Override
-    public void onTrigger(final ProcessContext context, final ProcessSession session) {
-        FlowFile flowFile = session.get();
-        if (flowFile == null) {
-            return;
-        }
-        try {
-            session.read(flowFile, new InputStreamCallback() {
-                @Override
-                public void process(final InputStream in) {
-                    try (final RecordReader reader =  new AvroReaderWithEmbeddedSchema(in)) {
-                        Record record;
-                        System.out.println("Record info:");
-	                    while ((record = reader.nextRecord()) != null) {
-	                    	System.out.println(record);
-	                    }
+	public void onTrigger(final ProcessContext context, final ProcessSession session) {
+		FlowFile flowFile = session.get();
+		if (flowFile == null) {
+			return;
+		}
+		File srcFile = new File(
+				context.getProperty(DIRECTORY) + "/" + flowFile.getAttributes().get(CoreAttributes.FILENAME.key()));
+		try {
+			session.read(flowFile, new InputStreamCallback() {
+				@Override
+				public void process(final InputStream in) {
+					try (final RecordReader reader = new AvroReaderWithEmbeddedSchema(in)) {
+						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+						List<SimpleFeature> collection = createFeatureSourceFromNifiRecords(reader, CRS.parseWKT(srs));
 
-                    } catch (final IOException | MalformedRecordException e) {
-                        throw new ProcessException("Could not parse incoming data: " + e.getLocalizedMessage(), e);
-                    }
-                }
+						createShapeFileFromGeoDataFlowfile(srcFile, (SimpleFeatureSource) collection);
 
+					} catch (final IOException | FactoryException e) {
+						throw new ProcessException("Could not parse incoming data: " + e.getLocalizedMessage(), e);
+					}
 
-            });
+				}
 
-        } catch (Exception e) {
+			});
 
-        }
-        session.transfer(flowFile, REL_SUCCESS);
-    }
+		} catch (Exception e) {
+
+		}
+		session.transfer(flowFile, REL_SUCCESS);
+	}
 
     protected String stringPermissions(String perms, boolean directory) {
         String permissions = "";
@@ -329,7 +351,6 @@ public class ShpWriter extends AbstractProcessor {
 	public void createShapeFileFromGeoDataFlowfile(File srcFile, SimpleFeatureSource featureSource) {
 
 		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
-
 		Map<String, Serializable> params = new HashMap<>();
 		try {
 			params.put("url", srcFile.toURI().toURL());
@@ -368,5 +389,107 @@ public class ShpWriter extends AbstractProcessor {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-	}    
+	} 
+	
+	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
+	        final String geometryName, final Class<? extends Geometry> geometryClass,
+	        final Map<String, Class<?>> attributes) {
+	    final SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
+	    featureTypeBuilder.setName(typeName);
+	    featureTypeBuilder.setCRS(crs);
+	    featureTypeBuilder.add(geometryName, geometryClass);
+
+	    if (attributes != null) {
+	        attributes.forEach(featureTypeBuilder::add);
+	    }
+	    return featureTypeBuilder.buildFeatureType();
+	}	
+	public List<SimpleFeature> createFeatureSourceFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
+
+        List<SimpleFeature> features = new ArrayList<>();
+
+        Map<String, Class<?>> attributes = new HashMap<>();
+        
+        Record record;
+        System.out.println("Record info:");
+        try {
+        	List<RecordField> fields = avroReader.getSchema().getFields();
+			for (int i = 0; i < fields.size(); i ++) {
+				RecordField f = fields.get(i);
+				DataType type = f.getDataType();
+				Class<?> obj;
+				switch (type.getFieldType()) {
+				case LONG :
+					obj = Long.class;
+					break;
+				case STRING:
+					obj = String.class;
+					break;
+				case DOUBLE:
+					obj = Double.class;
+					break;
+				case BOOLEAN:
+					obj = Boolean.class;
+					break;
+				case BYTE:
+					obj = Byte.class;
+					break;
+				case CHAR:
+					obj = Character.class;
+					break;
+				case INT:
+					obj = Integer.class;
+					break;
+				case FLOAT:
+					obj = Float.class;
+					break;
+				case BIGINT:
+					obj = Double.class;
+					break;
+				case DATE:
+					obj = Date.class;
+					break;
+				case TIME:
+					obj = Time.class;
+					break;
+				case TIMESTAMP:
+					obj = Timestamp.class;
+					break;
+				case SHORT:
+					obj = Short.class;
+					break;
+				default:
+					obj = String.class;					
+				}
+				attributes.put(f.getFieldName(), obj);
+			}		
+			
+			final SimpleFeatureType TYPE = generateFeatureType("shpfile", crs, "the_geom", MultiLineString.class, attributes);
+	        GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+	        SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(TYPE);
+			
+			while ((record = avroReader.nextRecord()) != null) {
+				
+		        WKTReader reader = new WKTReader( geometryFactory );
+		        MultiLineString geo = (MultiLineString) reader.read(record.getAsString("the_geom"));
+		        featureBuilder.add(geo);
+			    featureBuilder.add(record.getValue(record.getSchema().getField(1)));
+			    featureBuilder.add(record.getValue(record.getSchema().getField(2)));
+			    SimpleFeature feature = featureBuilder.buildFeature(null);
+			    features.add(feature);
+			    
+			}
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (MalformedRecordException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        System.out.println(features);
+		return features;
+	}	
 }
