@@ -30,7 +30,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -41,6 +40,7 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.avro.AvroReaderWithEmbeddedSchema;
+import org.apache.nifi.avro.AvroRecordReader;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
@@ -54,7 +54,6 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
-import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.MalformedRecordException;
@@ -64,6 +63,7 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.geotools.data.DefaultTransaction;
 import org.geotools.data.Transaction;
+import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.shapefile.ShapefileDataStore;
 import org.geotools.data.shapefile.ShapefileDataStoreFactory;
 import org.geotools.data.simple.SimpleFeatureCollection;
@@ -74,8 +74,13 @@ import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTSFactoryFinder;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.MultiLineString;
+import org.locationtech.jts.geom.MultiPoint;
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.opengis.feature.simple.SimpleFeature;
@@ -192,8 +197,8 @@ public class ShpWriter extends AbstractProcessor {
             .name("success")
             .description("Files that have been successfully written to the output directory are transferred to this relationship")
             .build();
-    public static final Relationship REL_FAILURE = new Relationship.Builder()
-            .name("failure")
+    public static final Relationship REL_ORIGINAL = new Relationship.Builder()
+            .name("original")
             .description("Files that could not be written to the output directory for some reason are transferred to this relationship")
             .build();
 
@@ -205,7 +210,7 @@ public class ShpWriter extends AbstractProcessor {
         // relationships
         final Set<Relationship> procRels = new HashSet<>();
         procRels.add(REL_SUCCESS);
-        procRels.add(REL_FAILURE);
+        procRels.add(REL_ORIGINAL);
         relationships = Collections.unmodifiableSet(procRels);
 
         // descriptors
@@ -244,119 +249,42 @@ public class ShpWriter extends AbstractProcessor {
 			session.read(flowFile, new InputStreamCallback() {
 				@Override
 				public void process(final InputStream in) {
-					try (final RecordReader reader = new AvroReaderWithEmbeddedSchema(in)) {
+					try {
+			
+						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						List<SimpleFeature> collection = createFeatureSourceFromNifiRecords(reader, CRS.parseWKT(srs));
-
-						createShapeFileFromGeoDataFlowfile(srcFile, (SimpleFeatureSource) collection);
-
-					} catch (final IOException | FactoryException e) {
-						throw new ProcessException("Could not parse incoming data: " + e.getLocalizedMessage(), e);
+						SimpleFeatureCollection collection = createSimpleFeatureCollectionFromNifiRecords(reader, CRS.parseWKT(srs));
+						createShapeFileFromGeoDataFlowfile(srcFile, collection);
+												
+					} catch (IOException | FactoryException e) {
+						e.printStackTrace();
 					}
-
 				}
 
 			});
 
 		} catch (Exception e) {
-
+			e.printStackTrace();
 		}
 		session.transfer(flowFile, REL_SUCCESS);
 	}
 
-    protected String stringPermissions(String perms, boolean directory) {
-        String permissions = "";
-        Matcher rwx = RWX_PATTERN.matcher(perms);
-        if (rwx.matches()) {
-            if (directory) {
-                // To read or write, directory access will be required
-                StringBuilder permBuilder = new StringBuilder();
-                permBuilder.append("$1");
-                permBuilder.append(rwx.group(1).equals("--") ? "$2" : "x");
-                permBuilder.append("$3");
-                permBuilder.append(rwx.group(3).equals("--") ? "$4" : "x");
-                permBuilder.append("$5");
-                permBuilder.append(rwx.group(5).equals("--") ? "$6" : "x");
-                permissions = rwx.replaceAll(permBuilder.toString());
-            } else {
-                permissions = perms;
-            }
-        } else if (NUM_PATTERN.matcher(perms).matches()) {
-            try {
-                int number = Integer.parseInt(perms, 8);
-                StringBuilder permBuilder = new StringBuilder();
-                if ((number & 0x100) > 0) {
-                    permBuilder.append('r');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x80) > 0) {
-                    permBuilder.append('w');
-                } else {
-                    permBuilder.append('-');
-                }
-                if (directory || (number & 0x40) > 0) {
-                    permBuilder.append('x');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x20) > 0) {
-                    permBuilder.append('r');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x10) > 0) {
-                    permBuilder.append('w');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x8) > 0) {
-                    permBuilder.append('x');
-                } else {
-                    if (directory && (number & 0x30) > 0) {
-                        // To read or write, directory access will be required
-                        permBuilder.append('x');
-                    } else {
-                        permBuilder.append('-');
-                    }
-                }
-                if ((number & 0x4) > 0) {
-                    permBuilder.append('r');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x2) > 0) {
-                    permBuilder.append('w');
-                } else {
-                    permBuilder.append('-');
-                }
-                if ((number & 0x1) > 0) {
-                    permBuilder.append('x');
-                } else {
-                    if (directory && (number & 0x6) > 0) {
-                        // To read or write, directory access will be required
-                        permBuilder.append('x');
-                    } else {
-                        permBuilder.append('-');
-                    }
-                }
-                permissions = permBuilder.toString();
-            } catch (NumberFormatException ignore) {
-            }
-        }
+	public void createShapeFileFromGeoDataFlowfile(File srcFile, SimpleFeatureCollection collection) {
 
-        return permissions;
-    }
-    
-	public void createShapeFileFromGeoDataFlowfile(File srcFile, SimpleFeatureSource featureSource) {
-
+		System.out.println(collection.getSchema());
+		
+		SimpleFeatureType schema = null;
+		if (collection.features().hasNext())
+			schema = collection.features().next().getFeatureType();
+		
 		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
 		Map<String, Serializable> params = new HashMap<>();
 		try {
 			params.put("url", srcFile.toURI().toURL());
 			params.put("create spatial index", Boolean.TRUE);
 			ShapefileDataStore newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
-			newDataStore.createSchema(featureSource.getSchema());
+			newDataStore.createSchema(schema);
+
 			/*
 			 * Write the features to the shapefile
 			 */
@@ -367,7 +295,6 @@ public class ShpWriter extends AbstractProcessor {
 
 			if (featureTarget instanceof SimpleFeatureStore) {
 				SimpleFeatureStore featureStore = (SimpleFeatureStore) featureTarget;
-				SimpleFeatureCollection collection = featureSource.getFeatures();
 
 				featureStore.setTransaction(transaction);
 				try {
@@ -404,8 +331,9 @@ public class ShpWriter extends AbstractProcessor {
 	    }
 	    return featureTypeBuilder.buildFeatureType();
 	}	
-	public List<SimpleFeature> createFeatureSourceFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
+	public SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
 
+		String geomKey = "the_geom";
         List<SimpleFeature> features = new ArrayList<>();
 
         Map<String, Class<?>> attributes = new HashMap<>();
@@ -462,23 +390,60 @@ public class ShpWriter extends AbstractProcessor {
 					obj = String.class;					
 				}
 				attributes.put(f.getFieldName(), obj);
+				if (f.getFieldName().contains(geomKey)) {
+					attributes.remove(geomKey);
+				}
 			}		
-			
-			final SimpleFeatureType TYPE = generateFeatureType("shpfile", crs, "the_geom", MultiLineString.class, attributes);
+			Class geometryClass = null;
+			if (avroReader.nextRecord() != null) {
+				Record r = avroReader.nextRecord();
+				String geovalue = r.getAsString(geomKey);
+				String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
+				switch (type) {
+				case "MULTILINESTRING" :
+					geometryClass = MultiLineString.class;
+					break;
+				case "LINESTRING" :
+					geometryClass = LineString.class;
+					break;					
+				case "MULTIPOLYGON" :
+					geometryClass = MultiLineString.class;
+					break;
+				case "POLYGON" :
+					geometryClass = Polygon.class;
+					break;	
+				case "MULTIPOINT" :
+					geometryClass = MultiPoint.class;
+					break;
+				case "POINT" :
+					geometryClass = Point.class;
+					break;				
+				case "GEOMETRYCOLLECTION" :
+					geometryClass = GeometryCollection.class;
+					break;					
+				default:
+					geometryClass = MultiLineString.class;					
+				}
+			}
+			@SuppressWarnings("unchecked")
+			final SimpleFeatureType TYPE = generateFeatureType("shpfile", crs, geomKey, geometryClass, attributes);
 	        GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
 	        SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(TYPE);
 			
+	        boolean bCreateSchema = false;
 			while ((record = avroReader.nextRecord()) != null) {
 				
 		        WKTReader reader = new WKTReader( geometryFactory );
 		        MultiLineString geo = (MultiLineString) reader.read(record.getAsString("the_geom"));
 		        featureBuilder.add(geo);
+		        featureBuilder.add(record.getValue(record.getSchema().getField(2)));
 			    featureBuilder.add(record.getValue(record.getSchema().getField(1)));
-			    featureBuilder.add(record.getValue(record.getSchema().getField(2)));
 			    SimpleFeature feature = featureBuilder.buildFeature(null);
 			    features.add(feature);
 			    
 			}
+			System.out.println(features);
+			return new ListFeatureCollection(TYPE, features);
 		} catch (IOException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -489,7 +454,6 @@ public class ShpWriter extends AbstractProcessor {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-        System.out.println(features);
-		return features;
+		return null;
 	}	
 }

@@ -18,9 +18,11 @@ package com.jdvn.setl.geos.processors.shapefile;
 
 import static org.junit.Assert.assertEquals;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -73,7 +75,7 @@ public class ShpWriterTest {
         }
     }
 
-    @Test
+    
     public void testCreateDirectory() throws IOException {
         final TestRunner runner = TestRunners.newTestRunner(new ShpWriter());
         String newDir = targetDir.getAbsolutePath()+"/new-folder";
@@ -116,14 +118,17 @@ public class ShpWriterTest {
             drugRecord.put("NAME", "Drug");
             drugRecord.put("PRIORITY", 1);
             writer.append(drugRecord);
+            writer.flush();
             
             final GenericRecord StoleRecord = new GenericData.Record(schema);
             StoleRecord.put("the_geom", "MULTILINESTRING ((961078.5650489785 1945008.1734879282, 961072.9743108985 1945022.0178549928))");
             StoleRecord.put("NAME", "Stole");
             StoleRecord.put("PRIORITY", 2);
             writer.append(StoleRecord);
+            writer.flush();
         }        
         source = baos.toByteArray();
+        final InputStream in = new ByteArrayInputStream(source);
         String wkt = "PROJCS[\"VN_2000_UTM_Zone_48N\", \r\n" + 
         		"  GEOGCS[\"GCS_VN-2000\", \r\n" + 
         		"    DATUM[\"D_Vietnam_2000\", \r\n" + 
@@ -148,11 +153,12 @@ public class ShpWriterTest {
         Map<String, String> attributes = new HashMap<>();
         attributes.put(GeoAttributes.CRS.key(), wkt);
         attributes.put(CoreAttributes.FILENAME.key(), "sample.shp");
-        runner.enqueue(source, attributes);
+        runner.enqueue(in, attributes);
         runner.run();
+        
         Path targetPath = Paths.get(TARGET_DIRECTORY + "/new-folder/sample.shp");
         byte[] content = Files.readAllBytes(targetPath);
-        assertEquals(source, content);
+        assertEquals(in, content);
     }
 
 }
