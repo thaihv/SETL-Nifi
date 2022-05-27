@@ -49,7 +49,10 @@ public final class DownloadableContent {
      * @return the content type
      */
     public String getType() {
-        return type;
+    	if (isGeoContent())
+    		return "application/avro+geowkt";
+    	else
+    		return type;
     }
     
     /**

@@ -268,6 +268,8 @@ public class ShpWriter extends AbstractProcessor {
 												
 					} catch (IOException | FactoryException e) {
 						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
+						session.transfer(flowFile, REL_FAILURE);
+						return;
 					}
 				}
 
@@ -282,6 +284,7 @@ public class ShpWriter extends AbstractProcessor {
 	}
 
 	public void createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
+		final ComponentLog logger = getLogger();
 		SimpleFeatureType schema = null;
 		if (collection.features().hasNext())
 			schema = collection.features().next().getFeatureType();
@@ -317,11 +320,11 @@ public class ShpWriter extends AbstractProcessor {
 					transaction.close();
 				}
 			} else {
-				System.out.println(typeName + " does not support read/write access");
+				logger.error(typeName + " does not support read/write access");
 			}
 
 		} catch (IOException e) {
-			e.printStackTrace();
+			logger.error("Could not create Shape File because {}", new Object[]{e});
 		} 
 	} 
 	
@@ -340,7 +343,7 @@ public class ShpWriter extends AbstractProcessor {
 	}	
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
-
+		final ComponentLog logger = getLogger();
 		String geomKey = "the_geom";
         List<SimpleFeature> features = new ArrayList<>();
         Map<String, Class<?>> attributes = new HashMap<>();
@@ -461,8 +464,7 @@ public class ShpWriter extends AbstractProcessor {
 			
 			return new ListFeatureCollection(TYPE, features);
 		} catch (IOException | MalformedRecordException | ParseException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			logger.error("Could not create SimpleFeatureCollection because {}", new Object[]{e});
 		} 
 		return null;
 	}	
