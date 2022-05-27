@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
+import java.nio.charset.Charset;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -49,6 +51,7 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.GeoAttributes;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -124,13 +127,6 @@ public class ShpWriter extends AbstractProcessor {
                     .build();
         }
     };
-//    public static final PropertyDescriptor RECORD_READER = new PropertyDescriptor.Builder()
-//            .name("record-reader")
-//            .displayName("Record Reader")
-//            .description("Specifies the Controller Service to use for reading incoming data")
-//            .identifiesControllerService(RecordReaderFactory.class)
-//            .required(true)
-//            .build();
     public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
             .name("Directory")
             .description("The directory to which files should be written. You may use expression language such as /aa/bb/${path}")
@@ -143,6 +139,14 @@ public class ShpWriter extends AbstractProcessor {
             .description("Specifies the maximum number of files that can exist in the output directory")
             .required(false)
             .addValidator(StandardValidators.INTEGER_VALIDATOR)
+            .build();
+    public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
+            .name("CharSet")
+            .description("The name of charset for attributes in target shapfiles")
+            .required(true)
+            .defaultValue("UTF-8")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
     public static final PropertyDescriptor CONFLICT_RESOLUTION = new PropertyDescriptor.Builder()
             .name("Conflict Resolution Strategy")
@@ -197,8 +201,8 @@ public class ShpWriter extends AbstractProcessor {
             .name("success")
             .description("Files that have been successfully written to the output directory are transferred to this relationship")
             .build();
-    public static final Relationship REL_ORIGINAL = new Relationship.Builder()
-            .name("original")
+    public static final Relationship REL_FAILURE = new Relationship.Builder()
+            .name("failure")
             .description("Files that could not be written to the output directory for some reason are transferred to this relationship")
             .build();
 
@@ -210,14 +214,14 @@ public class ShpWriter extends AbstractProcessor {
         // relationships
         final Set<Relationship> procRels = new HashSet<>();
         procRels.add(REL_SUCCESS);
-        procRels.add(REL_ORIGINAL);
+        procRels.add(REL_FAILURE);
         relationships = Collections.unmodifiableSet(procRels);
 
         // descriptors
         final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
-        //supDescriptors.add(RECORD_READER);
         supDescriptors.add(DIRECTORY);
         supDescriptors.add(CONFLICT_RESOLUTION);
+        supDescriptors.add(CHARSET);
         supDescriptors.add(CREATE_DIRS);
         supDescriptors.add(MAX_DESTINATION_FILES);
         supDescriptors.add(CHANGE_LAST_MODIFIED_TIME);
@@ -243,8 +247,13 @@ public class ShpWriter extends AbstractProcessor {
 		if (flowFile == null) {
 			return;
 		}
-		File srcFile = new File(
-				context.getProperty(DIRECTORY) + "/" + flowFile.getAttributes().get(CoreAttributes.FILENAME.key()));
+        final long importStart = System.nanoTime();
+        final long importNanos = System.nanoTime() - importStart;
+        final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+        final ComponentLog logger = getLogger();
+        
+		File srcFile = new File(context.getProperty(DIRECTORY) + "/" + flowFile.getAttributes().get(CoreAttributes.FILENAME.key()));
+		String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
 		try {
 			session.read(flowFile, new InputStreamCallback() {
 				@Override
@@ -254,41 +263,42 @@ public class ShpWriter extends AbstractProcessor {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
 						SimpleFeatureCollection collection = createSimpleFeatureCollectionFromNifiRecords(reader, CRS.parseWKT(srs));
-						createShapeFileFromGeoDataFlowfile(srcFile, collection);
+						createShapeFileFromGeoDataFlowfile(srcFile, charset, collection);
+		                logger.info("saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
 												
 					} catch (IOException | FactoryException e) {
-						e.printStackTrace();
+						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
 					}
 				}
 
 			});
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
+			session.transfer(flowFile, REL_FAILURE);
 		}
+		session.getProvenanceReporter().receive(flowFile, srcFile.toURI().toString(), importMillis);
 		session.transfer(flowFile, REL_SUCCESS);
 	}
 
-	public void createShapeFileFromGeoDataFlowfile(File srcFile, SimpleFeatureCollection collection) {
-
-		System.out.println(collection.getSchema());
-		
+	public void createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
 		SimpleFeatureType schema = null;
 		if (collection.features().hasNext())
 			schema = collection.features().next().getFeatureType();
 		
 		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
 		Map<String, Serializable> params = new HashMap<>();
+		Transaction transaction = null;
 		try {
 			params.put("url", srcFile.toURI().toURL());
 			params.put("create spatial index", Boolean.TRUE);
 			ShapefileDataStore newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
+			newDataStore.setCharset(Charset.forName(charsetName));
 			newDataStore.createSchema(schema);
-
 			/*
 			 * Write the features to the shapefile
 			 */
-			Transaction transaction = new DefaultTransaction("create");
+			transaction = new DefaultTransaction("create");
 
 			String typeName = newDataStore.getTypeNames()[0];
 			SimpleFeatureSource featureTarget = newDataStore.getFeatureSource(typeName);
@@ -306,16 +316,13 @@ public class ShpWriter extends AbstractProcessor {
 				} finally {
 					transaction.close();
 				}
-				System.exit(0); // success!
 			} else {
 				System.out.println(typeName + " does not support read/write access");
-				System.exit(1);
 			}
 
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
-		}
+		} 
 	} 
 	
 	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
@@ -331,15 +338,13 @@ public class ShpWriter extends AbstractProcessor {
 	    }
 	    return featureTypeBuilder.buildFeatureType();
 	}	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
 
 		String geomKey = "the_geom";
         List<SimpleFeature> features = new ArrayList<>();
-
         Map<String, Class<?>> attributes = new HashMap<>();
-        
         Record record;
-        System.out.println("Record info:");
         try {
         	List<RecordField> fields = avroReader.getSchema().getFields();
 			for (int i = 0; i < fields.size(); i ++) {
@@ -394,66 +399,71 @@ public class ShpWriter extends AbstractProcessor {
 					attributes.remove(geomKey);
 				}
 			}		
+
+	        boolean bCreatedSchema = false;
+	        SimpleFeatureBuilder featureBuilder = null;
+	        SimpleFeatureType TYPE = null;
 			Class geometryClass = null;
-			if (avroReader.nextRecord() != null) {
-				Record r = avroReader.nextRecord();
-				String geovalue = r.getAsString(geomKey);
-				String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
-				switch (type) {
-				case "MULTILINESTRING" :
-					geometryClass = MultiLineString.class;
-					break;
-				case "LINESTRING" :
-					geometryClass = LineString.class;
-					break;					
-				case "MULTIPOLYGON" :
-					geometryClass = MultiLineString.class;
-					break;
-				case "POLYGON" :
-					geometryClass = Polygon.class;
-					break;	
-				case "MULTIPOINT" :
-					geometryClass = MultiPoint.class;
-					break;
-				case "POINT" :
-					geometryClass = Point.class;
-					break;				
-				case "GEOMETRYCOLLECTION" :
-					geometryClass = GeometryCollection.class;
-					break;					
-				default:
-					geometryClass = MultiLineString.class;					
-				}
-			}
-			@SuppressWarnings("unchecked")
-			final SimpleFeatureType TYPE = generateFeatureType("shpfile", crs, geomKey, geometryClass, attributes);
-	        GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
-	        SimpleFeatureBuilder featureBuilder = new SimpleFeatureBuilder(TYPE);
-			
-	        boolean bCreateSchema = false;
 			while ((record = avroReader.nextRecord()) != null) {
-				
+				if (!bCreatedSchema) {
+					String geovalue = record.getAsString(geomKey);
+					String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
+					switch (type) {
+						case "MULTILINESTRING" :
+							geometryClass = MultiLineString.class;
+							break;
+						case "LINESTRING" :
+							geometryClass = LineString.class;
+							break;					
+						case "MULTIPOLYGON" :
+							geometryClass = MultiLineString.class;
+							break;
+						case "POLYGON" :
+							geometryClass = Polygon.class;
+							break;	
+						case "MULTIPOINT" :
+							geometryClass = MultiPoint.class;
+							break;
+						case "POINT" :
+							geometryClass = Point.class;
+							break;				
+						case "GEOMETRYCOLLECTION" :
+							geometryClass = GeometryCollection.class;
+							break;					
+						default:
+							geometryClass = MultiLineString.class;					
+					}	
+					
+					TYPE = generateFeatureType("shpfile", crs, geomKey, geometryClass, attributes);
+			        featureBuilder = new SimpleFeatureBuilder(TYPE);
+					bCreatedSchema = true;
+				}
+				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
 		        WKTReader reader = new WKTReader( geometryFactory );
-		        MultiLineString geo = (MultiLineString) reader.read(record.getAsString("the_geom"));
-		        featureBuilder.add(geo);
-		        featureBuilder.add(record.getValue(record.getSchema().getField(2)));
-			    featureBuilder.add(record.getValue(record.getSchema().getField(1)));
+		        // Add geometry
+		        Geometry geo = reader.read(record.getAsString(geomKey));
+		        // Add attrs
+				int size = record.getSchema().getFieldCount();
+				Object[] objs = new Object[size];
+		        for (int i = 0; i < size; i ++) {
+		        	String fName = record.getSchema().getFieldNames().get(i);
+		        	int index = featureBuilder.getFeatureType().indexOf(fName);
+		        	if (fName.contains(geomKey))
+		        		objs[index]= geo;
+		        	else
+		        		objs[index] = record.getValue(fName);
+		        	
+		        }
+		        featureBuilder.addAll(objs);
 			    SimpleFeature feature = featureBuilder.buildFeature(null);
 			    features.add(feature);
-			    
 			}
-			System.out.println(features);
+			
 			return new ListFeatureCollection(TYPE, features);
-		} catch (IOException e) {
+		} catch (IOException | MalformedRecordException | ParseException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		} catch (MalformedRecordException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (ParseException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		} 
 		return null;
 	}	
 }

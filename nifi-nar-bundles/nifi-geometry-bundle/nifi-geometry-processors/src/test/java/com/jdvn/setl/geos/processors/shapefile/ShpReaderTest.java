@@ -86,8 +86,6 @@ public class ShpReaderTest {
         final Path inPath = inFile.toPath();
         final File destFile = new File(directory, inFile.getName());
         final Path targetPath = destFile.toPath();
-        final Path absTargetPath = targetPath.toAbsolutePath();
-        final String absTargetPathStr = absTargetPath.getParent() + "/";
         Files.copy(inPath, targetPath);
 
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());

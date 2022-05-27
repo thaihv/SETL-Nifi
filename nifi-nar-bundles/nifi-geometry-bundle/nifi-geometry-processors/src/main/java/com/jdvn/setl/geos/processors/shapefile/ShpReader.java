@@ -501,47 +501,47 @@ public class ShpReader extends AbstractProcessor {
 				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
 				DataType dataType;
 				switch (fieldType) {
-				case "Long":
-					dataType = RecordFieldType.LONG.getDataType();
-					break;
-				case "String":
-					dataType = RecordFieldType.STRING.getDataType();
-					break;
-				case "Double":
-					dataType = RecordFieldType.DOUBLE.getDataType();
-					break;
-				case "Boolean":
-					dataType = RecordFieldType.BOOLEAN.getDataType();
-					break;
-				case "Byte":
-					dataType = RecordFieldType.BYTE.getDataType();
-					break;
-				case "Character":
-					dataType = RecordFieldType.CHAR.getDataType();
-					break;
-				case "Integer":
-					dataType = RecordFieldType.INT.getDataType();
-					break;
-				case "Float":
-					dataType = RecordFieldType.FLOAT.getDataType();
-					break;
-				case "Number":
-					dataType = RecordFieldType.BIGINT.getDataType();
-					break;
-				case "Date":
-					dataType = RecordFieldType.DATE.getDataType();
-					break;
-				case "Time":
-					dataType = RecordFieldType.TIME.getDataType();
-					break;
-				case "Timestamp":
-					dataType = RecordFieldType.TIMESTAMP.getDataType();
-					break;
-				case "Short":
-					dataType = RecordFieldType.SHORT.getDataType();
-					break;
-				default:
-					dataType = RecordFieldType.STRING.getDataType();
+					case "Long":
+						dataType = RecordFieldType.LONG.getDataType();
+						break;
+					case "String":
+						dataType = RecordFieldType.STRING.getDataType();
+						break;
+					case "Double":
+						dataType = RecordFieldType.DOUBLE.getDataType();
+						break;
+					case "Boolean":
+						dataType = RecordFieldType.BOOLEAN.getDataType();
+						break;
+					case "Byte":
+						dataType = RecordFieldType.BYTE.getDataType();
+						break;
+					case "Character":
+						dataType = RecordFieldType.CHAR.getDataType();
+						break;
+					case "Integer":
+						dataType = RecordFieldType.INT.getDataType();
+						break;
+					case "Float":
+						dataType = RecordFieldType.FLOAT.getDataType();
+						break;
+					case "Number":
+						dataType = RecordFieldType.BIGINT.getDataType();
+						break;
+					case "Date":
+						dataType = RecordFieldType.DATE.getDataType();
+						break;
+					case "Time":
+						dataType = RecordFieldType.TIME.getDataType();
+						break;
+					case "Timestamp":
+						dataType = RecordFieldType.TIMESTAMP.getDataType();
+						break;
+					case "Short":
+						dataType = RecordFieldType.SHORT.getDataType();
+						break;
+					default:
+						dataType = RecordFieldType.STRING.getDataType();
 				}
 				fields.add(new RecordField(fieldName, dataType));
 			}
@@ -558,6 +558,7 @@ public class ShpReader extends AbstractProcessor {
 				}
 				Record r = new MapRecord(recordSchema, fieldMap);
 				returnRs.add(r);
+				//System.out.println(r);
 			}
 			it.close();
 			dataStore.dispose();
