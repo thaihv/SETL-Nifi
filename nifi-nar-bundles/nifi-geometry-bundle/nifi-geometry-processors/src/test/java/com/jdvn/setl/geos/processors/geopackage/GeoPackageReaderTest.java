@@ -16,6 +16,8 @@
  */
 package com.jdvn.setl.geos.processors.geopackage;
 
+import static org.junit.Assert.assertTrue;
+
 import java.io.File;
 import java.io.IOException;
 
@@ -23,6 +25,7 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 
 public class GeoPackageReaderTest {
@@ -40,8 +43,13 @@ public class GeoPackageReaderTest {
         runner.run();
     }
     @Test
-    public void testProcessor() {
+    public void testCRSFromTable() {
+    	
+        final File inFile = new File("src/test/resources/geopackage/hanoi.gpkg");
 
+        final GeoPackageReader toTest = new GeoPackageReader();
+        CoordinateReferenceSystem crs = toTest.getCRSFromGeopackageTable(inFile, "communes");
+        assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
     }
 
 }

@@ -60,7 +60,9 @@ import org.geotools.geopkg.GeoPkgDataStoreFactory;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.parameter.Parameter;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.parameter.GeneralParameterValue;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 @Tags({ "example" })
 @CapabilityDescription("Provide a description")
@@ -167,8 +169,7 @@ public class GeoPackageReader extends AbstractProcessor {
 				String tableName = tileEntry.getTableName();
 				System.out.println(tableName);
 
-				org.geotools.geopkg.mosaic.GeoPackageReader reader = new org.geotools.geopkg.mosaic.GeoPackageReader(
-						file, null);
+				org.geotools.geopkg.mosaic.GeoPackageReader reader = new org.geotools.geopkg.mosaic.GeoPackageReader(file, null);
 				System.out.println(Arrays.asList(reader.getGridCoverageNames()));
 
 				GridCoverage2D gridCoverage = reader.read(tableName, parameters);
@@ -183,4 +184,22 @@ public class GeoPackageReader extends AbstractProcessor {
 
 	}
 
+	public CoordinateReferenceSystem getCRSFromGeopackageTable(final File geopkg, String tableName) {
+		HashMap<String, Object> map = new HashMap<>();
+		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
+		map.put(GeoPkgDataStoreFactory.DATABASE.key, geopkg);
+
+		CoordinateReferenceSystem cRS = null;
+		try {
+			DataStore store = DataStoreFinder.getDataStore(map);
+			SimpleFeatureCollection features = store.getFeatureSource(tableName).getFeatures();
+			SimpleFeatureType schema = features.getSchema();
+			cRS = schema.getCoordinateReferenceSystem();
+			store.dispose();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		return cRS;
+	}
 }
