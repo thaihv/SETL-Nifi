@@ -16,10 +16,14 @@
  */
 package com.jdvn.setl.geos.processors.geopackage;
 
+import java.awt.Rectangle;
+import java.awt.image.RenderedImage;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -42,32 +46,27 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
+import org.geotools.coverage.grid.GridCoverage2D;
+import org.geotools.coverage.grid.GridEnvelope2D;
+import org.geotools.coverage.grid.GridGeometry2D;
+import org.geotools.coverage.grid.io.AbstractGridFormat;
+import org.geotools.data.DataStore;
+import org.geotools.data.DataStoreFinder;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.geometry.jts.ReferencedEnvelope;
+import org.geotools.geopkg.GeoPackage;
+import org.geotools.geopkg.GeoPkgDataStoreFactory;
+import org.geotools.geopkg.TileEntry;
+import org.geotools.parameter.Parameter;
+import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.parameter.GeneralParameterValue;
 
-import mil.nga.geopackage.GeoPackage;
-import mil.nga.geopackage.GeoPackageManager;
-import mil.nga.geopackage.contents.ContentsDao;
-import mil.nga.geopackage.extension.ExtensionsDao;
-import mil.nga.geopackage.extension.metadata.MetadataDao;
-import mil.nga.geopackage.extension.metadata.MetadataExtension;
-import mil.nga.geopackage.extension.metadata.reference.MetadataReferenceDao;
-import mil.nga.geopackage.extension.schema.SchemaExtension;
-import mil.nga.geopackage.extension.schema.columns.DataColumnsDao;
-import mil.nga.geopackage.extension.schema.constraints.DataColumnConstraintsDao;
-import mil.nga.geopackage.features.columns.GeometryColumnsDao;
-import mil.nga.geopackage.features.user.FeatureDao;
-import mil.nga.geopackage.features.user.FeatureResultSet;
-import mil.nga.geopackage.geom.GeoPackageGeometryData;
-import mil.nga.geopackage.srs.SpatialReferenceSystemDao;
-import mil.nga.geopackage.tiles.matrix.TileMatrixDao;
-import mil.nga.geopackage.tiles.matrixset.TileMatrixSetDao;
-import mil.nga.sf.Geometry;
-import mil.nga.sf.wkt.GeometryWriter;
-
-@Tags({"example"})
+@Tags({ "example" })
 @CapabilityDescription("Provide a description")
 @SeeAlso({})
-@ReadsAttributes({@ReadsAttribute(attribute="", description="")})
-@WritesAttributes({@WritesAttribute(attribute="", description="")})
+@ReadsAttributes({ @ReadsAttribute(attribute = "", description = "") })
+@WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 public class GeoPackageReader extends AbstractProcessor {
 
 	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("File to Fetch")
@@ -75,7 +74,7 @@ public class GeoPackageReader extends AbstractProcessor {
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.defaultValue("${absolute.path}/${filename}").required(true).build();
-	
+
 	static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
 			.description("Shape file is routed to success").build();
 	static final Relationship REL_NOT_FOUND = new Relationship.Builder().name("not.found").description(
@@ -88,86 +87,100 @@ public class GeoPackageReader extends AbstractProcessor {
 			"Any FlowFile that could not be fetched from the file system for any reason other than insufficient permissions or the file not existing will be transferred to this Relationship.")
 			.build();
 
-    private List<PropertyDescriptor> descriptors;
+	private List<PropertyDescriptor> descriptors;
 
-    private Set<Relationship> relationships;
+	private Set<Relationship> relationships;
 
-    @Override
-    protected void init(final ProcessorInitializationContext context) {
-        descriptors = new ArrayList<>();
-        descriptors.add(FILENAME);
-        descriptors = Collections.unmodifiableList(descriptors);
+	@Override
+	protected void init(final ProcessorInitializationContext context) {
+		descriptors = new ArrayList<>();
+		descriptors.add(FILENAME);
+		descriptors = Collections.unmodifiableList(descriptors);
 
-        relationships = new HashSet<>();
+		relationships = new HashSet<>();
 		relationships.add(REL_SUCCESS);
 		relationships.add(REL_NOT_FOUND);
 		relationships.add(REL_PERMISSION_DENIED);
 		relationships.add(REL_FAILURE);
-        relationships = Collections.unmodifiableSet(relationships);
-    }
+		relationships = Collections.unmodifiableSet(relationships);
+	}
 
-    @Override
-    public Set<Relationship> getRelationships() {
-        return this.relationships;
-    }
+	@Override
+	public Set<Relationship> getRelationships() {
+		return this.relationships;
+	}
 
-    @Override
-    public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
-        return descriptors;
-    }
+	@Override
+	public final List<PropertyDescriptor> getSupportedPropertyDescriptors() {
+		return descriptors;
+	}
 
-    @OnScheduled
-    public void onScheduled(final ProcessContext context) {
+	@OnScheduled
+	public void onScheduled(final ProcessContext context) {
 
-    }
+	}
 
-    @Override
-    public void onTrigger(final ProcessContext context, final ProcessSession session) {
+	@Override
+	public void onTrigger(final ProcessContext context, final ProcessSession session) {
 		FlowFile flowFile = session.get();
 		// TODO implement
-        final StopWatch stopWatch = new StopWatch(true);
-        final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions(flowFile).getValue();
-        final File file = new File(filename);
-     // Open a GeoPackage
-        GeoPackage geoPackage = GeoPackageManager.open(file);
+		final StopWatch stopWatch = new StopWatch(true);
+		final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions(flowFile).getValue();
+		final File file = new File(filename);
 
-        // GeoPackage Table DAOs
-        SpatialReferenceSystemDao srsDao = geoPackage.getSpatialReferenceSystemDao();
-        ContentsDao contentsDao = geoPackage.getContentsDao();
-        GeometryColumnsDao geomColumnsDao = geoPackage.getGeometryColumnsDao();
-        TileMatrixSetDao tileMatrixSetDao = geoPackage.getTileMatrixSetDao();
-        TileMatrixDao tileMatrixDao = geoPackage.getTileMatrixDao();
-        SchemaExtension schemaExtension = new SchemaExtension(geoPackage);
-        DataColumnsDao dataColumnsDao = schemaExtension.getDataColumnsDao();
-        DataColumnConstraintsDao dataColumnConstraintsDao = schemaExtension.getDataColumnConstraintsDao();
-        MetadataExtension metadataExtension = new MetadataExtension(geoPackage);
-        MetadataDao metadataDao = metadataExtension.getMetadataDao();
-        MetadataReferenceDao metadataReferenceDao = metadataExtension.getMetadataReferenceDao();
-        ExtensionsDao extensionsDao = geoPackage.getExtensionsDao();
+		HashMap<String, Object> map = new HashMap<>();
+		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
+		map.put(GeoPkgDataStoreFactory.DATABASE.key, filename);
+		try {
+			DataStore store = DataStoreFinder.getDataStore(map);
+			String[] names = store.getTypeNames();
+			for (String name : names) {
+				System.out.println(name);
+				SimpleFeatureCollection features = store.getFeatureSource(name).getFeatures();
+				try (SimpleFeatureIterator itr = features.features()) {
 
-        // Feature and tile tables
-        List<String> features = geoPackage.getFeatureTables();
-        List<String> tiles = geoPackage.getTileTables();
-
-        // Query Features
-        String featureTable = features.get(0);
-        FeatureDao featureDao = geoPackage.getFeatureDao(featureTable);
-        FeatureResultSet featureResultSet = featureDao.queryForAll();
-        
-        for (int i=0; i < featureResultSet.getCount(); i++ ) {
-        	GeoPackageGeometryData geometryData = featureResultSet.getRow().getGeometry();
-            if (geometryData != null && !geometryData.isEmpty()) {
-                Geometry geometry = geometryData.getGeometry();
-                try {
-					System.out.print(GeometryWriter.writeGeometry(geometry));
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
+					int count = 0;
+					while (itr.hasNext() && count < 10) {
+						SimpleFeature f = itr.next();
+						System.out.println(f);
+						count++;
+					}
 				}
+			}
+			store.dispose();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 
-              }
-        }
+		GeoPackage geoPackage;
+		try {
+			geoPackage = new GeoPackage(file);
+			GeneralParameterValue[] parameters = new GeneralParameterValue[1];
+			for (TileEntry tileEntry : geoPackage.tiles()) {
 
-        
-    }
+				ReferencedEnvelope referencedEnvelope = tileEntry.getBounds();
+				Rectangle rectangle = new Rectangle((int) referencedEnvelope.getWidth(),
+						(int) referencedEnvelope.getHeight());
+				GridEnvelope2D gridEnvelope = new GridEnvelope2D(rectangle);
+				GridGeometry2D gridGeometry = new GridGeometry2D(gridEnvelope, referencedEnvelope);
+				parameters[0] = new Parameter<GridGeometry2D>(AbstractGridFormat.READ_GRIDGEOMETRY2D, gridGeometry);
+				String tableName = tileEntry.getTableName();
+				System.out.println(tableName);
+
+				org.geotools.geopkg.mosaic.GeoPackageReader reader = new org.geotools.geopkg.mosaic.GeoPackageReader(
+						file, null);
+				System.out.println(Arrays.asList(reader.getGridCoverageNames()));
+
+				GridCoverage2D gridCoverage = reader.read(tableName, parameters);
+				RenderedImage img = gridCoverage.getRenderedImage();
+				System.out.println(img);
+				reader.dispose();
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+
+	}
+
 }

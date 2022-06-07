@@ -33,7 +33,7 @@ public class GeoPackageReaderTest {
     }
     @Test
     public void testFilePickedUp() throws IOException {
-        final File inFile = new File("src/test/resources/geopackage/Hanoi.gpkg");
+        final File inFile = new File("src/test/resources/geopackage/hanoi.gpkg");
 
         final TestRunner runner = TestRunners.newTestRunner(new GeoPackageReader());
         runner.setProperty(GeoPackageReader.FILENAME, inFile.getAbsolutePath());
