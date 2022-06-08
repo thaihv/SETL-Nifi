@@ -20,9 +20,13 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
 
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.geotools.data.DataStore;
+import org.geotools.data.DataStoreFinder;
+import org.geotools.geopkg.GeoPkgDataStoreFactory;
 import org.junit.Before;
 import org.junit.Test;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -36,20 +40,35 @@ public class GeoPackageReaderTest {
     }
     @Test
     public void testFilePickedUp() throws IOException {
-        final File inFile = new File("src/test/resources/geopackage/hanoi.gpkg");
+        final File inFile = new File("src/test/resources/geopackage/utilities.gpkg");
 
         final TestRunner runner = TestRunners.newTestRunner(new GeoPackageReader());
         runner.setProperty(GeoPackageReader.FILENAME, inFile.getAbsolutePath());
         runner.run();
     }
     @Test
-    public void testCRSFromTable() {
+    public void testCRSFromFeatureTable() {
     	
-        final File inFile = new File("src/test/resources/geopackage/hanoi.gpkg");
+        final String inFile = "src/test/resources/geopackage/hanoi.gpkg";
 
         final GeoPackageReader toTest = new GeoPackageReader();
-        CoordinateReferenceSystem crs = toTest.getCRSFromGeopackageTable(inFile, "communes");
-        assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
+        
+		HashMap<String, Object> map = new HashMap<>();
+		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
+		map.put(GeoPkgDataStoreFactory.DATABASE.key, inFile);
+		DataStore store = null;
+		try {
+			store = DataStoreFinder.getDataStore(map);
+	        CoordinateReferenceSystem crs = toTest.getCRSFromFeatureTable(store, "communes");
+	        assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (store != null)
+				store.dispose();
+		}
+		
+
     }
 
 }

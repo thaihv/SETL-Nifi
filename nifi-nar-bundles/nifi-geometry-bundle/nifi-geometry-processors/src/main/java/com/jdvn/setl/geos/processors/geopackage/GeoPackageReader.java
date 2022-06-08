@@ -16,18 +16,26 @@
  */
 package com.jdvn.setl.geos.processors.geopackage;
 
-import java.awt.Rectangle;
-import java.awt.image.RenderedImage;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
+import javax.imageio.ImageIO;
+
+import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
+import org.apache.avro.Schema.Type;
+import org.apache.avro.file.CodecFactory;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -36,32 +44,43 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
+import org.apache.nifi.avro.AvroTypeUtil;
+import org.apache.nifi.avro.WriteAvroResultWithSchema;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
+import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.serialization.RecordSetWriter;
+import org.apache.nifi.serialization.SimpleRecordSchema;
+import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.ListRecordSet;
+import org.apache.nifi.serialization.record.MapRecord;
+import org.apache.nifi.serialization.record.Record;
+import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
-import org.geotools.coverage.grid.GridCoverage2D;
-import org.geotools.coverage.grid.GridEnvelope2D;
-import org.geotools.coverage.grid.GridGeometry2D;
-import org.geotools.coverage.grid.io.AbstractGridFormat;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.geometry.jts.ReferencedEnvelope;
+import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.GeoPkgDataStoreFactory;
+import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
-import org.geotools.parameter.Parameter;
+import org.geotools.geopkg.TileReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
-import org.opengis.parameter.GeneralParameterValue;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 @Tags({ "example" })
@@ -129,77 +148,210 @@ public class GeoPackageReader extends AbstractProcessor {
 		final StopWatch stopWatch = new StopWatch(true);
 		final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions(flowFile).getValue();
 		final File file = new File(filename);
-
+		final ComponentLog logger = getLogger();
+		
+		
 		HashMap<String, Object> map = new HashMap<>();
 		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
 		map.put(GeoPkgDataStoreFactory.DATABASE.key, filename);
+		
 		try {
+			// Process feature tables
 			DataStore store = DataStoreFinder.getDataStore(map);
 			String[] names = store.getTypeNames();
 			for (String name : names) {
-				System.out.println(name);
-				SimpleFeatureCollection features = store.getFeatureSource(name).getFeatures();
-				try (SimpleFeatureIterator itr = features.features()) {
+                final List<Record> records = getRecordsFromFeatureTable(store,name);
+                
+                if (records.isEmpty() == false) {
+                	
+                    final long importStart = System.nanoTime();
+                    FlowFile transformed = session.create(flowFile);
+                    
+    				CoordinateReferenceSystem myCrs = getCRSFromFeatureTable(store,name);
+    				
+                    RecordSchema recordSchema = records.get(0).getSchema();                
+                    transformed = session.write(transformed, new OutputStreamCallback() {
+                        @Override
+                        public void process(final OutputStream out) throws IOException {
+                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+                			@SuppressWarnings("resource")  
+                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
+                			writer.write(new ListRecordSet(recordSchema, records));
+                        }
+                    });                
 
-					int count = 0;
-					while (itr.hasNext() && count < 10) {
-						SimpleFeature f = itr.next();
-						System.out.println(f);
-						count++;
-					}
-				}
+                    final long importNanos = System.nanoTime() - importStart;
+                    final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+                    
+                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                    session.transfer(transformed, REL_SUCCESS);   
+
+                    logger.info("Features added {} to flow", new Object[]{transformed});
+                } 
 			}
 			store.dispose();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+			
+			// Process Tiles tables
+			final List<Record> records = getTilesFromTable(file);
+			if (records.isEmpty() == false) {
+                final long importStart = System.nanoTime();
+                FlowFile transformed = session.create(flowFile);
+                
+				System.out.println(records);
+				
+                final long importNanos = System.nanoTime() - importStart;
+                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+                
+                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+                //transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                session.transfer(transformed, REL_SUCCESS);   
 
-		GeoPackage geoPackage;
-		try {
-			geoPackage = new GeoPackage(file);
-			GeneralParameterValue[] parameters = new GeneralParameterValue[1];
-			for (TileEntry tileEntry : geoPackage.tiles()) {
-
-				ReferencedEnvelope referencedEnvelope = tileEntry.getBounds();
-				Rectangle rectangle = new Rectangle((int) referencedEnvelope.getWidth(),
-						(int) referencedEnvelope.getHeight());
-				GridEnvelope2D gridEnvelope = new GridEnvelope2D(rectangle);
-				GridGeometry2D gridGeometry = new GridGeometry2D(gridEnvelope, referencedEnvelope);
-				parameters[0] = new Parameter<GridGeometry2D>(AbstractGridFormat.READ_GRIDGEOMETRY2D, gridGeometry);
-				String tableName = tileEntry.getTableName();
-				System.out.println(tableName);
-
-				org.geotools.geopkg.mosaic.GeoPackageReader reader = new org.geotools.geopkg.mosaic.GeoPackageReader(file, null);
-				System.out.println(Arrays.asList(reader.getGridCoverageNames()));
-
-				GridCoverage2D gridCoverage = reader.read(tableName, parameters);
-				RenderedImage img = gridCoverage.getRenderedImage();
-				System.out.println(img);
-				reader.dispose();
+                logger.info("Tiles added {} to flow", new Object[]{transformed});
 			}
+			
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		
 
 	}
 
-	public CoordinateReferenceSystem getCRSFromGeopackageTable(final File geopkg, String tableName) {
-		HashMap<String, Object> map = new HashMap<>();
-		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
-		map.put(GeoPkgDataStoreFactory.DATABASE.key, geopkg);
+	public ArrayList<Record> getTilesFromTable(final File geopkg) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
 
-		CoordinateReferenceSystem cRS = null;
+		final List<Field> tileFields = new ArrayList<>();
+		tileFields.add(new Field("zoom", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
+		final Schema schema = Schema.createRecord("Buildings", null, null, false);
+
+		schema.setFields(tileFields);
+
 		try {
-			DataStore store = DataStoreFinder.getDataStore(map);
-			SimpleFeatureCollection features = store.getFeatureSource(tableName).getFeatures();
-			SimpleFeatureType schema = features.getSchema();
-			cRS = schema.getCoordinateReferenceSystem();
-			store.dispose();
+			GeoPackage geoPackage = new GeoPackage(geopkg);
+			for (TileEntry tileEntry : geoPackage.tiles()) {
+				try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+					while (r.hasNext()) {
+						Tile tile = r.next();
+
+						Map<String, Object> fieldMap = new HashMap<String, Object>();
+						fieldMap.put("zoom", tile.getZoom());
+						fieldMap.put("column", tile.getColumn());
+						fieldMap.put("row", tile.getRow());
+						fieldMap.put("data", tile.getData());
+
+						Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
+						returnRs.add(tileRecord);						
+					}
+					r.close();
+				}
+			}
+			geoPackage.close();
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
+		return returnRs;
+	}
+	private BufferedImage createImageFromBytes(byte[] imageData) {
+	    ByteArrayInputStream bais = new ByteArrayInputStream(imageData);
+	    try {
+	        return ImageIO.read(bais);
+	    } catch (IOException e) {
+	        throw new RuntimeException(e);
+	    }
+	}	
+	public ArrayList<Record> getRecordsFromFeatureTable(DataStore store, String tableName) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		try {
+			SimpleFeatureSource featureSource = store.getFeatureSource(tableName);
+			SimpleFeatureType schema = featureSource.getSchema();
+			final List<RecordField> fields = new ArrayList<>();
+			for (int i = 0; i < schema.getAttributeCount(); i++) {
+				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+				DataType dataType;
+				switch (fieldType) {
+				case "Long":
+					dataType = RecordFieldType.LONG.getDataType();
+					break;
+				case "String":
+					dataType = RecordFieldType.STRING.getDataType();
+					break;
+				case "Double":
+					dataType = RecordFieldType.DOUBLE.getDataType();
+					break;
+				case "Boolean":
+					dataType = RecordFieldType.BOOLEAN.getDataType();
+					break;
+				case "Byte":
+					dataType = RecordFieldType.BYTE.getDataType();
+					break;
+				case "Character":
+					dataType = RecordFieldType.CHAR.getDataType();
+					break;
+				case "Integer":
+					dataType = RecordFieldType.INT.getDataType();
+					break;
+				case "Float":
+					dataType = RecordFieldType.FLOAT.getDataType();
+					break;
+				case "Number":
+					dataType = RecordFieldType.BIGINT.getDataType();
+					break;
+				case "Date":
+					dataType = RecordFieldType.DATE.getDataType();
+					break;
+				case "Time":
+					dataType = RecordFieldType.TIME.getDataType();
+					break;
+				case "Timestamp":
+					dataType = RecordFieldType.TIMESTAMP.getDataType();
+					break;
+				case "Short":
+					dataType = RecordFieldType.SHORT.getDataType();
+					break;
+				default:
+					dataType = RecordFieldType.STRING.getDataType();
+				}
+				fields.add(new RecordField(fieldName, dataType));
+			}
+			SimpleFeatureCollection features = featureSource.getFeatures();
+			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
+			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
+			while (it.hasNext()) {
+				SimpleFeature feature = it.next();
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				for (int i = 0; i < feature.getAttributeCount(); i++) {
+					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
+					Object value = feature.getAttribute(i);
+					fieldMap.put(key, value);
+				}
+				Record r = new MapRecord(recordSchema, fieldMap);
+				returnRs.add(r);
+				System.out.println(r);
+			}
+			it.close();
+			return returnRs;
 
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+
+		}
+		return returnRs;
+	}
+	public CoordinateReferenceSystem getCRSFromFeatureTable(DataStore store, String tableName) {
+		CoordinateReferenceSystem cRS = null;
+		try {
+			SimpleFeatureCollection features = store.getFeatureSource(tableName).getFeatures();
+			SimpleFeatureType schema = features.getSchema();
+			cRS = schema.getCoordinateReferenceSystem();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 		return cRS;
 	}
 }
