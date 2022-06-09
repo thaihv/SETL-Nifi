@@ -26,6 +26,7 @@ import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
+import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.GeoPkgDataStoreFactory;
 import org.junit.Before;
 import org.junit.Test;
@@ -39,7 +40,7 @@ public class GeoPackageReaderTest {
         TestRunners.newTestRunner(GeoPackageReader.class);
     }
     @Test
-    public void testFilePickedUp() throws IOException {
+    public void testGeopackageFilePickedUp() throws IOException {
         final File inFile = new File("src/test/resources/geopackage/utilities.gpkg");
 
         final TestRunner runner = TestRunners.newTestRunner(new GeoPackageReader());
@@ -70,5 +71,24 @@ public class GeoPackageReaderTest {
 		
 
     }
+    @Test
+    public void testCRSFromTileTable() {
+    	
+        final String inFile = "src/test/resources/geopackage/hanoi.gpkg";
+        final File geoFile = new File(inFile);
+        
+        final GeoPackageReader toTest = new GeoPackageReader();
+        
+        GeoPackage geoPackage;
+		try {
+			geoPackage = new GeoPackage(geoFile);
+			CoordinateReferenceSystem crs = toTest.getCRSFromTilesTable(new File(inFile), geoPackage.tiles().get(0));
+			assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+        
+		
 
+    }
 }

@@ -348,6 +348,7 @@ public class ShpReader extends AbstractProcessor {
                 session.remove(flowFile);
                 session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
                 transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                 transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                 session.transfer(transformed, REL_SUCCESS);   
 

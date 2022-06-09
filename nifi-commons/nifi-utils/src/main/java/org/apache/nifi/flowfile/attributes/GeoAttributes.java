@@ -21,8 +21,12 @@ public enum GeoAttributes implements FlowFileAttributeKey {
     /**
      * The information in WKT format of coordinate reference system of the FlowFile if it is geo-spatial data 
      */
-    CRS("crs");
-
+    CRS("crs"),
+    /**
+     * The data type of geospatial: Tiles or Features 
+     */
+    GEO_TYPE("geo.type");
+    
     private final String key;
 
     private GeoAttributes(final String key) {

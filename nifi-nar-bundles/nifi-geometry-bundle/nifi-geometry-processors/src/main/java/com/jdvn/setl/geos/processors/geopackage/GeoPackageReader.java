@@ -21,6 +21,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -68,7 +69,6 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
-import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.simple.SimpleFeatureCollection;
@@ -83,29 +83,23 @@ import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
-@Tags({ "example" })
-@CapabilityDescription("Provide a description")
+@Tags({ "geopackage", "tiles", "raster", "vector","feature", "geospatial" })
+@CapabilityDescription("Read data from a OGC geopackage file and encode geospatial data avro fomart with WKT for features.")
 @SeeAlso({})
 @ReadsAttributes({ @ReadsAttribute(attribute = "", description = "") })
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 public class GeoPackageReader extends AbstractProcessor {
 
-	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("File to Fetch")
+	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("Geopackage File to Fetch")
 			.description("The fully-qualified filename of the file to fetch from the file system")
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.defaultValue("${absolute.path}/${filename}").required(true).build();
 
 	static final Relationship REL_SUCCESS = new Relationship.Builder().name("success")
-			.description("Shape file is routed to success").build();
-	static final Relationship REL_NOT_FOUND = new Relationship.Builder().name("not.found").description(
-			"Any FlowFile that could not be fetched from the file system because the file could not be found will be transferred to this Relationship.")
-			.build();
-	static final Relationship REL_PERMISSION_DENIED = new Relationship.Builder().name("permission.denied").description(
-			"Any FlowFile that could not be fetched from the file system due to the user running NiFi not having sufficient permissions will be transferred to this Relationship.")
-			.build();
+			.description("Geopackage data is routed to success").build();
 	static final Relationship REL_FAILURE = new Relationship.Builder().name("failure").description(
-			"Any FlowFile that could not be fetched from the file system for any reason other than insufficient permissions or the file not existing will be transferred to this Relationship.")
+			"Any FlowFile that could not be fetched from the file system for any reason will be transferred to this Relationship.")
 			.build();
 
 	private List<PropertyDescriptor> descriptors;
@@ -120,8 +114,6 @@ public class GeoPackageReader extends AbstractProcessor {
 
 		relationships = new HashSet<>();
 		relationships.add(REL_SUCCESS);
-		relationships.add(REL_NOT_FOUND);
-		relationships.add(REL_PERMISSION_DENIED);
 		relationships.add(REL_FAILURE);
 		relationships = Collections.unmodifiableSet(relationships);
 	}
@@ -143,14 +135,16 @@ public class GeoPackageReader extends AbstractProcessor {
 
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
-		FlowFile flowFile = session.get();
-		// TODO implement
-		final StopWatch stopWatch = new StopWatch(true);
-		final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions(flowFile).getValue();
+
+		final String filename = context.getProperty(FILENAME).evaluateAttributeExpressions().getValue();
 		final File file = new File(filename);
+		final Path filePath = file.toPath();
 		final ComponentLog logger = getLogger();
+		FlowFile flowFile = null;
 		
-		
+        flowFile = session.create();
+        flowFile = session.importFrom(filePath, true, flowFile);
+
 		HashMap<String, Object> map = new HashMap<>();
 		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
 		map.put(GeoPkgDataStoreFactory.DATABASE.key, filename);
@@ -165,10 +159,9 @@ public class GeoPackageReader extends AbstractProcessor {
                 if (records.isEmpty() == false) {
                 	
                     final long importStart = System.nanoTime();
-                    FlowFile transformed = session.create(flowFile);
                     
+                    FlowFile transformed = session.create(flowFile);
     				CoordinateReferenceSystem myCrs = getCRSFromFeatureTable(store,name);
-    				
                     RecordSchema recordSchema = records.get(0).getSchema();                
                     transformed = session.write(transformed, new OutputStreamCallback() {
                         @Override
@@ -180,11 +173,13 @@ public class GeoPackageReader extends AbstractProcessor {
                         }
                     });                
 
+                    
                     final long importNanos = System.nanoTime() - importStart;
                     final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
                     
                     session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
 
@@ -194,31 +189,55 @@ public class GeoPackageReader extends AbstractProcessor {
 			store.dispose();
 			
 			// Process Tiles tables
-			final List<Record> records = getTilesFromTable(file);
-			if (records.isEmpty() == false) {
-                final long importStart = System.nanoTime();
-                FlowFile transformed = session.create(flowFile);
-                
-				System.out.println(records);
+			GeoPackage geoPackage = new GeoPackage(file);
+			for (int i = 0; i < geoPackage.tiles().size(); i++) {
+				final List<Record> records = getTilesFromTable(geoPackage, geoPackage.tiles().get(i));
 				
-                final long importNanos = System.nanoTime() - importStart;
-                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-                
-                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-                //transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-                session.transfer(transformed, REL_SUCCESS);   
+				if (records.isEmpty() == false) {
+					
+	                final long importStart = System.nanoTime();
+	                
+	                FlowFile transformed = session.create(flowFile);
+	                CoordinateReferenceSystem myCrs = getCRSFromTilesTable(file,geoPackage.tiles().get(i));
+					System.out.println(records);
+                    RecordSchema recordSchema = records.get(0).getSchema();                
+                    transformed = session.write(transformed, new OutputStreamCallback() {
+                        @Override
+                        public void process(final OutputStream out) throws IOException {
+                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+                			@SuppressWarnings("resource")  
+                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
+                			writer.write(new ListRecordSet(recordSchema, records));
+                        }
+                    });                
+					
+					
+	                final long importNanos = System.nanoTime() - importStart;
+	                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+	                
+	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+binary");
+	                session.transfer(transformed, REL_SUCCESS);   
 
-                logger.info("Tiles added {} to flow", new Object[]{transformed});
+	                logger.info("Tiles added {} to flow", new Object[]{transformed});
+				}
 			}
+			geoPackage.close();
 			
 		} catch (IOException e) {
-			e.printStackTrace();
+			
+            logger.error("Failed to retrieve files due to {}", e);
+            // anything that we've not already processed needs to be put back on the queue
+            if (flowFile != null) {
+                session.remove(flowFile);
+            }
 		}
-
+		session.remove(flowFile);
 	}
 
-	public ArrayList<Record> getTilesFromTable(final File geopkg) {
+	public ArrayList<Record> getTilesFromTable(final GeoPackage geoPackage, TileEntry tileEntry) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 
 		final List<Field> tileFields = new ArrayList<>();
@@ -226,31 +245,26 @@ public class GeoPackageReader extends AbstractProcessor {
 		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
 		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
 		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
-		final Schema schema = Schema.createRecord("Buildings", null, null, false);
+		final Schema schema = Schema.createRecord("Tiles", null, null, false);
 
 		schema.setFields(tileFields);
 
-		try {
-			GeoPackage geoPackage = new GeoPackage(geopkg);
-			for (TileEntry tileEntry : geoPackage.tiles()) {
-				try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
-					while (r.hasNext()) {
-						Tile tile = r.next();
+		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+			while (r.hasNext()) {
+				Tile tile = r.next();
 
-						Map<String, Object> fieldMap = new HashMap<String, Object>();
-						fieldMap.put("zoom", tile.getZoom());
-						fieldMap.put("column", tile.getColumn());
-						fieldMap.put("row", tile.getRow());
-						fieldMap.put("data", tile.getData());
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				fieldMap.put("zoom", tile.getZoom());
+				fieldMap.put("column", tile.getColumn());
+				fieldMap.put("row", tile.getRow());
+				fieldMap.put("data", tile.getData());
 
-						Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
-						returnRs.add(tileRecord);						
-					}
-					r.close();
-				}
+				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
+				returnRs.add(tileRecord);						
 			}
-			geoPackage.close();
+			r.close();
 		} catch (IOException e) {
+			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		return returnRs;
@@ -331,7 +345,7 @@ public class GeoPackageReader extends AbstractProcessor {
 				}
 				Record r = new MapRecord(recordSchema, fieldMap);
 				returnRs.add(r);
-				System.out.println(r);
+				//System.out.println(r);
 			}
 			it.close();
 			return returnRs;
@@ -354,4 +368,16 @@ public class GeoPackageReader extends AbstractProcessor {
 		}
 		return cRS;
 	}
+	public CoordinateReferenceSystem getCRSFromTilesTable(final File geopkg, TileEntry tileEntry) {
+		CoordinateReferenceSystem cRS = null;
+		org.geotools.geopkg.mosaic.GeoPackageReader reader;
+		try {
+			reader = new org.geotools.geopkg.mosaic.GeoPackageReader(geopkg, null);
+			cRS = reader.getCoordinateReferenceSystem(tileEntry.getTableName());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return cRS;
+	}	
 }
