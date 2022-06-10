@@ -26,6 +26,8 @@ public final class DownloadableContent {
     private final String filename;
     private final String type;
     private String crs = null;
+    private String geoType = null;
+    private String geoImageType = null;
     private final InputStream content;
 
     public DownloadableContent(String filename, String type, InputStream content) {
@@ -49,10 +51,13 @@ public final class DownloadableContent {
      * @return the content type
      */
     public String getType() {
-    	if (isGeoContent())
-    		return "application/avro+geowkt";
-    	else
-    		return type;
+		if (geoType.contentEquals("Features")) {
+			return "application/avro+geowkt";
+		}
+		else if (geoType.contentEquals("Tiles")){
+			return "application/avro+binary";
+		}    	
+    	return type;
     }
     
     /**
@@ -72,8 +77,26 @@ public final class DownloadableContent {
 		this.crs = crs;
 	}
 
+	public String getGeoType() {
+		return geoType;
+	}
+
+	public void setGeoType(String geoType) {
+		this.geoType = geoType;
+	}
+
+	public String getGeoImageType() {
+		return geoImageType;
+	}
+
+	public void setGeoImageType(String geoImageType) {
+		this.geoImageType = geoImageType;
+	}
+
 	public boolean isGeoContent() {
-		return crs == null ? false : true;
+		if (geoType.contentEquals("Features") || geoType.contentEquals("Tiles"))
+			return true;
+		return false;
 		
 	}
 	/**

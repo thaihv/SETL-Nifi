@@ -23,10 +23,14 @@ public enum GeoAttributes implements FlowFileAttributeKey {
      */
     CRS("crs"),
     /**
-     * The data type of geospatial: Tiles or Features 
+     * The data type of geo-spatial: Tiles or Features 
      */
-    GEO_TYPE("geo.type");
-    
+    GEO_TYPE("geo.type"),
+    /**
+     * The format type of image Tiles 
+     */
+    GEO_IMAGE_TYPE("img.type");    
+	
     private final String key;
 
     private GeoAttributes(final String key) {

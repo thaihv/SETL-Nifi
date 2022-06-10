@@ -21,17 +21,23 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -192,14 +198,19 @@ public class GeoPackageReader extends AbstractProcessor {
 			GeoPackage geoPackage = new GeoPackage(file);
 			for (int i = 0; i < geoPackage.tiles().size(); i++) {
 				final List<Record> records = getTilesFromTable(geoPackage, geoPackage.tiles().get(i));
+				System.out.println(records);
 				
 				if (records.isEmpty() == false) {
 					
 	                final long importStart = System.nanoTime();
-	                
+	                // Create flowfile
 	                FlowFile transformed = session.create(flowFile);
+	                
+	                //Get geo attributes
 	                CoordinateReferenceSystem myCrs = getCRSFromTilesTable(file,geoPackage.tiles().get(i));
-					System.out.println(records);
+	                TileReader r = geoPackage.reader(geoPackage.tiles().get(i), null, null, null, null, null, null);
+	                String imgType = getImageFormat(r.next().getData());
+
                     RecordSchema recordSchema = records.get(0).getSchema();                
                     transformed = session.write(transformed, new OutputStreamCallback() {
                         @Override
@@ -211,13 +222,13 @@ public class GeoPackageReader extends AbstractProcessor {
                         }
                     });                
 					
-					
 	                final long importNanos = System.nanoTime() - importStart;
 	                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 	                
 	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_IMAGE_TYPE.key(), imgType);
 	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+binary");
 	                session.transfer(transformed, REL_SUCCESS);   
 
@@ -245,7 +256,7 @@ public class GeoPackageReader extends AbstractProcessor {
 		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
 		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
 		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
-		final Schema schema = Schema.createRecord("Tiles", null, null, false);
+		final Schema schema = Schema.createRecord(tileEntry.getTableName(), null, null, false);
 
 		schema.setFields(tileFields);
 
@@ -257,6 +268,7 @@ public class GeoPackageReader extends AbstractProcessor {
 				fieldMap.put("zoom", tile.getZoom());
 				fieldMap.put("column", tile.getColumn());
 				fieldMap.put("row", tile.getRow());
+//				fieldMap.put("data", ByteBuffer.wrap(tile.getData()));
 				fieldMap.put("data", tile.getData());
 
 				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
@@ -268,15 +280,26 @@ public class GeoPackageReader extends AbstractProcessor {
 			e.printStackTrace();
 		}
 		return returnRs;
-	}
-	private BufferedImage createImageFromBytes(byte[] imageData) {
-	    ByteArrayInputStream bais = new ByteArrayInputStream(imageData);
-	    try {
-	        return ImageIO.read(bais);
-	    } catch (IOException e) {
-	        throw new RuntimeException(e);
-	    }
 	}	
+	protected BufferedImage getImage(byte[] data) throws IOException {
+        ByteArrayInputStream bis = new ByteArrayInputStream(data);
+        Object source = bis; 
+        ImageInputStream iis = ImageIO.createImageInputStream(source); 
+        Iterator<?> readers = ImageIO.getImageReaders(iis);
+        ImageReader reader = (ImageReader) readers.next();
+        reader.setInput(iis, true);
+        ImageReadParam param = reader.getDefaultReadParam();
+        return reader.read(0, param);
+    }	
+	public String getImageFormat(byte[] data) throws IOException {
+        ByteArrayInputStream bis = new ByteArrayInputStream(data);
+        Object source = bis; 
+        ImageInputStream iis = ImageIO.createImageInputStream(source); 
+        Iterator<?> readers = ImageIO.getImageReaders(iis);
+        ImageReader reader = (ImageReader) readers.next();
+        reader.setInput(iis, true);
+        return reader.getFormatName();
+    }	
 	public ArrayList<Record> getRecordsFromFeatureTable(DataStore store, String tableName) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {

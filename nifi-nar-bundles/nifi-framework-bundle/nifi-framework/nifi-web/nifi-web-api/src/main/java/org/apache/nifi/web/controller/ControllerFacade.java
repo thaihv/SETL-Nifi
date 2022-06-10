@@ -1371,8 +1371,10 @@ public class ControllerFacade implements Authorizable {
             final InputStream content = flowController.getContent(event, contentDirection, user.getIdentity(), uri);
             
             DownloadableContent result = new DownloadableContent(filename, type, content);
-            if (attributes.get(GeoAttributes.CRS.key()) != null)
+            if (attributes.get(GeoAttributes.CRS.key()) != null) {
             	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
+            	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
+            }
             return result;
         } catch (final ContentNotFoundException cnfe) {
             throw new ResourceNotFoundException("Unable to find the specified content.");
