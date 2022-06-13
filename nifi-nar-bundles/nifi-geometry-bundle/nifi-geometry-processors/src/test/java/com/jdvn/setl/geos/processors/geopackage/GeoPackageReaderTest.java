@@ -109,7 +109,7 @@ public class GeoPackageReaderTest {
         // flowfile 1 is for tile
         final String geoType1 = successFiles.get(0).getAttribute(GeoAttributes.GEO_TYPE.key());
         final String geoType2 = successFiles.get(1).getAttribute(GeoAttributes.GEO_TYPE.key());
-        final String tileFormat = successFiles.get(1).getAttribute(GeoAttributes.GEO_IMAGE_TYPE.key());
+        final String tileFormat = successFiles.get(1).getAttribute(GeoAttributes.GEO_RASTER_TYPE.key());
         assertEquals("Features", geoType1);
         assertEquals("Tiles", geoType2);
         assertEquals("JPEG", tileFormat);

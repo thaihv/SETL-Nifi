@@ -21,8 +21,6 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -186,6 +184,7 @@ public class GeoPackageReader extends AbstractProcessor {
                     session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
 
@@ -197,7 +196,8 @@ public class GeoPackageReader extends AbstractProcessor {
 			// Process Tiles tables
 			GeoPackage geoPackage = new GeoPackage(file);
 			for (int i = 0; i < geoPackage.tiles().size(); i++) {
-				final List<Record> records = getTilesFromTable(geoPackage, geoPackage.tiles().get(i));
+				TileEntry t = geoPackage.tiles().get(i);
+				final List<Record> records = getTilesFromTable(geoPackage, t);
 				System.out.println(records);
 				
 				if (records.isEmpty() == false) {
@@ -208,7 +208,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                
 	                //Get geo attributes
 	                CoordinateReferenceSystem myCrs = getCRSFromTilesTable(file,geoPackage.tiles().get(i));
-	                TileReader r = geoPackage.reader(geoPackage.tiles().get(i), null, null, null, null, null, null);
+	                TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
 	                String imgType = getImageFormat(r.next().getData());
 
                     RecordSchema recordSchema = records.get(0).getSchema();                
@@ -228,7 +228,8 @@ public class GeoPackageReader extends AbstractProcessor {
 	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_IMAGE_TYPE.key(), imgType);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
 	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+binary");
 	                session.transfer(transformed, REL_SUCCESS);   
 

@@ -29,7 +29,11 @@ public enum GeoAttributes implements FlowFileAttributeKey {
     /**
      * The format type of image Tiles 
      */
-    GEO_IMAGE_TYPE("img.type");    
+    GEO_RASTER_TYPE("raster.format"),
+    /**
+     * The name of Tile or Feature 
+     */
+    GEO_NAME("geo.name");    
 	
     private final String key;
 
