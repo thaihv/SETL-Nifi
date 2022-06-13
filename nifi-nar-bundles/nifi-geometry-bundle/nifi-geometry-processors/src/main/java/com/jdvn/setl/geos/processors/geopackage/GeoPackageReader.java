@@ -269,7 +269,6 @@ public class GeoPackageReader extends AbstractProcessor {
 				fieldMap.put("zoom", tile.getZoom());
 				fieldMap.put("column", tile.getColumn());
 				fieldMap.put("row", tile.getRow());
-//				fieldMap.put("data", ByteBuffer.wrap(tile.getData()));
 				fieldMap.put("data", tile.getData());
 
 				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);

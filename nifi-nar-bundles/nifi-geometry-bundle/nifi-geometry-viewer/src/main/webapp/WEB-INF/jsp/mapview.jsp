@@ -24,31 +24,39 @@
 		  type: "FeatureCollection",
 		  features: [],
 		};
+	function getGeometryField(json){
+		for(var k in json){
+			if (json[k].toUpperCase().includes("LINESTRING") || json[k].toUpperCase().includes("POINT") || json[k].toUpperCase().includes("POLYGON"))
+				return k;
+			else
+				return null;
+		}
+	}	
 	for (var i = 0 ; i < featureCollection.length ; i++) {
 		var wkt = new Wkt.Wkt();
-		wkt.read(featureCollection[i].the_geom);
-		//console.log(wkt.components);
-		
-		var properties = {};
-		for (name in featureCollection[i]) {
-			if (name.includes("geom") != true)
-				properties[name] = featureCollection[i][name];
-		}
-		for (var j = 0 ; j < wkt.components.length ; j++) {
-			for (var k = 0 ; k < wkt.components[j].length ; k++) {
-				for (var p = 0 ; p < wkt.components[j][k].length ; p++) {
-					wkt.components[j][k][p] = proj4(crs,'EPSG:4326',wkt.components[j][k][p]);
+		var geom_field = getGeometryField(featureCollection[i]);
+		if (geom_field){
+			wkt.read(featureCollection[i][geom_field]);
+			var properties = {};
+			for (name in featureCollection[i]) {
+				if (name != geom_field)
+					properties[name] = featureCollection[i][name];
+			}
+			for (var j = 0 ; j < wkt.components.length ; j++) {
+				for (var k = 0 ; k < wkt.components[j].length ; k++) {
+					for (var p = 0 ; p < wkt.components[j][k].length ; p++) {
+						wkt.components[j][k][p] = proj4(crs,'EPSG:4326',wkt.components[j][k][p]);
+					}
 				}
 			}
+			geojson.features.push({
+			"type": "Feature",
+			"geometry": wkt.toJson(),
+			"properties": properties
+			});
 		}
-		geojson.features.push({
-		"type": "Feature",
-		"geometry": wkt.toJson(),
-		"properties": properties
-		});
-		
 	}
+	console.log(geojson);
 	let geoJsonLayer = L.geoJSON(geojson, {style: geomStyle}).addTo(map);
 	map.fitBounds(geoJsonLayer.getBounds());
-	
 </script>

@@ -1,17 +1,12 @@
 
 package com.jdvn.setl.geos.web;
 
-import java.awt.BasicStroke;
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -26,13 +21,6 @@ import org.apache.avro.file.DataFileStream;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.io.DatumReader;
-import org.apache.nifi.avro.AvroReaderWithEmbeddedSchema;
-import org.apache.nifi.avro.AvroRecordReader;
-import org.apache.nifi.flowfile.attributes.GeoAttributes;
-import org.apache.nifi.serialization.MalformedRecordException;
-import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordFieldType;
-import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.web.ViewableContent;
 import org.apache.nifi.web.ViewableContent.DisplayMode;
 import org.joda.time.DateTime;
@@ -73,8 +61,17 @@ public class GeometryViewerController extends HttpServlet {
 					final GenericData genericData = new GenericData() {
 						@Override
 						protected void toString(Object datum, StringBuilder buffer) {
+							
 							// Since these types are not quoted and produce a malformed JSON string, quote
 							// it here.
+							String d = String.valueOf(datum);
+							DateTimeFormatter dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE;
+							DateValidator validator = new DateValidatorUsingLocalDate(dateFormatter);
+							if (validator.isValid(d)) {
+								buffer.append("\"").append(datum).append("\"");
+								return;								
+							}
+							// For other date time format
 							if (datum instanceof LocalDate || datum instanceof LocalTime || datum instanceof DateTime) {
 								buffer.append("\"").append(datum).append("\"");
 								return;
@@ -134,60 +131,27 @@ public class GeometryViewerController extends HttpServlet {
 			out.println("Unexpected content type: " + contentType);
 		}
 	}
-    // create the image
-    private BufferedImage createClockImage() {
-        GregorianCalendar cal = new GregorianCalendar();
 
-        BufferedImage img = new BufferedImage(400, 400, BufferedImage.TYPE_INT_RGB);
-        Graphics2D g = img.createGraphics();
-
-        // white background
-        g.setColor(Color.WHITE);
-        g.fillRect(0, 0, 400, 400);
-
-        // draw black circle around clock
-        g.setColor(Color.BLACK);
-        g.setStroke(new BasicStroke(5));
-        g.drawOval(20, 20, 360, 360);
-
-        // draw hour hand
-        double hourRad = cal.get(Calendar.HOUR) * 2 * Math.PI / 12 - 0.5 * Math.PI;
-        g.drawLine(200, 200, 200 + (int) (100 * Math.cos(hourRad)), 
-                   200 + (int) (100 * Math.sin(hourRad)));
-
-        // draw minute hand
-        double minuteRad = cal.get(Calendar.MINUTE) * 2 * Math.PI / 60 - 0.5 * Math.PI;
-        g.drawLine(200, 200, 200 + (int) (170 * Math.cos(minuteRad)), 
-                   200 + (int) (170 * Math.sin(minuteRad)));
-        return img;
-    }    
-    public BufferedImage imageFromRecordSet(InputStream in) {
-    	int imageType = BufferedImage.TYPE_INT_RGB;
-    	final BufferedImage bufferedImg = new BufferedImage(800, 800, imageType);
-		try {
-            final AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-            final RecordSchema recordSchema = reader.getSchema();
-            Record record = reader.nextRecord();
-            RecordFieldType type = recordSchema.getDataType("the_geom").get().getFieldType();
-//            System.out.println(recordSchema);
-//            System.out.println(type);
-//            System.out.println(record);
-            final Graphics2D graphics = bufferedImg.createGraphics();
-            graphics.setPaint(Color.BLUE);
-            graphics.setStroke(new BasicStroke(1.5f));
-            try {
-                graphics.drawString("Hello, Under construction!", 50, 50);
-            } finally {
-                graphics.dispose();
-            }
-            
-		} catch (IOException | MalformedRecordException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+	
+	public interface DateValidator {
+		   boolean isValid(String dateStr);
 		}
-   	
-		return bufferedImg;
-    	
-    }
+	public class DateValidatorUsingLocalDate implements DateValidator {
+	    private DateTimeFormatter dateFormatter;
+	    
+	    public DateValidatorUsingLocalDate(DateTimeFormatter dateFormatter) {
+	        this.dateFormatter = dateFormatter;
+	    }
+
+	    @Override
+	    public boolean isValid(String dateStr) {
+	        try {
+	            LocalDate.parse(dateStr, this.dateFormatter);
+	        } catch (DateTimeParseException e) {
+	            return false;
+	        }
+	        return true;
+	    }
+	}
 
 }
