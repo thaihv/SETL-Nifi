@@ -34,6 +34,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
+import org.apache.commons.io.FilenameUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -144,7 +145,7 @@ public class ShpWriter extends AbstractProcessor {
             .name("CharSet")
             .description("The name of charset for attributes in target shapfiles")
             .required(true)
-            .defaultValue("UTF-8")
+            .defaultValue("ISO-8859-1")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
@@ -248,11 +249,13 @@ public class ShpWriter extends AbstractProcessor {
 			return;
 		}
         final long importStart = System.nanoTime();
-        final long importNanos = System.nanoTime() - importStart;
-        final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
         final ComponentLog logger = getLogger();
         
-		File srcFile = new File(context.getProperty(DIRECTORY) + "/" + flowFile.getAttributes().get(CoreAttributes.FILENAME.key()));
+        String filename = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
+        if (FilenameUtils.getExtension(filename).contains("shp") == false)
+        	filename = filename + ".shp";
+        
+		File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
 		String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
 		try {
 			session.read(flowFile, new InputStreamCallback() {
@@ -279,10 +282,12 @@ public class ShpWriter extends AbstractProcessor {
 			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
 			session.transfer(flowFile, REL_FAILURE);
 		}
+		
+        final long importNanos = System.nanoTime() - importStart;
+        final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 		session.getProvenanceReporter().receive(flowFile, srcFile.toURI().toString(), importMillis);
 		session.transfer(flowFile, REL_SUCCESS);
 	}
-
 	public void createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
 		final ComponentLog logger = getLogger();
 		SimpleFeatureType schema = null;
@@ -341,15 +346,10 @@ public class ShpWriter extends AbstractProcessor {
 	    }
 	    return featureTypeBuilder.buildFeatureType();
 	}	
-	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
-		final ComponentLog logger = getLogger();
-		String geomKey = "the_geom";
-        List<SimpleFeature> features = new ArrayList<>();
+	public Map<String, Class<?>> createAttributeTableFromRecordSet(RecordReader avroReader, String geomFieldName){
         Map<String, Class<?>> attributes = new HashMap<>();
-        Record record;
-        try {
-        	List<RecordField> fields = avroReader.getSchema().getFields();
+		try {
+			List<RecordField> fields = avroReader.getSchema().getFields();
 			for (int i = 0; i < fields.size(); i ++) {
 				RecordField f = fields.get(i);
 				DataType type = f.getDataType();
@@ -398,18 +398,47 @@ public class ShpWriter extends AbstractProcessor {
 					obj = String.class;					
 				}
 				attributes.put(f.getFieldName(), obj);
-				if (f.getFieldName().contains(geomKey)) {
-					attributes.remove(geomKey);
+				if (f.getFieldName().contains(geomFieldName)) {
+					attributes.remove(geomFieldName);
 				}
-			}		
+			}			
+		} catch (MalformedRecordException e) {
+			e.printStackTrace();
+		}
+		return attributes;
+	}
 
+	public String getGeometryFieldName(Record record) {
+		String geoKey = null;
+		for (int i = 0; i < record.getSchema().getFieldCount(); i++) {
+			String value = record.getAsString(record.getSchema().getFields().get(i).getFieldName());
+			if (value.contains("MULTILINESTRING") || value.contains("LINESTRING") || value.contains("MULTIPOLYGON")
+					|| value.contains("POLYGON") || value.contains("POINT") || value.contains("MULTIPOINT")
+					|| value.contains("GEOMETRYCOLLECTION")) {
+				
+				geoKey = record.getSchema().getFields().get(i).getFieldName();
+				break;
+			}
+		}
+		return geoKey;
+
+	}
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
+		final ComponentLog logger = getLogger();
+        List<SimpleFeature> features = new ArrayList<>();
+        String geomFieldName = "the_geom";
+        String shpGeoColumn = "the_geom";
+        Record record;
+        try {
 	        boolean bCreatedSchema = false;
 	        SimpleFeatureBuilder featureBuilder = null;
 	        SimpleFeatureType TYPE = null;
 			Class geometryClass = null;
 			while ((record = avroReader.nextRecord()) != null) {
 				if (!bCreatedSchema) {
-					String geovalue = record.getAsString(geomKey);
+					geomFieldName = getGeometryFieldName(record);
+					String geovalue = record.getAsString(geomFieldName);
 					String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
 					switch (type) {
 						case "MULTILINESTRING" :
@@ -437,21 +466,25 @@ public class ShpWriter extends AbstractProcessor {
 							geometryClass = MultiLineString.class;					
 					}	
 					
-					TYPE = generateFeatureType("shpfile", crs, geomKey, geometryClass, attributes);
+					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+					// shp file with geo column is "the_geom"
+					TYPE = generateFeatureType("shpfile", crs, shpGeoColumn, geometryClass, attributes);
 			        featureBuilder = new SimpleFeatureBuilder(TYPE);
 					bCreatedSchema = true;
 				}
 				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
 		        WKTReader reader = new WKTReader( geometryFactory );
 		        // Add geometry
-		        Geometry geo = reader.read(record.getAsString(geomKey));
-		        // Add attrs
+		        Geometry geo = reader.read(record.getAsString(geomFieldName));
+		        // Add attributes
 				int size = record.getSchema().getFieldCount();
 				Object[] objs = new Object[size];
 		        for (int i = 0; i < size; i ++) {
 		        	String fName = record.getSchema().getFieldNames().get(i);
+		        	if ((fName == geomFieldName) && (geomFieldName != shpGeoColumn))
+		        		fName = shpGeoColumn;
 		        	int index = featureBuilder.getFeatureType().indexOf(fName);
-		        	if (fName.contains(geomKey))
+		        	if (fName.contains(geomFieldName))
 		        		objs[index]= geo;
 		        	else
 		        		objs[index] = record.getValue(fName);

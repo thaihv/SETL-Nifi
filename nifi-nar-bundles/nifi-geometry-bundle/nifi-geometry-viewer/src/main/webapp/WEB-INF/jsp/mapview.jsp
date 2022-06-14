@@ -26,11 +26,11 @@
 		};
 	function getGeometryField(json){
 		for(var k in json){
-			if (json[k].toUpperCase().includes("LINESTRING") || json[k].toUpperCase().includes("POINT") || json[k].toUpperCase().includes("POLYGON"))
-				return k;
-			else
-				return null;
+			if (typeof json[k] == 'string')
+				if (json[k].toUpperCase().includes("LINESTRING") || json[k].toUpperCase().includes("POINT") || json[k].toUpperCase().includes("POLYGON"))
+					return k;
 		}
+		return null;
 	}	
 	for (var i = 0 ; i < featureCollection.length ; i++) {
 		var wkt = new Wkt.Wkt();

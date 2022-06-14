@@ -205,10 +205,8 @@ public class ShpWriterTest {
         attributes.put(CoreAttributes.FILENAME.key(), "point.shp");
         runner.enqueue(source, attributes);
         runner.run();
-        
         Path targetPath = Paths.get(TARGET_DIRECTORY + "/point.shp");
         byte[] content = Files.readAllBytes(targetPath);
         assertNotNull(content);
     }
-
 }
