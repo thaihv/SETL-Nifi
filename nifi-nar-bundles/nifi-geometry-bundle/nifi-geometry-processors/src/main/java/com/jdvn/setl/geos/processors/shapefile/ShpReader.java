@@ -332,28 +332,29 @@ public class ShpReader extends AbstractProcessor {
                 }
 
                 /* Get ShapeFile data and transfer to session in Avro Format*/
-                FlowFile transformed = session.create(flowFile);
-                CoordinateReferenceSystem myCrs = getCRSFromShapeFile(file);
                 final List<Record> records = getRecordsFromShapeFile(file);
-                RecordSchema recordSchema = records.get(0).getSchema();                
-                transformed = session.write(transformed, new OutputStreamCallback() {
-                    @Override
-                    public void process(final OutputStream out) throws IOException {
-            			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-            			@SuppressWarnings("resource")  
-            			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
-            			writer.write(new ListRecordSet(recordSchema, records));
-                    }
-                });                
-                session.remove(flowFile);
-                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-                session.transfer(transformed, REL_SUCCESS);   
+                if (records.size() > 0) {
+                    FlowFile transformed = session.create(flowFile);
+                    CoordinateReferenceSystem myCrs = getCRSFromShapeFile(file);
+                    RecordSchema recordSchema = records.get(0).getSchema();                
+                    transformed = session.write(transformed, new OutputStreamCallback() {
+                        @Override
+                        public void process(final OutputStream out) throws IOException {
+                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+                			@SuppressWarnings("resource")  
+                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
+                			writer.write(new ListRecordSet(recordSchema, records));
+                        }
+                    });                
+                    session.remove(flowFile);
+                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                    session.transfer(transformed, REL_SUCCESS);   
 
-                logger.info("added {} to flow", new Object[]{transformed});
-
+                    logger.info("added {} to flow", new Object[]{transformed});                	
+                }
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
                     queueLock.lock();
                     try {

@@ -262,37 +262,39 @@ public class ShpWriter extends AbstractProcessor {
 				@Override
 				public void process(final InputStream in) {
 					try {
-			
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
 						SimpleFeatureCollection collection = createSimpleFeatureCollectionFromNifiRecords(reader, CRS.parseWKT(srs));
-						createShapeFileFromGeoDataFlowfile(srcFile, charset, collection);
-		                logger.info("saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
-												
+						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
+							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
+						else {
+							logger.info("Unable to create the shape file {}", new Object[]{srcFile.toURI().toString()});
+						}
 					} catch (IOException | FactoryException e) {
 						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
 						session.transfer(flowFile, REL_FAILURE);
 						return;
 					}
 				}
-
 			});
 
 		} catch (Exception e) {
 			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
 			session.transfer(flowFile, REL_FAILURE);
+			return;
 		}
-		
         final long importNanos = System.nanoTime() - importStart;
         final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 		session.getProvenanceReporter().receive(flowFile, srcFile.toURI().toString(), importMillis);
 		session.transfer(flowFile, REL_SUCCESS);
 	}
-	public void createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
+	public boolean createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
 		final ComponentLog logger = getLogger();
 		SimpleFeatureType schema = null;
 		if (collection.features().hasNext())
 			schema = collection.features().next().getFeatureType();
+		else
+			return false;
 		
 		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
 		Map<String, Serializable> params = new HashMap<>();
@@ -326,11 +328,14 @@ public class ShpWriter extends AbstractProcessor {
 				}
 			} else {
 				logger.error(typeName + " does not support read/write access");
+				transaction.close();
+				return false;
 			}
-
 		} catch (IOException e) {
 			logger.error("Could not create Shape File because {}", new Object[]{e});
+			return false;
 		} 
+		return true;
 	} 
 	
 	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
