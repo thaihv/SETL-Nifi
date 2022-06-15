@@ -44,9 +44,15 @@
 			}
 			for (var j = 0 ; j < wkt.components.length ; j++) {
 				for (var k = 0 ; k < wkt.components[j].length ; k++) {
-					for (var p = 0 ; p < wkt.components[j][k].length ; p++) {
-						wkt.components[j][k][p] = proj4(crs,'EPSG:4326',wkt.components[j][k][p]);
+					if (wkt.components[j][k].length) {
+						for (var p = 0 ; p < wkt.components[j][k].length ; p++) {
+							wkt.components[j][k][p] = proj4(crs,'EPSG:4326',wkt.components[j][k][p]);
+						}
 					}
+					else{
+						wkt.components[j][k] = proj4(crs,'EPSG:4326',wkt.components[j][k]);
+					}
+
 				}
 			}
 			geojson.features.push({
