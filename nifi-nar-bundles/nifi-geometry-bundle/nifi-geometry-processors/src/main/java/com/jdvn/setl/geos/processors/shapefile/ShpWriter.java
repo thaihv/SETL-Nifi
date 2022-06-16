@@ -242,7 +242,7 @@ public class ShpWriter extends AbstractProcessor {
 					try {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(reader, CRS.parseWKT(srs));
+						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("shpfile", reader, CRS.parseWKT(srs));
 						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
 							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
 						else {

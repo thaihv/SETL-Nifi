@@ -34,6 +34,8 @@ import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+
 public class GeoUtils {
 	
     private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
@@ -127,7 +129,7 @@ public class GeoUtils {
 		return attributes;
 	}    
     @SuppressWarnings({ "rawtypes", "unchecked" })
-	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(RecordReader avroReader, CoordinateReferenceSystem crs) {
+	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs) {
         List<SimpleFeature> features = new ArrayList<>();
         String geomFieldName = "the_geom";
         String shpGeoColumn = "the_geom";
@@ -170,7 +172,7 @@ public class GeoUtils {
 					
 					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
 					// shp file with geo column is "the_geom"
-					TYPE = generateFeatureType("shpfile", crs, shpGeoColumn, geometryClass, attributes);
+					TYPE = generateFeatureType(collectionName, crs, shpGeoColumn, geometryClass, attributes);
 			        featureBuilder = new SimpleFeatureBuilder(TYPE);
 					bCreatedSchema = true;
 				}
