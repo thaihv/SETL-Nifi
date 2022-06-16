@@ -72,8 +72,6 @@ public class GeoPackageReaderTest {
 			if (store != null)
 				store.dispose();
 		}
-		
-
     }
     @Test
     public void testCRSFromTileTable() {

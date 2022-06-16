@@ -54,7 +54,9 @@ public class GeoPackageWriterTest {
     }
     @Test
     public void testGeopackgeFromFlowfile() throws IOException {
-//        final TestRunner runner = TestRunners.newTestRunner(new GeoPackageWriter());
-//        runner.setProperty(GeoPackageWriter.DIRECTORY, targetDir.getAbsolutePath());
+        final TestRunner runner = TestRunners.newTestRunner(new GeoPackageWriter());
+        runner.setProperty(GeoPackageWriter.GEOPACKAGE_FILE_NAME, targetDir.getAbsolutePath() + "/mytest.gpkg");
+        runner.run();
+        
     }
 }
