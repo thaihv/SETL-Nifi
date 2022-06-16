@@ -93,7 +93,7 @@ import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 
-@Tags({ "shape file", "wkt", "json", "geospatial" })
+@Tags({ "Shape file", "wkt", "json",  "Features", "Attributes", "Geospatial" })
 @CapabilityDescription("Write geospatial data into a given shape file.")
 @SeeAlso({ ShpReader.class })
 @ReadsAttributes({ @ReadsAttribute(attribute = "", description = "") })
@@ -130,7 +130,7 @@ public class ShpWriter extends AbstractProcessor {
     };
     public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
             .name("Directory")
-            .description("The directory to which files should be written. You may use expression language such as /aa/bb/${path}")
+            .description("The directory to which shape files should be written. You may use expression language such as /aa/bb/${path}")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)

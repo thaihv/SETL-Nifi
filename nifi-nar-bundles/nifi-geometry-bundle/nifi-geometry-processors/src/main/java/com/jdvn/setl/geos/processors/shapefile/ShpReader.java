@@ -117,7 +117,7 @@ import org.opengis.referencing.operation.TransformException;
 
 
 
-@Tags({ "shape file", "wkt", "json", "geospatial" })
+@Tags({ "Shape file", "wkt", "json", "Features", "Attributes", "Geospatial" })
 @CapabilityDescription("Read data from a given shape file and represent geospatial data in WKT format.")
 @SeeAlso({ ShpWriter.class })
 @ReadsAttributes({ @ReadsAttribute(attribute = "", description = "") })
