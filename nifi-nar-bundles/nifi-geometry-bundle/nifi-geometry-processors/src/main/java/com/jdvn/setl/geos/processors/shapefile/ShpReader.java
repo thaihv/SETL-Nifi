@@ -320,9 +320,8 @@ public class ShpReader extends AbstractProcessor {
                 flowFile = session.create();
                 final long importStart = System.nanoTime();
                 flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
-                final long importNanos = System.nanoTime() - importStart;
-                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-
+                String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
+                
                 flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), file.getName());
                 flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), relativePathString);
                 flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), absPathString);
@@ -347,9 +346,14 @@ public class ShpReader extends AbstractProcessor {
                         }
                     });                
                     session.remove(flowFile);
+                    
+                    final long importNanos = System.nanoTime() - importStart;
+                    final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+                    
                     session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
 

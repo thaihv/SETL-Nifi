@@ -9,9 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.avro.Schema;
+import org.apache.avro.Schema.Field;
+import org.apache.avro.Schema.Type;
+import org.apache.nifi.avro.AvroTypeUtil;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.geotools.data.collection.ListFeatureCollection;
@@ -19,6 +24,10 @@ import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTSFactoryFinder;
+import org.geotools.geopkg.GeoPackage;
+import org.geotools.geopkg.Tile;
+import org.geotools.geopkg.TileEntry;
+import org.geotools.geopkg.TileReader;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -205,5 +214,36 @@ public class GeoUtils {
 		} 
 		return null;
 	}
+    public static ArrayList<Record> getTilesRecordFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
 
+		final List<Field> tileFields = new ArrayList<>();
+		tileFields.add(new Field("zoom", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
+		final Schema schema = Schema.createRecord(tileEntry.getTableName(), null, null, false);
+
+		schema.setFields(tileFields);
+
+		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+			while (r.hasNext()) {
+				Tile tile = r.next();
+
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				fieldMap.put("zoom", tile.getZoom());
+				fieldMap.put("column", tile.getColumn());
+				fieldMap.put("row", tile.getRow());
+				fieldMap.put("data", tile.getData());
+
+				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
+				returnRs.add(tileRecord);						
+			}
+			r.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return returnRs;
+	}	
 }

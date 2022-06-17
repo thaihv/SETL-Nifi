@@ -50,9 +50,14 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.FlowFileFilters;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.geopkg.FeatureEntry;
 import org.geotools.geopkg.GeoPackage;
+import org.geotools.geopkg.Tile;
+import org.geotools.geopkg.TileEntry;
+import org.geotools.geopkg.TileMatrix;
 import org.geotools.referencing.CRS;
+import org.geotools.referencing.crs.DefaultGeographicCRS;
 import org.opengis.referencing.FactoryException;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
@@ -157,6 +162,26 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 		            						geopkg.createSpatialIndex(entry);
 	            						}
 	            						else if (geoType.contains("Tiles")) {
+	            							
+	            							TileEntry e = new TileEntry();
+	            							e.setTableName(geoName);
+	            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,DefaultGeographicCRS.WGS84));
+	            							e.getTileMatricies().add(new TileMatrix(0, 1, 1, 256, 256, 0.1, 0.1));
+	            							e.getTileMatricies().add(new TileMatrix(1, 2, 2, 256, 256, 0.1, 0.1));
+
+	            							geopkg.create(e);
+
+	            							List<Tile> tiles = new ArrayList();
+	            							tiles.add(new Tile(0,0,0,new byte[]{3,4,6}));
+	            							tiles.add(new Tile(1,0,0,new byte[]{15,76,3}));
+	            							tiles.add(new Tile(1,0,1,new byte[]{4,5,2}));
+	            							tiles.add(new Tile(1,1,0,new byte[]{67,8,23}));
+	            							tiles.add(new Tile(1,1,1,new byte[]{4,6,8}));
+
+	            							for (Tile t : tiles) {
+	            							    geopkg.add(e, t);
+	            							}
+	            							
 	            							getLogger().info("The flowfile {} is Tiles!", flowFile);
 	            						}
 

@@ -38,8 +38,6 @@ import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 
 import org.apache.avro.Schema;
-import org.apache.avro.Schema.Field;
-import org.apache.avro.Schema.Type;
 import org.apache.avro.file.CodecFactory;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -80,12 +78,13 @@ import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.GeoPkgDataStoreFactory;
-import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+
+import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 @Tags({ "geopackage", "tiles", "raster", "vector","feature", "geospatial" })
 @CapabilityDescription("Read data from a OGC geopackage file and encode geospatial data avro fomart with WKT for features.")
@@ -197,11 +196,8 @@ public class GeoPackageReader extends AbstractProcessor {
 			GeoPackage geoPackage = new GeoPackage(file);
 			for (int i = 0; i < geoPackage.tiles().size(); i++) {
 				TileEntry t = geoPackage.tiles().get(i);
-				final List<Record> records = getTilesFromTable(geoPackage, t);
-				System.out.println(records);
-				
+				final List<Record> records = GeoUtils.getTilesRecordFromTileEntry(geoPackage, t);
 				if (records.isEmpty() == false) {
-					
 	                final long importStart = System.nanoTime();
 	                // Create flowfile
 	                FlowFile transformed = session.create(flowFile);
@@ -248,39 +244,6 @@ public class GeoPackageReader extends AbstractProcessor {
 		}
 		session.remove(flowFile);
 	}
-
-	public ArrayList<Record> getTilesFromTable(final GeoPackage geoPackage, TileEntry tileEntry) {
-		final ArrayList<Record> returnRs = new ArrayList<Record>();
-
-		final List<Field> tileFields = new ArrayList<>();
-		tileFields.add(new Field("zoom", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
-		final Schema schema = Schema.createRecord(tileEntry.getTableName(), null, null, false);
-
-		schema.setFields(tileFields);
-
-		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
-			while (r.hasNext()) {
-				Tile tile = r.next();
-
-				Map<String, Object> fieldMap = new HashMap<String, Object>();
-				fieldMap.put("zoom", tile.getZoom());
-				fieldMap.put("column", tile.getColumn());
-				fieldMap.put("row", tile.getRow());
-				fieldMap.put("data", tile.getData());
-
-				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
-				returnRs.add(tileRecord);						
-			}
-			r.close();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return returnRs;
-	}	
 	protected BufferedImage getImage(byte[] data) throws IOException {
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         Object source = bis; 
