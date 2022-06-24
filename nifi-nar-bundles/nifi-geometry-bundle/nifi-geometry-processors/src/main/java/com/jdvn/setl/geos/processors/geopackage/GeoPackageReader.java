@@ -31,6 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.DataFormatException;
+import java.util.zip.Deflater;
+import java.util.zip.Inflater;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -76,9 +79,11 @@ import org.geotools.data.DataStoreFinder;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.GeoPkgDataStoreFactory;
 import org.geotools.geopkg.TileEntry;
+import org.geotools.geopkg.TileMatrix;
 import org.geotools.geopkg.TileReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
@@ -196,6 +201,41 @@ public class GeoPackageReader extends AbstractProcessor {
 			GeoPackage geoPackage = new GeoPackage(file);
 			for (int i = 0; i < geoPackage.tiles().size(); i++) {
 				TileEntry t = geoPackage.tiles().get(i);
+				
+				
+				
+
+				ReferencedEnvelope envelope = t.getBounds();
+				
+				System.out.println(envelope.toString());
+				
+				final List<TileMatrix> tileMatricies = t.getTileMatricies();
+				int size = tileMatricies.toString().getBytes().length;
+				Deflater def = new Deflater();
+				def.setInput(tileMatricies.toString().getBytes());
+				def.finish();
+				byte compTileMatrix[] = new byte[size]; 
+				def.deflate(compTileMatrix);
+				def.end();
+				System.out.println(compTileMatrix.toString());
+				
+				Inflater inf = new Inflater();
+				inf.setInput(compTileMatrix);
+				byte orgString[] = new byte[size]; 
+				try {
+					inf.inflate(orgString, 0, size);
+					System.out.println(new String(orgString));
+					inf.end();
+				} catch (DataFormatException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} 
+				
+//				for (int m = 0; m < tileMatricies.size() - 1; m++) {
+//					final TileMatrix matrix = tileMatricies.get(m);
+//					System.out.println(matrix);
+//				}
+
 				final List<Record> records = GeoUtils.getTilesRecordFromTileEntry(geoPackage, t);
 				if (records.isEmpty() == false) {
 	                final long importStart = System.nanoTime();
@@ -224,6 +264,8 @@ public class GeoPackageReader extends AbstractProcessor {
 	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope.toString());
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), compTileMatrix.toString());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
 	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+binary");

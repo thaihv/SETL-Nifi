@@ -29,7 +29,15 @@ public enum GeoAttributes implements FlowFileAttributeKey {
     /**
      * The format type of image Tiles 
      */
-    GEO_RASTER_TYPE("raster.format"),
+    GEO_RASTER_TYPE("geo.raster.format"),
+    /**
+     * The boundary of geo spatial 
+     */
+    GEO_ENVELOPE("geo.envelope"),
+    /**
+     * The tile matrix of geo spatial that will compressed to reduce size for storage 
+     */
+    GEO_TILE_MATRIX("geo.raster.tilematrix"),   
     /**
      * The name of Tile or Feature 
      */

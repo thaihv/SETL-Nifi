@@ -37,6 +37,7 @@ import org.apache.nifi.controller.repository.ContentNotFoundException;
 import org.apache.nifi.controller.repository.FlowFileRecord;
 import org.apache.nifi.flowfile.FlowFilePrioritizer;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.groups.RemoteProcessGroup;
 import org.apache.nifi.processor.Relationship;
@@ -673,7 +674,16 @@ public class StandardConnectionDAO extends ComponentDAO implements ConnectionDAO
 
             // get the content
             final InputStream content = flowController.getContent(flowFile, user.getIdentity(), requestUri);
-            return new DownloadableContent(filename, type, content);
+            
+            //return new DownloadableContent(filename, type, content);
+            
+            DownloadableContent result = new DownloadableContent(filename, type, content);
+            if (attributes.get(GeoAttributes.CRS.key()) != null) {
+            	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
+            	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
+            }
+            return result;
+            
         } catch (final ContentNotFoundException cnfe) {
             throw new ResourceNotFoundException("Unable to find the specified content.");
         } catch (final IOException ioe) {
