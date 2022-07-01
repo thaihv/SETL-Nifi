@@ -17,6 +17,8 @@
 package org.apache.nifi.authentication.single.user.command;
 
 import org.apache.commons.io.FilenameUtils;
+import org.apache.nifi.authentication.single.user.encoder.BCryptPasswordEncoder;
+import org.apache.nifi.authentication.single.user.encoder.PasswordEncoder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -98,4 +100,16 @@ public class SetSingleUserCredentialsTest {
         }
         return providersConfigurationPath;
     }
+    @Test
+    public void testMyUsernamePasswordUpdated() throws IOException, URISyntaxException {
+        final Path providersConfiguration = getProvidersConfiguration();
+        final Path propertiesPath = getNiFiProperties(providersConfiguration);
+        System.setProperty(SetSingleUserCredentials.PROPERTIES_FILE_PATH, propertiesPath.toString());
+
+        final String username = "admin";
+        final String password = "jungdo_setl@123";
+        SetSingleUserCredentials.main(new String[]{username, password});
+        assertProvidersUpdated(providersConfiguration, username);
+    }
+    
 }
