@@ -148,9 +148,9 @@
         <nifi.security.truststore>./conf/truststore.p12</nifi.security.truststore>
         <nifi.security.truststoreType>PKCS12</nifi.security.truststoreType>
         <nifi.security.truststorePasswd />
-        <nifi.security.user.authorizer>single-user-authorizer</nifi.security.user.authorizer>
+        <nifi.security.user.authorizer>managed-authorizer</nifi.security.user.authorizer>
         <nifi.security.allow.anonymous.authentication>false</nifi.security.allow.anonymous.authentication>
-        <nifi.security.user.login.identity.provider>single-user-provider</nifi.security.user.login.identity.provider>
+        <nifi.security.user.login.identity.provider></nifi.security.user.login.identity.provider>
         <nifi.security.user.jws.key.rotation.period>PT1H</nifi.security.user.jws.key.rotation.period>
         <nifi.security.x509.principal.extractor />
         <nifi.security.ocsp.responder.url />
@@ -160,11 +160,11 @@
         <nifi.listener.bootstrap.port>0</nifi.listener.bootstrap.port>
 
         <!-- nifi.properties: openid connect -->
-        <nifi.security.user.oidc.discovery.url />
+        <nifi.security.user.oidc.discovery.url>http://174.138.25.165:8080/auth/realms/Smartcity/.well-known/openid-configuration</nifi.security.user.oidc.discovery.url>
         <nifi.security.user.oidc.connect.timeout>5 secs</nifi.security.user.oidc.connect.timeout>
         <nifi.security.user.oidc.read.timeout>5 secs</nifi.security.user.oidc.read.timeout>
-        <nifi.security.user.oidc.client.id />
-        <nifi.security.user.oidc.client.secret />
+        <nifi.security.user.oidc.client.id>setl-nifi</nifi.security.user.oidc.client.id>
+        <nifi.security.user.oidc.client.secret>c2f34417-c436-41fd-a211-706e4d159662</nifi.security.user.oidc.client.secret>
         <nifi.security.user.oidc.preferred.jwsalgorithm />
         <nifi.security.user.oidc.additional.scopes />
         <nifi.security.user.oidc.claim.identifying.user />
