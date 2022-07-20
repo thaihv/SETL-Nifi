@@ -20,6 +20,7 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.servlet.ServletContext;
@@ -137,6 +138,14 @@ public class ContentViewerController extends HttpServlet {
             return;
         }
 
+        
+        // Get resource Uri to process display geo tiles if needed 
+        String ref = request.getParameter("ref");
+        UriBuilder refUriBuilder = UriBuilder.fromUri(ref);
+        URI resourceUri = refUriBuilder.build();
+        request.setAttribute("resourceUri", resourceUri.toString());
+
+        
         // determine how we want to view the data
         String mode = request.getParameter("mode");
 
@@ -225,8 +234,10 @@ public class ContentViewerController extends HttpServlet {
                 if (contentViewerUri == null) {
                     request.getRequestDispatcher("/WEB-INF/jsp/no-viewer.jsp").include(request, response);
                 } else {
-                	if (downloadableContent.isGeoContent())
+                	if (downloadableContent.isGeoContent()) {
                 		request.setAttribute(ViewableContent.GEO_CONTENT_CRS,downloadableContent.getCrs());
+                		request.setAttribute("geoType",downloadableContent.getGeoType());
+                	}
                     // create a request attribute for accessing the content
                     request.setAttribute(ViewableContent.CONTENT_REQUEST_ATTRIBUTE, new ViewableContent() {
                         @Override

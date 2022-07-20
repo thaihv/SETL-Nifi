@@ -16,24 +16,19 @@
  */
 package org.apache.nifi.web.api;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
-import io.swagger.annotations.Authorization;
-import org.apache.nifi.cluster.coordination.ClusterCoordinator;
-import org.apache.nifi.cluster.coordination.http.replication.RequestReplicator;
-import org.apache.nifi.cluster.protocol.NodeIdentifier;
-import org.apache.nifi.controller.repository.claim.ContentDirection;
-import org.apache.nifi.stream.io.StreamUtils;
-import org.apache.nifi.web.DownloadableContent;
-import org.apache.nifi.web.NiFiServiceFacade;
-import org.apache.nifi.web.api.dto.provenance.ProvenanceEventDTO;
-import org.apache.nifi.web.api.entity.ProvenanceEventEntity;
-import org.apache.nifi.web.api.entity.SubmitReplayRequestEntity;
-import org.apache.nifi.web.api.request.LongParameter;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
 
+import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -48,10 +43,25 @@ import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.StreamingOutput;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.URI;
+
+import org.apache.nifi.cluster.coordination.ClusterCoordinator;
+import org.apache.nifi.cluster.coordination.http.replication.RequestReplicator;
+import org.apache.nifi.cluster.protocol.NodeIdentifier;
+import org.apache.nifi.controller.repository.claim.ContentDirection;
+import org.apache.nifi.stream.io.StreamUtils;
+import org.apache.nifi.web.DownloadableContent;
+import org.apache.nifi.web.NiFiServiceFacade;
+import org.apache.nifi.web.api.dto.provenance.ProvenanceEventDTO;
+import org.apache.nifi.web.api.entity.ProvenanceEventEntity;
+import org.apache.nifi.web.api.entity.SubmitReplayRequestEntity;
+import org.apache.nifi.web.api.request.LongParameter;
+
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
+import io.swagger.annotations.Authorization;
 
 
 /**
@@ -233,7 +243,103 @@ public class ProvenanceEventResource extends ApplicationResource {
 
         return generateOkResponse(response).type(contentType).header("Content-Disposition", String.format("attachment; filename=\"%s\"", content.getFilename())).build();
     }
+    /**
+     * Gets the geo tiles content for the output of the specified event.
+     *
+     * @param clusterNodeId The id of the node within the cluster this content is on. Required if clustered.
+     * @param id            The id of the provenance event associated with this content.
+     * @return The content stream
+     */
+    @GET
+    @Consumes(MediaType.WILDCARD)
+    @Produces("image/png")
+    @Path("{id}/content/output/{z}/{x}/{y}")
+    @ApiOperation(
+            value = "Gets the geo tiles output content for a provenance event",
+            response = StreamingOutput.class,
+            authorizations = {
+                    @Authorization(value = "Read Component Provenance Data - /provenance-data/{component-type}/{uuid}"),
+                    @Authorization(value = "Read Component Data - /data/{component-type}/{uuid}")
+            }
+    )
+    @ApiResponses(
+            value = {
+                    @ApiResponse(code = 400, message = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(code = 401, message = "Client could not be authenticated."),
+                    @ApiResponse(code = 403, message = "Client is not authorized to make this request."),
+                    @ApiResponse(code = 404, message = "The specified resource could not be found."),
+                    @ApiResponse(code = 409, message = "The request was valid but NiFi was not in the appropriate state to process it. Retrying the same request later may be successful.")
+            }
+    )
+    public Response getGeoTilesOutputContent(
+            @ApiParam(
+                    value = "The id of the node where the content exists if clustered.",
+                    required = false
+            )
+            @QueryParam("clusterNodeId") final String clusterNodeId,
+            @ApiParam(
+                    value = "The provenance event id.",
+                    required = true
+            )
+            @PathParam("id") final LongParameter id,
+    		@PathParam("z") final LongParameter z,
+			@PathParam("x") final LongParameter x,
+			@PathParam("y") final LongParameter y){
 
+        // ensure proper input
+        if (id == null) {
+            throw new IllegalArgumentException("The event id must be specified.");
+        }
+
+        // replicate if cluster manager
+        if (isReplicateRequest()) {
+            // determine where this request should be sent
+            if (clusterNodeId == null) {
+                throw new IllegalArgumentException("The id of the node in the cluster is required.");
+            } else {
+                return replicate(HttpMethod.GET, clusterNodeId);
+            }
+        }
+
+        // get the uri of the request
+        final String uri = generateResourceUri("provenance", "events", String.valueOf(id.getLong()), "content", "output");
+
+        // get an input stream to the content
+        final DownloadableContent content = serviceFacade.getContent(id.getLong(), uri, ContentDirection.OUTPUT);
+        
+     // generate a streaming response
+        BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Graphics2D gr = image.createGraphics();
+		gr.setPaint(Color.ORANGE);
+		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 40));
+		gr.drawString(String.valueOf(id.getLong()) + " : " + String.valueOf(z.getLong()) + String.valueOf(x.getLong()) + String.valueOf(y.getLong()), 10, 25);        
+//        try {
+//			AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(content.getContent());
+//			Record record;
+//			while ((record = reader.nextRecord()) != null) {
+//				System.out.println(record);
+//				for (int i = 0; i < record.getSchema().getFieldCount(); i++) {
+//					String value = record.getAsString(record.getSchema().getFields().get(i).getFieldName());
+//
+//				}
+//			}	
+//			ImageIO.write(image, "png", baos);
+//		} catch (IOException | MalformedRecordException e1) {
+//			// TODO Auto-generated catch block
+//			e1.printStackTrace();
+//		}
+        try {
+			ImageIO.write(image, "png", baos);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        
+        byte[] imageData = baos.toByteArray();
+        return generateOkResponse(new ByteArrayInputStream(imageData)).build();
+    }
     /**
      * Gets the details for a provenance event.
      *
