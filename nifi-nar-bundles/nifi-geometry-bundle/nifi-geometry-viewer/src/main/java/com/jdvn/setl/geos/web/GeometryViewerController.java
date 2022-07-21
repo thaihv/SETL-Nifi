@@ -34,6 +34,7 @@ public class GeometryViewerController extends HttpServlet {
 	
     static {
         supportedMimeTypes.add("application/avro+geowkt");
+        supportedMimeTypes.add("application/avro+geotiles");
     }
 
 	@Override
@@ -117,12 +118,15 @@ public class GeometryViewerController extends HttpServlet {
 					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
 					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
 
+				} else if ("application/avro+geotiles".equals(contentType)) {				
+					contentType = "image/png";
+					request.setAttribute("mode", contentType);
+					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
 				} else {
-					// leave plain text alone when formatting
 					formatted = content.getContent();
 					request.setAttribute("mode", contentType);
 					request.setAttribute("content", formatted);
-					request.getRequestDispatcher("/WEB-INF/jsp/geometry.jsp").include(request, response);
+					request.getRequestDispatcher("/WEB-INF/jsp/geometry.jsp").include(request, response);					
 				}
 			}
 			

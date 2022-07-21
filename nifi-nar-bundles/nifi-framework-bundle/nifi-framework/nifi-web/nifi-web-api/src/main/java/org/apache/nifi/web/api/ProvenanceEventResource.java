@@ -314,7 +314,7 @@ public class ProvenanceEventResource extends ApplicationResource {
 		gr.setPaint(Color.ORANGE);
 		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 40));
-		gr.drawString(String.valueOf(id.getLong()) + " : " + String.valueOf(z.getLong()) + String.valueOf(x.getLong()) + String.valueOf(y.getLong()), 10, 25);        
+		gr.drawString("E " + String.valueOf(id.getLong()) + " : " + String.valueOf(z.getLong()) + String.valueOf(x.getLong()) + String.valueOf(y.getLong()), 10, 25);        
 //        try {
 //			AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(content.getContent());
 //			Record record;

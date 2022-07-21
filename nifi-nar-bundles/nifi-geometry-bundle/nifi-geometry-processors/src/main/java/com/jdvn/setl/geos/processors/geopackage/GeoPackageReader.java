@@ -268,7 +268,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), compTileMatrix.toString());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
-	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+binary");
+	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
 	                session.transfer(transformed, REL_SUCCESS);   
 
 	                logger.info("Tiles added {} to flow", new Object[]{transformed});

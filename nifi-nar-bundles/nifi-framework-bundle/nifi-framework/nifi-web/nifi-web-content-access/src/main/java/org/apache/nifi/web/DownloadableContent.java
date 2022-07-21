@@ -55,7 +55,7 @@ public final class DownloadableContent {
 			return "application/avro+geowkt";
 		}
 		else if (geoType.contentEquals("Tiles")){
-			return "application/avro+binary";
+			return "application/avro+geotiles";
 		}    	
     	return type;
     }

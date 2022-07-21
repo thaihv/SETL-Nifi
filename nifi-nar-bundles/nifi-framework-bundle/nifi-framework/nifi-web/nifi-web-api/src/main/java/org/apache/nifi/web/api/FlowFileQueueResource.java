@@ -43,7 +43,9 @@ import org.apache.nifi.web.api.entity.Entity;
 import org.apache.nifi.web.api.entity.FlowFileEntity;
 import org.apache.nifi.web.api.entity.ListingRequestEntity;
 import org.apache.nifi.web.api.request.ClientIdParameter;
+import org.apache.nifi.web.api.request.LongParameter;
 
+import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -61,6 +63,14 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.Response.Status;
 import javax.ws.rs.core.StreamingOutput;
+
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -284,7 +294,103 @@ public class FlowFileQueueResource extends ApplicationResource {
 
         return generateOkResponse(response).type(contentType).header("Content-Disposition", String.format("attachment; filename=\"%s\"", content.getFilename())).build();
     }
+    /**
+     * Gets the geo tiles content for the specified flowfile in the specified connection.
+     *
+     * @param clientId      Optional client id. If the client id is not specified, a new one will be generated. This value (whether specified or generated) is included in the response.
+     * @param connectionId  The connection id
+     * @param flowFileUuid  The flowfile uuid
+     * @param clusterNodeId The cluster node id
+     * @return The content stream
+     * @throws InterruptedException if interrupted
+     */
+    @GET
+    @Consumes(MediaType.WILDCARD)
+    @Produces("image/png")
+    @Path("{id}/flowfiles/{flowfile-uuid}/content/{z}/{x}/{y}")
+    @ApiOperation(
+            value = "Gets the the geo tiles content for a FlowFile in a Connection.",
+            response = StreamingOutput.class,
+            authorizations = {
+                    @Authorization(value = "Read Source Data - /data/{component-type}/{uuid}")
+            }
+    )
+    @ApiResponses(
+            value = {
+                    @ApiResponse(code = 400, message = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(code = 401, message = "Client could not be authenticated."),
+                    @ApiResponse(code = 403, message = "Client is not authorized to make this request."),
+                    @ApiResponse(code = 404, message = "The specified resource could not be found."),
+                    @ApiResponse(code = 409, message = "The request was valid but NiFi was not in the appropriate state to process it. Retrying the same request later may be successful.")
+            }
+    )
+    public Response downloadGeoTilesFlowFileContent(
+            @ApiParam(
+                    value = "If the client id is not specified, new one will be generated. This value (whether specified or generated) is included in the response.",
+                    required = false
+            )
+            @QueryParam(CLIENT_ID) @DefaultValue(StringUtils.EMPTY) final ClientIdParameter clientId,
+            @ApiParam(
+                    value = "The connection id.",
+                    required = true
+            )
+            @PathParam("id") final String connectionId,
+            @ApiParam(
+                    value = "The flowfile uuid.",
+                    required = true
+            )
+            @PathParam("flowfile-uuid") final String flowFileUuid,
+    		@PathParam("z") final LongParameter z,
+			@PathParam("x") final LongParameter x,
+			@PathParam("y") final LongParameter y,
+            @ApiParam(
+                    value = "The id of the node where the content exists if clustered.",
+                    required = false
+            )
+            @QueryParam("clusterNodeId") final String clusterNodeId) throws InterruptedException {
 
+        // replicate if cluster manager
+        if (isReplicateRequest()) {
+            // determine where this request should be sent
+            if (clusterNodeId == null) {
+                throw new IllegalArgumentException("The id of the node in the cluster is required.");
+            } else {
+                // get the target node and ensure it exists
+                final NodeIdentifier targetNode = getClusterCoordinator().getNodeIdentifier(clusterNodeId);
+                if (targetNode == null) {
+                    throw new UnknownNodeException("The specified cluster node does not exist.");
+                }
+
+                return replicate(HttpMethod.GET, targetNode);
+            }
+        }
+
+        // NOTE - deferred authorization so we can consider flowfile attributes in the access decision
+
+        // get the uri of the request
+        final String uri = generateResourceUri("flowfile-queues", connectionId, "flowfiles", flowFileUuid, "content");
+
+        // get an input stream to the content
+        final DownloadableContent content = serviceFacade.getContent(connectionId, flowFileUuid, uri);
+
+        // generate a streaming response
+        BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+		Graphics2D gr = image.createGraphics();
+		gr.setPaint(Color.ORANGE);
+		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 40));
+		gr.drawString("Q " + flowFileUuid + " : " + String.valueOf(z.getLong()) + String.valueOf(x.getLong()) + String.valueOf(y.getLong()), 25, 25);        
+        try {
+			ImageIO.write(image, "png", baos);
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+        
+        byte[] imageData = baos.toByteArray();
+        return generateOkResponse(new ByteArrayInputStream(imageData)).build();
+    }
     /**
      * Creates a request to list the flowfiles in the queue of the specified connection.
      *
