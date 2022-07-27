@@ -16,19 +16,12 @@
  */
 package org.apache.nifi.web.api;
 
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
-import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 
-import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -55,6 +48,7 @@ import org.apache.nifi.web.api.dto.provenance.ProvenanceEventDTO;
 import org.apache.nifi.web.api.entity.ProvenanceEventEntity;
 import org.apache.nifi.web.api.entity.SubmitReplayRequestEntity;
 import org.apache.nifi.web.api.request.LongParameter;
+import org.apache.nifi.web.util.GeoUtils;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -307,38 +301,9 @@ public class ProvenanceEventResource extends ApplicationResource {
         // get an input stream to the content
         final DownloadableContent content = serviceFacade.getContent(id.getLong(), uri, ContentDirection.OUTPUT);
         
-     // generate a streaming response
-        BufferedImage image = new BufferedImage(256, 256, BufferedImage.TYPE_INT_RGB);
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		Graphics2D gr = image.createGraphics();
-		gr.setPaint(Color.ORANGE);
-		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 40));
-		gr.drawString("E " + String.valueOf(id.getLong()) + " : " + String.valueOf(z.getLong()) + String.valueOf(x.getLong()) + String.valueOf(y.getLong()), 10, 25);        
-//        try {
-//			AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(content.getContent());
-//			Record record;
-//			while ((record = reader.nextRecord()) != null) {
-//				System.out.println(record);
-//				for (int i = 0; i < record.getSchema().getFieldCount(); i++) {
-//					String value = record.getAsString(record.getSchema().getFields().get(i).getFieldName());
-//
-//				}
-//			}	
-//			ImageIO.write(image, "png", baos);
-//		} catch (IOException | MalformedRecordException e1) {
-//			// TODO Auto-generated catch block
-//			e1.printStackTrace();
-//		}
-        try {
-			ImageIO.write(image, "png", baos);
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-        
-        byte[] imageData = baos.toByteArray();
-        return generateOkResponse(new ByteArrayInputStream(imageData)).build();
+        ByteArrayInputStream bais = GeoUtils.getImageTileFromContent(content, z, x, y);
+
+		return generateOkResponse(bais).build();
     }
     /**
      * Gets the details for a provenance event.

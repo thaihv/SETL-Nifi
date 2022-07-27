@@ -10,12 +10,8 @@
 <script> 
 
 	var map = L.map('map').setView([20.982,105.721], 12);	 	
-	
-	L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-	    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-	}).addTo(map);
-	
 	var geoType = "<%= request.getAttribute("geoType")%>";
+	
 	if (geoType == "Tiles"){
 		var resourceUri = "<%= request.getAttribute("resourceUri")%>";
 		var urlGeoTiles = resourceUri + "/{z}/{x}/{y}";
@@ -27,6 +23,9 @@
 	      }).addTo(map);
 	}
 	else{
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+		    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+		}).addTo(map);		
 		var geomStyle = {
 			    "color": "#000",
 			    "fillColor": "#ff7800",
