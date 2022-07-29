@@ -26,6 +26,10 @@ public final class DownloadableContent {
     private final String filename;
     private final String type;
     private String crs = null;
+    private String envelope = null;
+    private String center = null;
+    private int zoom_min = 1;
+    private int zoom_max = 20;
     private String geoType = null;
     private String geoImageType = null;
     private final InputStream content;
@@ -75,6 +79,38 @@ public final class DownloadableContent {
      */
 	public void setCrs(String crs) {
 		this.crs = crs;
+	}
+
+	public String getEnvelope() {
+		return envelope;
+	}
+
+	public void setEnvelope(String envelope) {
+		this.envelope = envelope;
+	}
+
+	public String getCenter() {
+		return center;
+	}
+
+	public void setCenter(String center) {
+		this.center = center;
+	}
+
+	public int getZoom_min() {
+		return zoom_min;
+	}
+
+	public void setZoom_min(int zoom_min) {
+		this.zoom_min = zoom_min;
+	}
+
+	public int getZoom_max() {
+		return zoom_max;
+	}
+
+	public void setZoom_max(int zoom_max) {
+		this.zoom_max = zoom_max;
 	}
 
 	public String getGeoType() {

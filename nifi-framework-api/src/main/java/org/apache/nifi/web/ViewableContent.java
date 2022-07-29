@@ -26,6 +26,10 @@ public interface ViewableContent {
 
     public static final String CONTENT_REQUEST_ATTRIBUTE = "org.apache.nifi.web.content";
     public static final String GEO_CONTENT_CRS = "com.jdvn.setl.geos.crs";
+    public static final String GEO_CONTENT_ENVELOPE = "com.jdvn.setl.geos.envelope";
+    public static final String GEO_CONTENT_CENTER   = "com.jdvn.setl.geos.center";
+    public static final String GEO_CONTENT_ZOOM_MIN = "com.jdvn.setl.geos.zoomin";
+    public static final String GEO_CONTENT_ZOOM_MAX = "com.jdvn.setl.geos.zoomax";
     
     public enum DisplayMode {
 

@@ -1,13 +1,22 @@
 package com.jdvn.setl.geos.processors.util;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -15,19 +24,29 @@ import org.apache.avro.Schema.Type;
 import org.apache.nifi.avro.AvroTypeUtil;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
+import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
+import org.apache.nifi.serialization.record.RecordFieldType;
+import org.apache.nifi.serialization.record.RecordSchema;
+import org.geotools.data.DataStore;
+import org.geotools.data.DataStoreFinder;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
+import org.geotools.geometry.jts.JTS;
 import org.geotools.geometry.jts.JTSFactoryFinder;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileReader;
+import org.geotools.referencing.CRS;
+import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryCollection;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -40,35 +59,39 @@ import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opengis.referencing.operation.MathTransform;
+import org.opengis.referencing.operation.TransformException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-
 public class GeoUtils {
-	
-    private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
-	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
-	        final String geometryName, final Class<? extends Geometry> geometryClass,
-	        final Map<String, Class<?>> attributes) {
-	    final SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
-	    featureTypeBuilder.setName(typeName);
-	    featureTypeBuilder.setCRS(crs);
-	    featureTypeBuilder.add(geometryName, geometryClass);
 
-	    if (attributes != null) {
-	        attributes.forEach(featureTypeBuilder::add);
-	    }
-	    return featureTypeBuilder.buildFeatureType();
-	}	    
-    public static String getGeometryFieldName(Record record) {
+	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
+
+	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
+			final String geometryName, final Class<? extends Geometry> geometryClass,
+			final Map<String, Class<?>> attributes) {
+		final SimpleFeatureTypeBuilder featureTypeBuilder = new SimpleFeatureTypeBuilder();
+		featureTypeBuilder.setName(typeName);
+		featureTypeBuilder.setCRS(crs);
+		featureTypeBuilder.add(geometryName, geometryClass);
+
+		if (attributes != null) {
+			attributes.forEach(featureTypeBuilder::add);
+		}
+		return featureTypeBuilder.buildFeatureType();
+	}
+
+	public static String getGeometryFieldName(Record record) {
 		String geoKey = null;
 		for (int i = 0; i < record.getSchema().getFieldCount(); i++) {
 			String value = record.getAsString(record.getSchema().getFields().get(i).getFieldName());
 			if (value.contains("MULTILINESTRING") || value.contains("LINESTRING") || value.contains("MULTIPOLYGON")
 					|| value.contains("POLYGON") || value.contains("POINT") || value.contains("MULTIPOINT")
 					|| value.contains("GEOMETRYCOLLECTION")) {
-				
+
 				geoKey = record.getSchema().getFields().get(i).getFieldName();
 				break;
 			}
@@ -76,16 +99,140 @@ public class GeoUtils {
 		return geoKey;
 
 	}
-    public static Map<String, Class<?>> createAttributeTableFromRecordSet(RecordReader avroReader, String geomFieldName){
-        Map<String, Class<?>> attributes = new HashMap<>();
+
+	public static ArrayList<Record> getRecordsFromShapeFile(final File shpFile) {
+		Map<String, Object> mapAttrs = new HashMap<>();
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		try {
+			mapAttrs.put("url", shpFile.toURI().toURL());
+			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+			String typeName = dataStore.getTypeNames()[0];
+			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+			SimpleFeatureType schema = featureSource.getSchema();
+			final List<RecordField> fields = new ArrayList<>();
+			for (int i = 0; i < schema.getAttributeCount(); i++) {
+				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+				DataType dataType;
+				switch (fieldType) {
+				case "Long":
+					dataType = RecordFieldType.LONG.getDataType();
+					break;
+				case "String":
+					dataType = RecordFieldType.STRING.getDataType();
+					break;
+				case "Double":
+					dataType = RecordFieldType.DOUBLE.getDataType();
+					break;
+				case "Boolean":
+					dataType = RecordFieldType.BOOLEAN.getDataType();
+					break;
+				case "Byte":
+					dataType = RecordFieldType.BYTE.getDataType();
+					break;
+				case "Character":
+					dataType = RecordFieldType.CHAR.getDataType();
+					break;
+				case "Integer":
+					dataType = RecordFieldType.INT.getDataType();
+					break;
+				case "Float":
+					dataType = RecordFieldType.FLOAT.getDataType();
+					break;
+				case "Number":
+					dataType = RecordFieldType.BIGINT.getDataType();
+					break;
+				case "Date":
+					dataType = RecordFieldType.DATE.getDataType();
+					break;
+				case "Time":
+					dataType = RecordFieldType.TIME.getDataType();
+					break;
+				case "Timestamp":
+					dataType = RecordFieldType.TIMESTAMP.getDataType();
+					break;
+				case "Short":
+					dataType = RecordFieldType.SHORT.getDataType();
+					break;
+				default:
+					dataType = RecordFieldType.STRING.getDataType();
+				}
+				fields.add(new RecordField(fieldName, dataType));
+			}
+			SimpleFeatureCollection features = featureSource.getFeatures();
+			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
+			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
+			while (it.hasNext()) {
+				SimpleFeature feature = it.next();
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				for (int i = 0; i < feature.getAttributeCount(); i++) {
+					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
+					Object value = feature.getAttribute(i);
+					fieldMap.put(key, value);
+				}
+				Record r = new MapRecord(recordSchema, fieldMap);
+				returnRs.add(r);
+				// System.out.println(r);
+			}
+			it.close();
+			dataStore.dispose();
+			return returnRs;
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+
+		}
+		return returnRs;
+	}
+
+	public static CoordinateReferenceSystem getCRSFromShapeFile(final File shpFile) {
+		Map<String, Object> mapAttrs = new HashMap<>();
+		CoordinateReferenceSystem cRS = null;
+		try {
+			mapAttrs.put("url", shpFile.toURI().toURL());
+			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+			String typeName = dataStore.getTypeNames()[0];
+
+			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+
+			SimpleFeatureType schema = featureSource.getSchema();
+			cRS = schema.getCoordinateReferenceSystem();
+			dataStore.dispose();
+		} catch (IOException e) {
+
+			e.printStackTrace();
+		}
+
+		return cRS;
+	}
+
+	public static Coordinate transformCoordinateBasedOnCrs(CoordinateReferenceSystem sourceCRS,
+			CoordinateReferenceSystem targetCRS, Coordinate in) {
+		Coordinate out = in;
+
+		try {
+			MathTransform transform = CRS.findMathTransform(sourceCRS, targetCRS);
+			JTS.transform(in, out, transform);
+		} catch (TransformException | FactoryException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return out;
+
+	}
+
+	public static Map<String, Class<?>> createAttributeTableFromRecordSet(RecordReader avroReader,
+			String geomFieldName) {
+		Map<String, Class<?>> attributes = new HashMap<>();
 		try {
 			List<RecordField> fields = avroReader.getSchema().getFields();
-			for (int i = 0; i < fields.size(); i ++) {
+			for (int i = 0; i < fields.size(); i++) {
 				RecordField f = fields.get(i);
 				DataType type = f.getDataType();
 				Class<?> obj;
 				switch (type.getFieldType()) {
-				case LONG :
+				case LONG:
 					obj = Long.class;
 					break;
 				case STRING:
@@ -125,28 +272,30 @@ public class GeoUtils {
 					obj = Short.class;
 					break;
 				default:
-					obj = String.class;					
+					obj = String.class;
 				}
 				attributes.put(f.getFieldName(), obj);
 				if (f.getFieldName().contains(geomFieldName)) {
 					attributes.remove(geomFieldName);
 				}
-			}			
+			}
 		} catch (MalformedRecordException e) {
 			e.printStackTrace();
 		}
 		return attributes;
-	}    
-    @SuppressWarnings({ "rawtypes", "unchecked" })
-	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs) {
-        List<SimpleFeature> features = new ArrayList<>();
-        String geomFieldName = "the_geom";
-        String shpGeoColumn = "the_geom";
-        Record record;
-        try {
-	        boolean bCreatedSchema = false;
-	        SimpleFeatureBuilder featureBuilder = null;
-	        SimpleFeatureType TYPE = null;
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName,
+			RecordReader avroReader, CoordinateReferenceSystem crs) {
+		List<SimpleFeature> features = new ArrayList<>();
+		String geomFieldName = "the_geom";
+		String shpGeoColumn = "the_geom";
+		Record record;
+		try {
+			boolean bCreatedSchema = false;
+			SimpleFeatureBuilder featureBuilder = null;
+			SimpleFeatureType TYPE = null;
 			Class geometryClass = null;
 			while ((record = avroReader.nextRecord()) != null) {
 				if (!bCreatedSchema) {
@@ -154,67 +303,68 @@ public class GeoUtils {
 					String geovalue = record.getAsString(geomFieldName);
 					String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
 					switch (type) {
-						case "MULTILINESTRING" :
-							geometryClass = MultiLineString.class;
-							break;
-						case "LINESTRING" :
-							geometryClass = LineString.class;
-							break;					
-						case "MULTIPOLYGON" :
-							geometryClass = MultiLineString.class;
-							break;
-						case "POLYGON" :
-							geometryClass = Polygon.class;
-							break;	
-						case "MULTIPOINT" :
-							geometryClass = MultiPoint.class;
-							break;
-						case "POINT" :
-							geometryClass = Point.class;
-							break;				
-						case "GEOMETRYCOLLECTION" :
-							geometryClass = GeometryCollection.class;
-							break;					
-						default:
-							geometryClass = MultiLineString.class;					
-					}	
-					
+					case "MULTILINESTRING":
+						geometryClass = MultiLineString.class;
+						break;
+					case "LINESTRING":
+						geometryClass = LineString.class;
+						break;
+					case "MULTIPOLYGON":
+						geometryClass = MultiLineString.class;
+						break;
+					case "POLYGON":
+						geometryClass = Polygon.class;
+						break;
+					case "MULTIPOINT":
+						geometryClass = MultiPoint.class;
+						break;
+					case "POINT":
+						geometryClass = Point.class;
+						break;
+					case "GEOMETRYCOLLECTION":
+						geometryClass = GeometryCollection.class;
+						break;
+					default:
+						geometryClass = MultiLineString.class;
+					}
+
 					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
 					// shp file with geo column is "the_geom"
 					TYPE = generateFeatureType(collectionName, crs, shpGeoColumn, geometryClass, attributes);
-			        featureBuilder = new SimpleFeatureBuilder(TYPE);
+					featureBuilder = new SimpleFeatureBuilder(TYPE);
 					bCreatedSchema = true;
 				}
 				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
-		        WKTReader reader = new WKTReader( geometryFactory );
-		        // Add geometry
-		        Geometry geo = reader.read(record.getAsString(geomFieldName));
-		        // Add attributes
+				WKTReader reader = new WKTReader(geometryFactory);
+				// Add geometry
+				Geometry geo = reader.read(record.getAsString(geomFieldName));
+				// Add attributes
 				int size = record.getSchema().getFieldCount();
 				Object[] objs = new Object[size];
-		        for (int i = 0; i < size; i ++) {
-		        	String fName = record.getSchema().getFieldNames().get(i);
-		        	if ((fName == geomFieldName) && (geomFieldName != shpGeoColumn))
-		        		fName = shpGeoColumn;
-		        	int index = featureBuilder.getFeatureType().indexOf(fName);
-		        	if (fName.contains(geomFieldName))
-		        		objs[index]= geo;
-		        	else
-		        		objs[index] = record.getValue(fName);
-		        	
-		        }
-		        featureBuilder.addAll(objs);
-			    SimpleFeature feature = featureBuilder.buildFeature(null);
-			    features.add(feature);
+				for (int i = 0; i < size; i++) {
+					String fName = record.getSchema().getFieldNames().get(i);
+					if ((fName == geomFieldName) && (geomFieldName != shpGeoColumn))
+						fName = shpGeoColumn;
+					int index = featureBuilder.getFeatureType().indexOf(fName);
+					if (fName.contains(geomFieldName))
+						objs[index] = geo;
+					else
+						objs[index] = record.getValue(fName);
+
+				}
+				featureBuilder.addAll(objs);
+				SimpleFeature feature = featureBuilder.buildFeature(null);
+				features.add(feature);
 			}
-			
+
 			return new ListFeatureCollection(TYPE, features);
 		} catch (IOException | MalformedRecordException | ParseException e) {
-			logger.error("Could not create SimpleFeatureCollection because {}", new Object[]{e});
-		} 
+			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });
+		}
 		return null;
 	}
-    public static ArrayList<Record> getTilesRecordFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
+
+	public static ArrayList<Record> getTilesRecordFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 
 		final List<Field> tileFields = new ArrayList<>();
@@ -237,7 +387,7 @@ public class GeoUtils {
 				fieldMap.put("data", tile.getData());
 
 				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
-				returnRs.add(tileRecord);						
+				returnRs.add(tileRecord);
 			}
 			r.close();
 		} catch (IOException e) {
@@ -245,5 +395,157 @@ public class GeoUtils {
 			e.printStackTrace();
 		}
 		return returnRs;
-	}	
+	}
+	public static int[] getMinMaxTilesZoomTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
+
+		int minMax[] = { 1, 20};
+	    int max = Integer.MIN_VALUE;
+	    int min = Integer.MAX_VALUE;
+		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+			
+			while (r.hasNext()) {
+				Tile tile = r.next();
+
+				if (tile.getZoom() > max) {
+					max = tile.getZoom();
+				}
+				if (tile.getZoom() < min) {
+					min = tile.getZoom();
+				}
+			}
+			r.close();
+			minMax[0] = min;
+			minMax[1] = max;
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return minMax;
+	}
+	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(DataStore store, String tableName) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		try {
+			SimpleFeatureSource featureSource = store.getFeatureSource(tableName);
+			SimpleFeatureType schema = featureSource.getSchema();
+			final List<RecordField> fields = new ArrayList<>();
+			for (int i = 0; i < schema.getAttributeCount(); i++) {
+				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+				DataType dataType;
+				switch (fieldType) {
+				case "Long":
+					dataType = RecordFieldType.LONG.getDataType();
+					break;
+				case "String":
+					dataType = RecordFieldType.STRING.getDataType();
+					break;
+				case "Double":
+					dataType = RecordFieldType.DOUBLE.getDataType();
+					break;
+				case "Boolean":
+					dataType = RecordFieldType.BOOLEAN.getDataType();
+					break;
+				case "Byte":
+					dataType = RecordFieldType.BYTE.getDataType();
+					break;
+				case "Character":
+					dataType = RecordFieldType.CHAR.getDataType();
+					break;
+				case "Integer":
+					dataType = RecordFieldType.INT.getDataType();
+					break;
+				case "Float":
+					dataType = RecordFieldType.FLOAT.getDataType();
+					break;
+				case "Number":
+					dataType = RecordFieldType.BIGINT.getDataType();
+					break;
+				case "Date":
+					dataType = RecordFieldType.DATE.getDataType();
+					break;
+				case "Time":
+					dataType = RecordFieldType.TIME.getDataType();
+					break;
+				case "Timestamp":
+					dataType = RecordFieldType.TIMESTAMP.getDataType();
+					break;
+				case "Short":
+					dataType = RecordFieldType.SHORT.getDataType();
+					break;
+				default:
+					dataType = RecordFieldType.STRING.getDataType();
+				}
+				fields.add(new RecordField(fieldName, dataType));
+			}
+			SimpleFeatureCollection features = featureSource.getFeatures();
+			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
+			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
+			while (it.hasNext()) {
+				SimpleFeature feature = it.next();
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				for (int i = 0; i < feature.getAttributeCount(); i++) {
+					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
+					Object value = feature.getAttribute(i);
+					fieldMap.put(key, value);
+				}
+				Record r = new MapRecord(recordSchema, fieldMap);
+				returnRs.add(r);
+				// System.out.println(r);
+			}
+			it.close();
+			return returnRs;
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+
+		}
+		return returnRs;
+	}
+
+	public static CoordinateReferenceSystem getCRSFromGeoPackageFeatureTable(DataStore store, String tableName) {
+		CoordinateReferenceSystem cRS = null;
+		try {
+			SimpleFeatureCollection features = store.getFeatureSource(tableName).getFeatures();
+			SimpleFeatureType schema = features.getSchema();
+			cRS = schema.getCoordinateReferenceSystem();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return cRS;
+	}
+
+	public static CoordinateReferenceSystem getCRSFromGeoPackageTilesTable(final File geopkg, TileEntry tileEntry) {
+		CoordinateReferenceSystem cRS = null;
+		org.geotools.geopkg.mosaic.GeoPackageReader reader;
+		try {
+			reader = new org.geotools.geopkg.mosaic.GeoPackageReader(geopkg, null);
+			cRS = reader.getCoordinateReferenceSystem(tileEntry.getTableName());
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return cRS;
+	}
+
+	public static String getImageFormat(byte[] data) throws IOException {
+		ByteArrayInputStream bis = new ByteArrayInputStream(data);
+		Object source = bis;
+		ImageInputStream iis = ImageIO.createImageInputStream(source);
+		Iterator<?> readers = ImageIO.getImageReaders(iis);
+		ImageReader reader = (ImageReader) readers.next();
+		reader.setInput(iis, true);
+		return reader.getFormatName();
+	}
+
+	public static BufferedImage getImage(byte[] data) throws IOException {
+		ByteArrayInputStream bis = new ByteArrayInputStream(data);
+		Object source = bis;
+		ImageInputStream iis = ImageIO.createImageInputStream(source);
+		Iterator<?> readers = ImageIO.getImageReaders(iis);
+		ImageReader reader = (ImageReader) readers.next();
+		reader.setInput(iis, true);
+		ImageReadParam param = reader.getDefaultReadParam();
+		return reader.read(0, param);
+	}
 }

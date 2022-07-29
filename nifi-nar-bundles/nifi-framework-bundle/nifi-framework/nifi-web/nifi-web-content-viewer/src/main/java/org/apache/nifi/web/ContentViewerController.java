@@ -20,7 +20,6 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.servlet.ServletContext;
@@ -34,6 +33,7 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.authorization.AccessDeniedException;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.web.ViewableContent.DisplayMode;
 import org.apache.tika.detect.DefaultDetector;
@@ -237,6 +237,12 @@ public class ContentViewerController extends HttpServlet {
                 	if (downloadableContent.isGeoContent()) {
                 		request.setAttribute(ViewableContent.GEO_CONTENT_CRS,downloadableContent.getCrs());
                 		request.setAttribute("geoType",downloadableContent.getGeoType());
+                		if (downloadableContent.getGeoType().contentEquals("Tiles")) {
+                			request.setAttribute(ViewableContent.GEO_CONTENT_ENVELOPE,downloadableContent.getEnvelope());
+                			request.setAttribute(ViewableContent.GEO_CONTENT_CENTER,downloadableContent.getCenter());
+                			request.setAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN,downloadableContent.getZoom_min());
+                			request.setAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX,downloadableContent.getZoom_max());
+                		}
                 	}
                     // create a request attribute for accessing the content
                     request.setAttribute(ViewableContent.CONTENT_REQUEST_ATTRIBUTE, new ViewableContent() {

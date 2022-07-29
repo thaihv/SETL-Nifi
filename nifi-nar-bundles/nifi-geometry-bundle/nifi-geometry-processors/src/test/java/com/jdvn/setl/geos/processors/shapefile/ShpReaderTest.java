@@ -43,6 +43,8 @@ import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.operation.TransformException;
 
+import com.jdvn.setl.geos.processors.util.GeoUtils;
+
 
 public class ShpReaderTest {
 
@@ -179,8 +181,6 @@ public class ShpReaderTest {
     @Test
     public void testProjectedKoreanCoordinatesToDecimalDegree() throws FactoryException, TransformException {
         //Korea EPSG:5179 -> EPSG:4326 CONVERSION
-
-    	final ShpReader toTest = new ShpReader();
     	
         CoordinateReferenceSystem sourceCRS = CRS.decode("EPSG:5179");
         CoordinateReferenceSystem targetCRS = CRS.decode("EPSG:4326");
@@ -190,7 +190,7 @@ public class ShpReaderTest {
 
         // EPSG:5179 Y , X
         Coordinate in = new Coordinate(coordinateY, coordinateX); 
-        Coordinate result = toTest.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
+        Coordinate result = GeoUtils.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
         
         double expectedLongitude = 131.0999928;
         double expectedLatitude = 40.0099721;
@@ -204,8 +204,6 @@ public class ShpReaderTest {
     public void testProjectedVN2000ToEPSG4326() throws FactoryException, TransformException {
         //VN2000 EPSG:3405 -> EPSG:4326 CONVERSION
 
-    	final ShpReader toTest = new ShpReader();
-    	
         CoordinateReferenceSystem sourceCRS = CRS.decode("EPSG:3405");
         CoordinateReferenceSystem targetCRS = CRS.decode("EPSG:4326");
 
@@ -213,7 +211,7 @@ public class ShpReaderTest {
         double coordinateY = 2348240.210083008;
         // EPSG:3405 X , Y
         Coordinate in = new Coordinate(coordinateX, coordinateY); 
-        Coordinate result = toTest.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
+        Coordinate result = GeoUtils.transformCoordinateBasedOnCrs(sourceCRS,targetCRS,in);
 
         double expectedLongitude = 105.4595182204;
         double expectedLatitude =  21.23415875713;

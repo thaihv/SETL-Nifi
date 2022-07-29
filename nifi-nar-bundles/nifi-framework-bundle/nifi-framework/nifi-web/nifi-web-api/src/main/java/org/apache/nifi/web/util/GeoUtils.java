@@ -58,8 +58,8 @@ public class GeoUtils {
 		Graphics2D gr = image.createGraphics();
 		gr.setPaint(Color.ORANGE);
 		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 20));
-		gr.drawString(displayText, 20, 128);
+		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 12));
+		gr.drawString(displayText, 10, 128);
 		try {
 			ImageIO.write(image, format, baos);
 		} catch (IOException e) {

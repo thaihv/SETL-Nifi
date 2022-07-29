@@ -36,6 +36,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
+import com.jdvn.setl.geos.processors.util.GeoUtils;
+
 
 public class GeoPackageReaderTest {
 
@@ -56,15 +58,13 @@ public class GeoPackageReaderTest {
     	
         final String inFile = "src/test/resources/geopackage/hanoi.gpkg";
 
-        final GeoPackageReader toTest = new GeoPackageReader();
-        
 		HashMap<String, Object> map = new HashMap<>();
 		map.put(GeoPkgDataStoreFactory.DBTYPE.key, "geopkg");
 		map.put(GeoPkgDataStoreFactory.DATABASE.key, inFile);
 		DataStore store = null;
 		try {
 			store = DataStoreFinder.getDataStore(map);
-	        CoordinateReferenceSystem crs = toTest.getCRSFromFeatureTable(store, "communes");
+	        CoordinateReferenceSystem crs = GeoUtils.getCRSFromGeoPackageFeatureTable(store, "communes");
 	        assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -79,12 +79,10 @@ public class GeoPackageReaderTest {
         final String inFile = "src/test/resources/geopackage/hanoi.gpkg";
         final File geoFile = new File(inFile);
         
-        final GeoPackageReader toTest = new GeoPackageReader();
-        
         GeoPackage geoPackage;
 		try {
 			geoPackage = new GeoPackage(geoFile);
-			CoordinateReferenceSystem crs = toTest.getCRSFromTilesTable(new File(inFile), geoPackage.tiles().get(0));
+			CoordinateReferenceSystem crs = GeoUtils.getCRSFromGeoPackageTilesTable(new File(inFile), geoPackage.tiles().get(0));
 			assertTrue( crs.getName().toString().contains("EPSG:WGS 84"));
 			geoPackage.close();
 		} catch (IOException e) {

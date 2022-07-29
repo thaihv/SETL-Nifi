@@ -16,10 +16,6 @@
  */
 package com.jdvn.setl.geos.processors.shapefile;
 
-import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.Rectangle;
-import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
@@ -54,8 +50,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
-import javax.imageio.ImageIO;
-
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -82,38 +76,12 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
-import org.apache.nifi.serialization.SimpleRecordSchema;
-import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.ListRecordSet;
-import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
-import org.geotools.data.DataStore;
-import org.geotools.data.DataStoreFinder;
-import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.data.simple.SimpleFeatureSource;
-import org.geotools.geometry.jts.JTS;
-import org.geotools.geometry.jts.ReferencedEnvelope;
-import org.geotools.map.FeatureLayer;
-import org.geotools.map.Layer;
-import org.geotools.map.MapContent;
-import org.geotools.map.MapViewport;
-import org.geotools.referencing.CRS;
-import org.geotools.renderer.GTRenderer;
-import org.geotools.renderer.lite.StreamingRenderer;
-import org.geotools.styling.SLD;
-import org.geotools.styling.Style;
-import org.locationtech.jts.geom.Coordinate;
-import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
-import org.opengis.referencing.FactoryException;
-import org.opengis.referencing.NoSuchAuthorityCodeException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
-import org.opengis.referencing.operation.MathTransform;
-import org.opengis.referencing.operation.TransformException;
+
+import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 
 
@@ -331,10 +299,10 @@ public class ShpReader extends AbstractProcessor {
                 }
 
                 /* Get ShapeFile data and transfer to session in Avro Format*/
-                final List<Record> records = getRecordsFromShapeFile(file);
+                final List<Record> records = GeoUtils.getRecordsFromShapeFile(file);
                 if (records.size() > 0) {
                     FlowFile transformed = session.create(flowFile);
-                    CoordinateReferenceSystem myCrs = getCRSFromShapeFile(file);
+                    CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
                     RecordSchema recordSchema = records.get(0).getSchema();                
                     transformed = session.write(transformed, new OutputStreamCallback() {
                         @Override
@@ -354,6 +322,7 @@ public class ShpReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
 
@@ -492,182 +461,4 @@ public class ShpReader extends AbstractProcessor {
         return attributes;
     }    
 
-	public ArrayList<Record> getRecordsFromShapeFile(final File shpFile) {
-		Map<String, Object> mapAttrs = new HashMap<>();
-		final ArrayList<Record> returnRs = new ArrayList<Record>();
-		try {
-			mapAttrs.put("url", shpFile.toURI().toURL());
-			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-			String typeName = dataStore.getTypeNames()[0];
-			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-			SimpleFeatureType schema = featureSource.getSchema();
-			final List<RecordField> fields = new ArrayList<>();
-			for (int i = 0; i < schema.getAttributeCount(); i++) {
-				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
-				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
-				DataType dataType;
-				switch (fieldType) {
-					case "Long":
-						dataType = RecordFieldType.LONG.getDataType();
-						break;
-					case "String":
-						dataType = RecordFieldType.STRING.getDataType();
-						break;
-					case "Double":
-						dataType = RecordFieldType.DOUBLE.getDataType();
-						break;
-					case "Boolean":
-						dataType = RecordFieldType.BOOLEAN.getDataType();
-						break;
-					case "Byte":
-						dataType = RecordFieldType.BYTE.getDataType();
-						break;
-					case "Character":
-						dataType = RecordFieldType.CHAR.getDataType();
-						break;
-					case "Integer":
-						dataType = RecordFieldType.INT.getDataType();
-						break;
-					case "Float":
-						dataType = RecordFieldType.FLOAT.getDataType();
-						break;
-					case "Number":
-						dataType = RecordFieldType.BIGINT.getDataType();
-						break;
-					case "Date":
-						dataType = RecordFieldType.DATE.getDataType();
-						break;
-					case "Time":
-						dataType = RecordFieldType.TIME.getDataType();
-						break;
-					case "Timestamp":
-						dataType = RecordFieldType.TIMESTAMP.getDataType();
-						break;
-					case "Short":
-						dataType = RecordFieldType.SHORT.getDataType();
-						break;
-					default:
-						dataType = RecordFieldType.STRING.getDataType();
-				}
-				fields.add(new RecordField(fieldName, dataType));
-			}
-			SimpleFeatureCollection features = featureSource.getFeatures();
-			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
-			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
-			while (it.hasNext()) {
-				SimpleFeature feature = it.next();
-				Map<String, Object> fieldMap = new HashMap<String, Object>();
-				for (int i = 0; i < feature.getAttributeCount(); i++) {
-					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
-					Object value = feature.getAttribute(i);
-					fieldMap.put(key, value);
-				}
-				Record r = new MapRecord(recordSchema, fieldMap);
-				returnRs.add(r);
-				//System.out.println(r);
-			}
-			it.close();
-			dataStore.dispose();
-			return returnRs;
-
-		} catch (IOException e) {
-			e.printStackTrace();
-		} finally {
-
-		}
-		return returnRs;
-	}
-
-	public CoordinateReferenceSystem getCRSFromShapeFile(final File shpFile) {
-		Map<String, Object> mapAttrs = new HashMap<>();
-		CoordinateReferenceSystem cRS = null;
-		try {
-			mapAttrs.put("url", shpFile.toURI().toURL());
-			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-			String typeName = dataStore.getTypeNames()[0];
-
-			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-
-			SimpleFeatureType schema = featureSource.getSchema();
-			cRS = schema.getCoordinateReferenceSystem();
-			dataStore.dispose();
-		} catch(IOException e) {
-
-			e.printStackTrace();
-		}
-		
-		return cRS;
-	}
-	public void createMapFromShapeFile(SimpleFeatureSource featureSource, String epsgCRS, String imgOutFile,
-			int imageWidth) {
-
-		Style style = SLD.createSimpleStyle(featureSource.getSchema());
-		Layer layer = new FeatureLayer(featureSource, style);
-
-		// Step 1: Create map
-		MapContent map = new MapContent();
-		map.setTitle("Geometry Block");
-
-		// Step 2: Set projection
-		CoordinateReferenceSystem crs;
-		try {
-			crs = CRS.decode(epsgCRS);
-			MapViewport vp = map.getViewport();
-			vp.setCoordinateReferenceSystem(crs);
-
-			// Step 3: Add layers to map
-			map.addLayer(layer);
-
-			GTRenderer renderer = new StreamingRenderer();
-			renderer.setMapContent(map);
-
-			Rectangle imageBounds = null;
-			ReferencedEnvelope mapBounds = null;
-			try {
-				mapBounds = map.getMaxBounds();
-				double heightToWidth = mapBounds.getSpan(1) / mapBounds.getSpan(0);
-				imageBounds = new Rectangle(0, 0, imageWidth, (int) Math.round(imageWidth * heightToWidth));
-
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-
-			if (imageBounds.height <= 0)
-				imageBounds.height = imageBounds.width;
-			BufferedImage image = new BufferedImage(imageBounds.width, imageBounds.height, BufferedImage.TYPE_INT_RGB);
-
-			Graphics2D gr = image.createGraphics();
-			gr.setPaint(Color.WHITE);
-			gr.fill(imageBounds);
-
-			try {
-				renderer.paint(gr, imageBounds, mapBounds);
-				File fileToSave = new File(imgOutFile);
-				ImageIO.write(image, "jpeg", fileToSave);
-
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-		} catch (NoSuchAuthorityCodeException e1) {
-			e1.printStackTrace();
-		} catch (FactoryException e1) {
-			e1.printStackTrace();
-		}
-		map.dispose();
-	}
-	public Coordinate transformCoordinateBasedOnCrs(CoordinateReferenceSystem sourceCRS,
-			CoordinateReferenceSystem targetCRS, Coordinate in) {
-		Coordinate out = in;
-
-		try {
-			MathTransform transform = CRS.findMathTransform(sourceCRS, targetCRS);
-			JTS.transform(in, out, transform);
-		} catch (TransformException | FactoryException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return out;
-
-	}
 }

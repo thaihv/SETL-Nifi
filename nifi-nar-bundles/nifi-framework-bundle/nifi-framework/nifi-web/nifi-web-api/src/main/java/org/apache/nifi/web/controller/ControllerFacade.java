@@ -16,6 +16,33 @@
  */
 package org.apache.nifi.web.controller;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.text.Collator;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TimeZone;
+import java.util.TreeSet;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import javax.ws.rs.WebApplicationException;
+
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ClassUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -125,32 +152,6 @@ import org.apache.nifi.web.search.query.SearchQuery;
 import org.apache.nifi.web.search.query.SearchQueryParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.ws.rs.WebApplicationException;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.text.Collator;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.SortedSet;
-import java.util.TimeZone;
-import java.util.TreeSet;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 public class ControllerFacade implements Authorizable {
 
@@ -1374,6 +1375,12 @@ public class ControllerFacade implements Authorizable {
             if (attributes.get(GeoAttributes.CRS.key()) != null) {
             	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
             	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
+            	if (attributes.get(GeoAttributes.GEO_TYPE.key()).contentEquals("Tiles")) {
+            		result.setEnvelope(attributes.get(GeoAttributes.GEO_ENVELOPE.key()));
+            		result.setCenter(attributes.get(GeoAttributes.GEO_CENTER.key()));
+            		result.setZoom_min(Integer.parseInt(attributes.get(GeoAttributes.GEO_ZOOM_MIN.key())));
+            		result.setZoom_max(Integer.parseInt(attributes.get(GeoAttributes.GEO_ZOOM_MAX.key())));
+            	}
             }
             return result;
         } catch (final ContentNotFoundException cnfe) {

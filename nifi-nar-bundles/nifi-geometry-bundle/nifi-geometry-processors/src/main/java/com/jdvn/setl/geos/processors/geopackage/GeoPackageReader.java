@@ -16,8 +16,6 @@
  */
 package com.jdvn.setl.geos.processors.geopackage;
 
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -26,19 +24,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.Inflater;
-
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReadParam;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
@@ -66,27 +57,17 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
-import org.apache.nifi.serialization.SimpleRecordSchema;
-import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.ListRecordSet;
-import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
-import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.simple.SimpleFeatureIterator;
-import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.GeoPkgDataStoreFactory;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileMatrix;
 import org.geotools.geopkg.TileReader;
-import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
@@ -162,14 +143,14 @@ public class GeoPackageReader extends AbstractProcessor {
 			DataStore store = DataStoreFinder.getDataStore(map);
 			String[] names = store.getTypeNames();
 			for (String name : names) {
-                final List<Record> records = getRecordsFromFeatureTable(store,name);
+                final List<Record> records = GeoUtils.getRecordsFromGeoPackageFeatureTable(store,name);
                 
                 if (records.isEmpty() == false) {
                 	
                     final long importStart = System.nanoTime();
                     
                     FlowFile transformed = session.create(flowFile);
-    				CoordinateReferenceSystem myCrs = getCRSFromFeatureTable(store,name);
+    				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);
                     RecordSchema recordSchema = records.get(0).getSchema();                
                     transformed = session.write(transformed, new OutputStreamCallback() {
                         @Override
@@ -189,6 +170,7 @@ public class GeoPackageReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
 
@@ -243,9 +225,9 @@ public class GeoPackageReader extends AbstractProcessor {
 	                FlowFile transformed = session.create(flowFile);
 	                
 	                //Get geo attributes
-	                CoordinateReferenceSystem myCrs = getCRSFromTilesTable(file,geoPackage.tiles().get(i));
+	                CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageTilesTable(file,geoPackage.tiles().get(i));
 	                TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
-	                String imgType = getImageFormat(r.next().getData());
+	                String imgType = GeoUtils.getImageFormat(r.next().getData());
 
                     RecordSchema recordSchema = records.get(0).getSchema();                
                     transformed = session.write(transformed, new OutputStreamCallback() {
@@ -264,10 +246,22 @@ public class GeoPackageReader extends AbstractProcessor {
 	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope.toString());
+	                
+	                String envelop = envelope.toString().substring(envelope.toString().indexOf("["));
+	                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
+	                
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelop);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), compTileMatrix.toString());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+	                
+	                int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
+	                
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));
+	                
 	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
 	                session.transfer(transformed, REL_SUCCESS);   
 
@@ -286,126 +280,5 @@ public class GeoPackageReader extends AbstractProcessor {
 		}
 		session.remove(flowFile);
 	}
-	protected BufferedImage getImage(byte[] data) throws IOException {
-        ByteArrayInputStream bis = new ByteArrayInputStream(data);
-        Object source = bis; 
-        ImageInputStream iis = ImageIO.createImageInputStream(source); 
-        Iterator<?> readers = ImageIO.getImageReaders(iis);
-        ImageReader reader = (ImageReader) readers.next();
-        reader.setInput(iis, true);
-        ImageReadParam param = reader.getDefaultReadParam();
-        return reader.read(0, param);
-    }	
-	public String getImageFormat(byte[] data) throws IOException {
-        ByteArrayInputStream bis = new ByteArrayInputStream(data);
-        Object source = bis; 
-        ImageInputStream iis = ImageIO.createImageInputStream(source); 
-        Iterator<?> readers = ImageIO.getImageReaders(iis);
-        ImageReader reader = (ImageReader) readers.next();
-        reader.setInput(iis, true);
-        return reader.getFormatName();
-    }	
-	public ArrayList<Record> getRecordsFromFeatureTable(DataStore store, String tableName) {
-		final ArrayList<Record> returnRs = new ArrayList<Record>();
-		try {
-			SimpleFeatureSource featureSource = store.getFeatureSource(tableName);
-			SimpleFeatureType schema = featureSource.getSchema();
-			final List<RecordField> fields = new ArrayList<>();
-			for (int i = 0; i < schema.getAttributeCount(); i++) {
-				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
-				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
-				DataType dataType;
-				switch (fieldType) {
-				case "Long":
-					dataType = RecordFieldType.LONG.getDataType();
-					break;
-				case "String":
-					dataType = RecordFieldType.STRING.getDataType();
-					break;
-				case "Double":
-					dataType = RecordFieldType.DOUBLE.getDataType();
-					break;
-				case "Boolean":
-					dataType = RecordFieldType.BOOLEAN.getDataType();
-					break;
-				case "Byte":
-					dataType = RecordFieldType.BYTE.getDataType();
-					break;
-				case "Character":
-					dataType = RecordFieldType.CHAR.getDataType();
-					break;
-				case "Integer":
-					dataType = RecordFieldType.INT.getDataType();
-					break;
-				case "Float":
-					dataType = RecordFieldType.FLOAT.getDataType();
-					break;
-				case "Number":
-					dataType = RecordFieldType.BIGINT.getDataType();
-					break;
-				case "Date":
-					dataType = RecordFieldType.DATE.getDataType();
-					break;
-				case "Time":
-					dataType = RecordFieldType.TIME.getDataType();
-					break;
-				case "Timestamp":
-					dataType = RecordFieldType.TIMESTAMP.getDataType();
-					break;
-				case "Short":
-					dataType = RecordFieldType.SHORT.getDataType();
-					break;
-				default:
-					dataType = RecordFieldType.STRING.getDataType();
-				}
-				fields.add(new RecordField(fieldName, dataType));
-			}
-			SimpleFeatureCollection features = featureSource.getFeatures();
-			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
-			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
-			while (it.hasNext()) {
-				SimpleFeature feature = it.next();
-				Map<String, Object> fieldMap = new HashMap<String, Object>();
-				for (int i = 0; i < feature.getAttributeCount(); i++) {
-					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
-					Object value = feature.getAttribute(i);
-					fieldMap.put(key, value);
-				}
-				Record r = new MapRecord(recordSchema, fieldMap);
-				returnRs.add(r);
-				//System.out.println(r);
-			}
-			it.close();
-			return returnRs;
 
-		} catch (IOException e) {
-			e.printStackTrace();
-		} finally {
-
-		}
-		return returnRs;
-	}
-	public CoordinateReferenceSystem getCRSFromFeatureTable(DataStore store, String tableName) {
-		CoordinateReferenceSystem cRS = null;
-		try {
-			SimpleFeatureCollection features = store.getFeatureSource(tableName).getFeatures();
-			SimpleFeatureType schema = features.getSchema();
-			cRS = schema.getCoordinateReferenceSystem();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		return cRS;
-	}
-	public CoordinateReferenceSystem getCRSFromTilesTable(final File geopkg, TileEntry tileEntry) {
-		CoordinateReferenceSystem cRS = null;
-		org.geotools.geopkg.mosaic.GeoPackageReader reader;
-		try {
-			reader = new org.geotools.geopkg.mosaic.GeoPackageReader(geopkg, null);
-			cRS = reader.getCoordinateReferenceSystem(tileEntry.getTableName());
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		return cRS;
-	}	
 }

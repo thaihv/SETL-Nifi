@@ -35,6 +35,22 @@ public enum GeoAttributes implements FlowFileAttributeKey {
      */
     GEO_ENVELOPE("geo.envelope"),
     /**
+     * The center of geo boundary 
+     */
+    GEO_CENTER("geo.center"),    
+    /**
+     * The min level of zoom 
+     */
+    GEO_ZOOM_MIN("geo.zoomin"),
+    /**
+     * The max level of zoom 
+     */
+    GEO_ZOOM_MAX("geo.zoomax"),
+    /**
+     * The number of geo records 
+     */
+    GEO_RECORD_NUM("geo.records.num"),    
+    /**
      * The tile matrix of geo spatial that will compressed to reduce size for storage 
      */
     GEO_TILE_MATRIX("geo.raster.tilematrix"),   
