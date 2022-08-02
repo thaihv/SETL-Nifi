@@ -247,7 +247,8 @@ public class GeoPackageReader extends AbstractProcessor {
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
 	                
-	                String envelop = envelope.toString().substring(envelope.toString().indexOf("["));
+	                //String envelop = envelope.toString().substring(envelope.toString().indexOf("["));
+	                String envelop = "[[" + envelope.getMinX() + "," + envelope.getMinY() + "]" + ", [" + envelope.getMaxX() + "," + envelope.getMaxY() + "]]"; 
 	                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
 	                
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelop);

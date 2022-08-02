@@ -16,6 +16,7 @@
  */
 package org.apache.nifi.web.util;
 
+import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics2D;
@@ -52,16 +53,20 @@ public class GeoUtils {
 
 	private static final Logger logger = new NiFiLog(LoggerFactory.getLogger(GeoUtils.class));
 
-	public static byte[] createBlankTiles(int w, int h, String format, String displayText) {
-		BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+	public static byte[] createBlankTiles(int w, int h, String displayText) {
+		BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
 		Graphics2D gr = image.createGraphics();
-		gr.setPaint(Color.ORANGE);
+		gr.setComposite(AlphaComposite.Clear);
+		gr.fillRect(0, 0, w, h);
+		
+		gr.setComposite(AlphaComposite.Src);
+		gr.setPaint(Color.BLUE);
 		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 12));
+		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 15));
 		gr.drawString(displayText, 10, 128);
 		try {
-			ImageIO.write(image, format, baos);
+			ImageIO.write(image, "PNG", baos);
 		} catch (IOException e) {
 			logger.info("Failed clearing out non-client response buffer due to: " + e, e);
 			e.printStackTrace();
@@ -143,9 +148,9 @@ public class GeoUtils {
 			e1.printStackTrace();
 		}
 		if (bais == null) { // set default Tiles without data
-			String markedText = "Zoom " + String.valueOf(z.getLong()) + " : " + "(" + String.valueOf(x.getLong()) + ";"
+			String markedText = "Lvl " + String.valueOf(z.getLong()) + " : " + "(" + String.valueOf(x.getLong()) + ";"
 					+ String.valueOf(y.getLong()) + ")";
-			bais = new ByteArrayInputStream(createBlankTiles(256, 256, "png", markedText));
+			bais = new ByteArrayInputStream(createBlankTiles(256, 256, markedText));
 		}
 
 		return bais;
