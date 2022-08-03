@@ -56,5 +56,22 @@
             <artifactId>junit</artifactId>
             <scope>test</scope>
         </dependency>
+
+		<!-- GSS in local maven  -->
+		<!-- To register to maven repository : 
+		mvn install:install-file -DgroupId=com.cci -DartifactId=gss35.jdbc -Dversion=3.5 -Dpackaging=jar -Dfile=gss35.jdbc.jar -DgeneratePom=true
+		mvn install:install-file -DgroupId=com.cci -DartifactId=gss.interfaces -Dversion=1.0.0 -Dpackaging=jar -Dfile=gss.interfaces.jar -DgeneratePom=true
+		--> 
+		<dependency>
+		    <groupId>com.cci</groupId>
+		    <artifactId>gss35.jdbc</artifactId>
+			<version>3.5</version> 
+		</dependency>
+		<dependency>
+		    <groupId>com.cci</groupId>
+		    <artifactId>gss.interfaces</artifactId>
+			<version>1.0.0</version> 
+		</dependency>	        
+        
     </dependencies>
 </project>
