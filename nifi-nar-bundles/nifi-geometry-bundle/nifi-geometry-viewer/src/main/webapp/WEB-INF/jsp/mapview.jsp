@@ -11,6 +11,9 @@
 	var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 	    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 	});
+	var baseMaps = {
+		    "OSM": osm
+		};
 	var geoType = "<%= request.getAttribute("geoType")%>";
 	var crs = '<%= request.getAttribute("crs")%>';
 	if (geoType == "Tiles"){
@@ -38,9 +41,6 @@
 			center: [center[1], center[0]],
 		    zoom: zoom_init,
 		    layers: [osm, myTiles]});
-		var baseMaps = {
-			    "OSM": osm
-			};
 		var overlayMaps = {
 				"myTiles": myTiles
 			};
@@ -119,7 +119,15 @@
 					});
 				}
 			}
-			let geoJsonLayer = L.geoJSON(geojson, {style: geomStyle}).addTo(map);
+			
+			var geoJsonLayer = L.geoJSON(geojson, {style: geomStyle}).addTo(map);
+			var overlayMaps = {
+					"myFeatures": geoJsonLayer
+				};
+			
+			L.control.layers(baseMaps, overlayMaps).addTo(map);
+			L.control.scale().addTo(map);
+			
 			map.fitBounds(geoJsonLayer.getBounds());
 			console.log(geoJsonLayer.getBounds());
 	}
