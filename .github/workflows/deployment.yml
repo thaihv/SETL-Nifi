@@ -31,6 +31,12 @@ jobs:
         java-version: '8'
         distribution: 'adopt'
         architecture: x64
+    - name: Install GSS jdbc
+      working-directory: ./ext_libs
+      run: mvn install:install-file -DgroupId=com.cci -DartifactId=gss35.jdbc -Dversion=3.5 -Dpackaging=jar -Dfile=gss35.jdbc.jar -DgeneratePom=true         
+    - name: Install GSS interfaces
+      working-directory: ./ext_libs
+      run: mvn install:install-file -DgroupId=com.cci -DartifactId=gss.interfaces -Dversion=1.0.0 -Dpackaging=jar -Dfile=gss.interfaces.jar -DgeneratePom=true
     - name: Build with Maven
       run: mvn -T 2.0C clean install -DskipTests
     - name: Docker Login
