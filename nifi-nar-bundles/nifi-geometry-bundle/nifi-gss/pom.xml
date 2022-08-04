@@ -59,8 +59,8 @@
 
 		<!-- GSS in local maven  -->
 		<!-- To register to maven repository : 
-		mvn install:install-file -DgroupId=com.cci -DartifactId=gss35.jdbc -Dversion=3.5 -Dpackaging=jar -Dfile=gss35.jdbc.jar -DgeneratePom=true
-		mvn install:install-file -DgroupId=com.cci -DartifactId=gss.interfaces -Dversion=1.0.0 -Dpackaging=jar -Dfile=gss.interfaces.jar -DgeneratePom=true
+		mvn install:install-file -DgroupId=com.cci -DartifactId=gss35.jdbc -Dversion=3.5 -Dpackaging=jar -Dfile=./ext_libs/gss35.jdbc.jar -DgeneratePom=true
+		mvn install:install-file -DgroupId=com.cci -DartifactId=gss.interfaces -Dversion=1.0.0 -Dpackaging=jar -Dfile=./ext_libs/gss.interfaces.jar -DgeneratePom=true
 		--> 
 		<dependency>
 		    <groupId>com.cci</groupId>
