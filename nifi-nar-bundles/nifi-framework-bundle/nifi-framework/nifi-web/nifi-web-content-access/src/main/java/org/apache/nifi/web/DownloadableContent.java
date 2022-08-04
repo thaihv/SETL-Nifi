@@ -55,12 +55,14 @@ public final class DownloadableContent {
      * @return the content type
      */
     public String getType() {
-		if (geoType.contentEquals("Features")) {
-			return "application/avro+geowkt";
-		}
-		else if (geoType.contentEquals("Tiles")){
-			return "application/avro+geotiles";
-		}    	
+    	if (geoType != null) {
+    		if (geoType.contentEquals("Features")) {
+    			return "application/avro+geowkt";
+    		}
+    		else if (geoType.contentEquals("Tiles")){
+    			return "application/avro+geotiles";
+    		}
+    	}
     	return type;
     }
     
@@ -130,7 +132,7 @@ public final class DownloadableContent {
 	}
 
 	public boolean isGeoContent() {
-		if (geoType.contentEquals("Features") || geoType.contentEquals("Tiles"))
+		if (geoType != null)
 			return true;
 		return false;
 		

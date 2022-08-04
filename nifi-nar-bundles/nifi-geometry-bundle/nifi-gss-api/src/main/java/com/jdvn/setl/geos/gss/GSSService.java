@@ -16,13 +16,34 @@
  */
 package com.jdvn.setl.geos.gss;
 
+import java.sql.Connection;
+import java.util.Map;
+
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.controller.ControllerService;
+import org.apache.nifi.processor.exception.ProcessException;
 
 @Tags({"gss","geo spatial server","database"})
-@CapabilityDescription("GSS Service API.")
+@CapabilityDescription("GSS Service API. Connections can be asked from pool and returned after usage.")
 public interface GSSService extends ControllerService {
+    Connection getConnection() throws ProcessException;
+
+    /**
+     * Allows a Map of attributes to be passed to the DBCPService for use in configuration, etc.
+     * An implementation will want to override getConnection() to return getConnection(Collections.emptyMap()),
+     * and override this method (possibly with its existing getConnection() implementation).
+     * @param attributes a Map of attributes to be passed to the DBCPService. The use of these
+     *                   attributes is implementation-specific, and the source of the attributes
+     *                   is processor-specific
+     * @return a Connection from the specifed/configured connection pool(s)
+     * @throws ProcessException if an error occurs while getting a connection
+     */
+    default Connection getConnection(Map<String,String> attributes) throws ProcessException {
+        // default implementation (for backwards compatibility) is to call getConnection()
+        // without attributes
+        return getConnection();
+    }
 
     public void execute();
 

@@ -16,6 +16,7 @@
  */
 package com.jdvn.setl.geos.gss;
 
+import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -27,10 +28,11 @@ import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
+import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 
-@Tags({ "GSS Store"})
+@Tags({ "GSS Store", "jdbc", "database", "connection", "pooling", "spatial data"})
 @CapabilityDescription("GSS Store ControllerService implementation of GSSService.")
 public class GSSStoreService extends AbstractControllerService implements GSSService {
 
@@ -75,5 +77,11 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
     public void execute() {
 
     }
+
+	@Override
+	public Connection getConnection() throws ProcessException {
+		// TODO Auto-generated method stub
+		return null;
+	}
 
 }
