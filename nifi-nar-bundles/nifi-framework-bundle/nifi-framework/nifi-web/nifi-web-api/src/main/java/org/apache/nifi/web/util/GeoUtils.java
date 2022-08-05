@@ -148,8 +148,7 @@ public class GeoUtils {
 			e1.printStackTrace();
 		}
 		if (bais == null) { // set default Tiles without data
-			String markedText = "Lvl " + String.valueOf(z.getLong()) + " : " + "(" + String.valueOf(x.getLong()) + ";"
-					+ String.valueOf(y.getLong()) + ")";
+			String markedText = "";
 			bais = new ByteArrayInputStream(createBlankTiles(256, 256, markedText));
 		}
 
