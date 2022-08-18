@@ -16,29 +16,75 @@
  */
 package com.jdvn.setl.geos.gss;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
-public class TestGSSStoreService {
+import com.cci.gss.jdbc.driver.IGSSConnection;
+import com.cci.gss.jdbc.driver.IGSSStatement;
 
+public class TestGSSStoreService {
+	private static final String SERVICE_ID = GSSStoreService.class.getName();
     @Before
     public void init() {
 
     }
-
     @Test
-    public void testService() throws InitializationException {
+    public void getConnectGSSStore() throws InitializationException, SQLException {
         final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
         final GSSStoreService service = new GSSStoreService();
-        runner.addControllerService("test-good", service);
 
-        runner.setProperty(service, GSSStoreService.MY_PROPERTY, "test-value");
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://14.160.24.128:8844";
+        runner.setProperty(service, GSSStoreService.DATABASE_URL, url);
+        runner.setProperty(service, GSSStoreService.DB_USER, "LO_VN2");
+        runner.setProperty(service, GSSStoreService.DB_PASSWORD, "LO_VN2");
+        runner.setProperty(service, GSSStoreService.DB_DRIVERNAME, "com.cci.gss.driver.GSSDriver");
         runner.enableControllerService(service);
-
-        runner.assertValid(service);
+        
+        IGSSConnection conn = service.getConnection();
+        System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
+        conn.close();
+		for (String name : service.getAllFeatureTableNames()) {
+			System.out.println(name);
+		}
+		for (String name : service.getAllDataNames()) {
+			System.out.println(name);
+		}		
+//		for (String name : service.getAllDataNames()) {
+//			if (service.isLayer(name))
+//				System.out.println("Layer: " + name);
+//			else 
+//				if (service.isView(name)) {
+//					System.out.println("View: " + name);
+//				} 
+//				else
+//					System.out.println(name);
+//		}
     }
+    @Test
+    public void setGSSService() throws InitializationException {
+        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
+        final GSSStoreService service = new GSSStoreService();
+
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://14.160.24.128:8844";
+        runner.setProperty(service, GSSStoreService.DATABASE_URL, url);
+        runner.setProperty(service, GSSStoreService.DB_USER, "LO_VN2");
+        runner.setProperty(service, GSSStoreService.DB_PASSWORD, "LO_VN2");
+        runner.setProperty(service, GSSStoreService.DB_DRIVERNAME, "com.cci.gss.driver.GSSDriver");
+        runner.enableControllerService(service);
+        runner.assertValid(service);
+    }    
+    
 
 }

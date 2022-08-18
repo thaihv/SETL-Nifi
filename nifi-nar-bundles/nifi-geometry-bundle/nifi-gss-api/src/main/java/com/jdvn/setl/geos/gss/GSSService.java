@@ -45,6 +45,5 @@ public interface GSSService extends ControllerService {
         return getConnection();
     }
 
-    public void execute();
 
 }
