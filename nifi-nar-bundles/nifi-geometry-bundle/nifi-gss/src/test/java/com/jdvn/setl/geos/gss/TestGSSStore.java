@@ -16,12 +16,7 @@
  */
 package com.jdvn.setl.geos.gss;
 
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunner;
@@ -30,10 +25,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 import com.cci.gss.jdbc.driver.IGSSConnection;
-import com.cci.gss.jdbc.driver.IGSSStatement;
 
-public class TestGSSStoreService {
-	private static final String SERVICE_ID = GSSStoreService.class.getName();
+public class TestGSSStore {
+	private static final String SERVICE_ID = GSSStore.class.getName();
     @Before
     public void init() {
 
@@ -41,14 +35,13 @@ public class TestGSSStoreService {
     @Test
     public void getConnectGSSStore() throws InitializationException, SQLException {
         final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
-        final GSSStoreService service = new GSSStoreService();
+        final GSSStore service = new GSSStore();
 
         runner.addControllerService(SERVICE_ID, service);
         final String url = "jdbc:gss://14.160.24.128:8844";
-        runner.setProperty(service, GSSStoreService.DATABASE_URL, url);
-        runner.setProperty(service, GSSStoreService.DB_USER, "LO_VN2");
-        runner.setProperty(service, GSSStoreService.DB_PASSWORD, "LO_VN2");
-        runner.setProperty(service, GSSStoreService.DB_DRIVERNAME, "com.cci.gss.driver.GSSDriver");
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
         runner.enableControllerService(service);
         
         IGSSConnection conn = service.getConnection();
@@ -74,14 +67,13 @@ public class TestGSSStoreService {
     @Test
     public void setGSSService() throws InitializationException {
         final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
-        final GSSStoreService service = new GSSStoreService();
+        final GSSStore service = new GSSStore();
 
         runner.addControllerService(SERVICE_ID, service);
         final String url = "jdbc:gss://14.160.24.128:8844";
-        runner.setProperty(service, GSSStoreService.DATABASE_URL, url);
-        runner.setProperty(service, GSSStoreService.DB_USER, "LO_VN2");
-        runner.setProperty(service, GSSStoreService.DB_PASSWORD, "LO_VN2");
-        runner.setProperty(service, GSSStoreService.DB_DRIVERNAME, "com.cci.gss.driver.GSSDriver");
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
         runner.enableControllerService(service);
         runner.assertValid(service);
     }    

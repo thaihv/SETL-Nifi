@@ -16,23 +16,18 @@
  */
 package com.jdvn.setl.geos.gss;
 
-import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
-import javax.security.auth.login.LoginException;
 
 import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.commons.lang3.StringUtils;
@@ -46,24 +41,13 @@ import org.apache.nifi.annotation.lifecycle.OnDisabled;
 import org.apache.nifi.annotation.lifecycle.OnEnabled;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyValue;
-import org.apache.nifi.components.ValidationContext;
-import org.apache.nifi.components.ValidationResult;
-import org.apache.nifi.components.resource.ResourceCardinality;
-import org.apache.nifi.components.resource.ResourceType;
 import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
-import org.apache.nifi.kerberos.KerberosCredentialsService;
-import org.apache.nifi.kerberos.KerberosUserService;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
-import org.apache.nifi.security.krb.KerberosAction;
-import org.apache.nifi.security.krb.KerberosKeytabUser;
-import org.apache.nifi.security.krb.KerberosLoginException;
-import org.apache.nifi.security.krb.KerberosPasswordUser;
-import org.apache.nifi.security.krb.KerberosUser;
 
 import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
@@ -82,7 +66,7 @@ import com.cci.gss.jdbc.driver.IGSSStatement;
             description = "JDBC driver property name prefixed with 'SENSITIVE.' handled as a sensitive property.")
 })
 @RequiresInstanceClassLoading
-public class GSSStoreService extends AbstractControllerService implements GSSService {
+public class GSSStore extends AbstractControllerService implements GSSService {
 
     /** Property Name Prefix for Sensitive Dynamic Properties */
     protected static final String SENSITIVE_PROPERTY_PREFIX = "SENSITIVE.";
@@ -121,26 +105,6 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
         .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
         .required(true)
         .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-        .build();
-
-    public static final PropertyDescriptor DB_DRIVERNAME = new PropertyDescriptor.Builder()
-        .name("Database Driver Class Name")
-        .description("Database driver class name")
-        .defaultValue(null)
-        .required(true)
-        .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-        .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-        .build();
-
-    public static final PropertyDescriptor DB_DRIVER_LOCATION = new PropertyDescriptor.Builder()
-        .name("database-driver-locations")
-        .displayName("Database Driver Location(s)")
-        .description("Comma-separated list of files/folders and/or URLs containing the driver JAR and its dependencies (if any). For example '/var/tmp/mariadb-java-client-1.1.7.jar'")
-        .defaultValue(null)
-        .required(false)
-        .identifiesExternalResource(ResourceCardinality.MULTIPLE, ResourceType.FILE, ResourceType.DIRECTORY, ResourceType.URL)
-        .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-        .dynamicallyModifiesClasspath(true)
         .build();
 
     public static final PropertyDescriptor DB_USER = new PropertyDescriptor.Builder()
@@ -265,52 +229,11 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .build();
 
-    public static final PropertyDescriptor KERBEROS_CREDENTIALS_SERVICE = new PropertyDescriptor.Builder()
-            .name("kerberos-credentials-service")
-            .displayName("Kerberos Credentials Service")
-            .description("Specifies the Kerberos Credentials Controller Service that should be used for authenticating with Kerberos")
-            .identifiesControllerService(KerberosCredentialsService.class)
-            .required(false)
-            .build();
-
-    public static final PropertyDescriptor KERBEROS_USER_SERVICE = new PropertyDescriptor.Builder()
-            .name("kerberos-user-service")
-            .displayName("Kerberos User Service")
-            .description("Specifies the Kerberos User Controller Service that should be used for authenticating with Kerberos")
-            .identifiesControllerService(KerberosUserService.class)
-            .required(false)
-            .build();
-
-    public static final PropertyDescriptor KERBEROS_PRINCIPAL = new PropertyDescriptor.Builder()
-            .name("kerberos-principal")
-            .displayName("Kerberos Principal")
-            .description("The principal to use when specifying the principal and password directly in the processor for authenticating via Kerberos.")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .addValidator(StandardValidators.createAttributeExpressionLanguageValidator(AttributeExpression.ResultType.STRING))
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .build();
-
-    public static final PropertyDescriptor KERBEROS_PASSWORD = new PropertyDescriptor.Builder()
-            .name("kerberos-password")
-            .displayName("Kerberos Password")
-            .description("The password to use when specifying the principal and password directly in the processor for authenticating via Kerberos.")
-            .required(false)
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            .sensitive(true)
-            .build();
-
     private static final List<PropertyDescriptor> properties;
 
     static {
         final List<PropertyDescriptor> props = new ArrayList<>();
         props.add(DATABASE_URL);
-        props.add(DB_DRIVERNAME);
-        props.add(DB_DRIVER_LOCATION);
-        props.add(KERBEROS_USER_SERVICE);
-        props.add(KERBEROS_CREDENTIALS_SERVICE);
-        props.add(KERBEROS_PRINCIPAL);
-        props.add(KERBEROS_PASSWORD);
         props.add(DB_USER);
         props.add(DB_PASSWORD);
         props.add(MAX_WAIT_TIME);
@@ -327,8 +250,7 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
     }
 
     private volatile BasicDataSource dataSource;
-    private volatile KerberosUser kerberosUser;
-    
+
     private DbmsType dbmsType;
 	private static final Set<String> EXCLUSION_TABLES = new HashSet<String>(Arrays.asList(new String[] {
 			"DUMMY4TEMP", "GEOMETRY_COLUMNS", "NETWORKS", "NETWORK_RELATIONS",
@@ -359,77 +281,10 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
         return builder.build();
     }
 
-    @Override
-    protected Collection<ValidationResult> customValidate(ValidationContext context) {
-        final List<ValidationResult> results = new ArrayList<>();
-
-        final boolean kerberosPrincipalProvided = !StringUtils.isBlank(context.getProperty(KERBEROS_PRINCIPAL).evaluateAttributeExpressions().getValue());
-        final boolean kerberosPasswordProvided = !StringUtils.isBlank(context.getProperty(KERBEROS_PASSWORD).getValue());
-
-        if (kerberosPrincipalProvided && !kerberosPasswordProvided) {
-            results.add(new ValidationResult.Builder()
-                    .subject(KERBEROS_PASSWORD.getDisplayName())
-                    .valid(false)
-                    .explanation("a password must be provided for the given principal")
-                    .build());
-        }
-
-        if (kerberosPasswordProvided && !kerberosPrincipalProvided) {
-            results.add(new ValidationResult.Builder()
-                    .subject(KERBEROS_PRINCIPAL.getDisplayName())
-                    .valid(false)
-                    .explanation("a principal must be provided for the given password")
-                    .build());
-        }
-
-        final KerberosCredentialsService kerberosCredentialsService = context.getProperty(KERBEROS_CREDENTIALS_SERVICE).asControllerService(KerberosCredentialsService.class);
-        final KerberosUserService kerberosUserService = context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
-
-        if (kerberosCredentialsService != null && (kerberosPrincipalProvided || kerberosPasswordProvided)) {
-            results.add(new ValidationResult.Builder()
-                    .subject(KERBEROS_CREDENTIALS_SERVICE.getDisplayName())
-                    .valid(false)
-                    .explanation("kerberos principal/password and kerberos credential service cannot be configured at the same time")
-                    .build());
-        }
-
-        if (kerberosUserService != null && (kerberosPrincipalProvided || kerberosPasswordProvided)) {
-            results.add(new ValidationResult.Builder()
-                    .subject(KERBEROS_USER_SERVICE.getDisplayName())
-                    .valid(false)
-                    .explanation("kerberos principal/password and kerberos user service cannot be configured at the same time")
-                    .build());
-        }
-
-        if (kerberosUserService != null && kerberosCredentialsService != null) {
-            results.add(new ValidationResult.Builder()
-                    .subject(KERBEROS_USER_SERVICE.getDisplayName())
-                    .valid(false)
-                    .explanation("kerberos user service and kerberos credential service cannot be configured at the same time")
-                    .build());
-        }
-
-        return results;
-    }
-
-    /**
-     * Configures connection pool by creating an instance of the
-     * {@link BasicDataSource} based on configuration provided with
-     * {@link ConfigurationContext}.
-     *
-     * This operation makes no guarantees that the actual connection could be
-     * made since the underlying system may still go off-line during normal
-     * operation of the connection pool.
-     *
-     * @param context
-     *            the configuration context
-     * @throws InitializationException
-     *             if unable to create a database connection
-     */
     @OnEnabled
     public void onConfigured(final ConfigurationContext context) throws InitializationException {
 
-        final String driverName = context.getProperty(DB_DRIVERNAME).evaluateAttributeExpressions().getValue();
+        final String driverName = "com.cci.gss.driver.GSSDriver";
         final String user = context.getProperty(DB_USER).evaluateAttributeExpressions().getValue();
         final String passw = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
         final String dburl = context.getProperty(DATABASE_URL).evaluateAttributeExpressions().getValue();
@@ -442,26 +297,7 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
         final Long timeBetweenEvictionRunsMillis = extractMillisWithInfinite(context.getProperty(EVICTION_RUN_PERIOD).evaluateAttributeExpressions());
         final Long minEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
         final Long softMinEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(SOFT_MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
-        final KerberosCredentialsService kerberosCredentialsService = context.getProperty(KERBEROS_CREDENTIALS_SERVICE).asControllerService(KerberosCredentialsService.class);
-        final KerberosUserService kerberosUserService = context.getProperty(KERBEROS_USER_SERVICE).asControllerService(KerberosUserService.class);
-        final String kerberosPrincipal = context.getProperty(KERBEROS_PRINCIPAL).evaluateAttributeExpressions().getValue();
-        final String kerberosPassword = context.getProperty(KERBEROS_PASSWORD).getValue();
 
-        if (kerberosUserService != null) {
-            kerberosUser = kerberosUserService.createKerberosUser();
-        } else if (kerberosCredentialsService != null) {
-            kerberosUser = new KerberosKeytabUser(kerberosCredentialsService.getPrincipal(), kerberosCredentialsService.getKeytab());
-        } else if (!StringUtils.isBlank(kerberosPrincipal) && !StringUtils.isBlank(kerberosPassword)) {
-            kerberosUser = new KerberosPasswordUser(kerberosPrincipal, kerberosPassword);
-        }
-
-        if (kerberosUser != null) {
-            try {
-                kerberosUser.login();
-            } catch (KerberosLoginException e) {
-                throw new InitializationException("Unable to authenticate Kerberos principal", e);
-            }
-        }
 
         dataSource = new BasicDataSource();
         dataSource.setDriver(getDriver(driverName, dburl));
@@ -529,32 +365,14 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
         return "-1".equals(prop.getValue()) ? -1 : prop.asTimePeriod(TimeUnit.MILLISECONDS);
     }
 
-    /**
-     * Shutdown pool, close all open connections.
-     * If a principal is authenticated with a KDC, that principal is logged out.
-     *
-     * If a @{@link LoginException} occurs while attempting to log out the @{@link org.apache.nifi.security.krb.KerberosUser},
-     * an attempt will still be made to shut down the pool and close open connections.
-     *
-     * @throws SQLException if there is an error while closing open connections
-     * @throws LoginException if there is an error during the principal log out, and will only be thrown if there was
-     * no exception while closing open connections
-     */
     @OnDisabled
     public void shutdown() throws SQLException {
         try {
-            if (kerberosUser != null) {
-                kerberosUser.logout();
+            if (dataSource != null) {
+                dataSource.close();
             }
         } finally {
-            kerberosUser = null;
-            try {
-                if (dataSource != null) {
-                    dataSource.close();
-                }
-            } finally {
-                dataSource = null;
-            }
+            dataSource = null;
         }
     }
 
@@ -562,12 +380,8 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
     public IGSSConnection getConnection() throws ProcessException {
         try {
             final IGSSConnection con;
-            if (kerberosUser != null) {
-                KerberosAction<Connection> kerberosAction = new KerberosAction<>(kerberosUser, () -> dataSource.getConnection(), getLogger());
-                con = kerberosAction.execute().unwrap(IGSSConnection.class);
-            } else {
-                con = dataSource.getConnection().unwrap(IGSSConnection.class);
-            }
+            
+            con = dataSource.getConnection().unwrap(IGSSConnection.class);
             
     		try {
     			String dbmsTypeString = con.getProperty(PropertyConstants.GSS_DBMS_TYPE);
@@ -585,15 +399,6 @@ public class GSSStoreService extends AbstractControllerService implements GSSSer
             
             return con;
         } catch (final SQLException e) {
-            // If using Kerberos,  attempt to re-login
-            if (kerberosUser != null) {
-                try {
-                    getLogger().info("Error getting connection, performing Kerberos re-login");
-                    kerberosUser.login();
-                } catch (KerberosLoginException le) {
-                    throw new ProcessException("Unable to authenticate Kerberos principal", le);
-                }
-            }
             throw new ProcessException(e);
         }
     }
