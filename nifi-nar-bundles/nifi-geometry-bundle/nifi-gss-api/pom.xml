@@ -35,6 +35,12 @@
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-utils</artifactId>
             <version>1.16.0-SNAPSHOT</version>
-        </dependency>        
+        </dependency>    
+        
+        <dependency>
+		    <groupId>com.cci</groupId>
+		    <artifactId>gss.interfaces</artifactId>
+			<version>1.0.0</version> 
+		</dependency>    
     </dependencies>
 </project>

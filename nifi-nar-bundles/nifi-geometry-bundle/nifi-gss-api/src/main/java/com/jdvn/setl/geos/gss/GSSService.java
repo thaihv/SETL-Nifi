@@ -19,7 +19,7 @@ package com.jdvn.setl.geos.gss;
 import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.ACCEPT_AND_CONTINUE;
 import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.REJECT_AND_TERMINATE;
 
-import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,19 +30,28 @@ import org.apache.nifi.processor.FlowFileFilter;
 import org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult;
 import org.apache.nifi.processor.exception.ProcessException;
 
+import com.cci.gss.jdbc.driver.IGSSConnection;
+
 @Tags({ "gss", "geo spatial server", "database" })
 @CapabilityDescription("GSS Service API. Connections can be asked from pool and returned after usage.")
 public interface GSSService extends ControllerService {
-	Connection getConnection() throws ProcessException;
+	IGSSConnection getConnection() throws ProcessException;
 
-	default Connection getConnection(Map<String, String> attributes) throws ProcessException {
+	default IGSSConnection getConnection(Map<String, String> attributes) throws ProcessException {
 		return getConnection();
 	}
-
+	default public String[] getAllFeatureTableNames() {
+		return null;
+	}
+	default public String[] getAllDataNames() throws SQLException {
+		return null;
+	}
+	default public boolean isView(String dataName) throws SQLException{
+		return false;
+	}
 	default FlowFileFilter getFlowFileFilter() {
 		return null;
 	}
-
 	default FlowFileFilter getFlowFileFilter(int batchSize) {
 		final FlowFileFilter filter = getFlowFileFilter();
 		if (filter == null) {

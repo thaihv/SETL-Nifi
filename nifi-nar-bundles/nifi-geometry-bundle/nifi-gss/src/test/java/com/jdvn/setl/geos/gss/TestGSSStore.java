@@ -16,6 +16,8 @@
  */
 package com.jdvn.setl.geos.gss;
 
+import static org.junit.Assert.assertTrue;
+
 import java.sql.SQLException;
 
 import org.apache.nifi.reporting.InitializationException;
@@ -47,22 +49,15 @@ public class TestGSSStore {
         IGSSConnection conn = service.getConnection();
         System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
         conn.close();
+        
 		for (String name : service.getAllFeatureTableNames()) {
 			System.out.println(name);
 		}
 		for (String name : service.getAllDataNames()) {
 			System.out.println(name);
 		}		
-//		for (String name : service.getAllDataNames()) {
-//			if (service.isLayer(name))
-//				System.out.println("Layer: " + name);
-//			else 
-//				if (service.isView(name)) {
-//					System.out.println("View: " + name);
-//				} 
-//				else
-//					System.out.println(name);
-//		}
+		assertTrue(service.isView("CERT_INFO"));
+
     }
     @Test
     public void setGSSService() throws InitializationException {

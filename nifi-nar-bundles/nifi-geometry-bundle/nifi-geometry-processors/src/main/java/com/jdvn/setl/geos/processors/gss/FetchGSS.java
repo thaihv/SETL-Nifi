@@ -51,15 +51,15 @@ public class FetchGSS extends AbstractProcessor {
 
     public static final PropertyDescriptor GSS_STORE = new PropertyDescriptor.Builder()
             .name("GSS Store")
-            .displayName("GSS service")
-            .description("a definition GSS service for read geospatial data")
+            .displayName("GSS Store")
+            .description("A GSS connection pool")
             .identifiesControllerService(GSSService.class)
             .required(true)
             .build();
 
-    public static final Relationship MY_RELATIONSHIP = new Relationship.Builder()
-            .name("MY_RELATIONSHIP")
-            .description("Example relationship")
+    public static final Relationship REL_SUCCESS = new Relationship.Builder()
+            .name("success")
+            .description("All FlowFiles that are received are routed to success")
             .build();
 
     private List<PropertyDescriptor> descriptors;
@@ -73,8 +73,10 @@ public class FetchGSS extends AbstractProcessor {
         descriptors = Collections.unmodifiableList(descriptors);
 
         relationships = new HashSet<>();
-        relationships.add(MY_RELATIONSHIP);
+        relationships.add(REL_SUCCESS);
         relationships = Collections.unmodifiableSet(relationships);
+        
+        
     }
 
     @Override

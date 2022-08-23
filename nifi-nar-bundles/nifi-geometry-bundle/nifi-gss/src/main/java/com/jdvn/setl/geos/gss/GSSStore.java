@@ -140,7 +140,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
         .name("Max Total Connections")
         .description("The maximum number of active connections that can be allocated from this pool at the same time, "
             + " or negative for no limit.")
-        .defaultValue("8")
+        .defaultValue("64")
         .required(true)
         .addValidator(StandardValidators.INTEGER_VALIDATOR)
         .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
@@ -403,6 +403,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
         }
     }
 
+    
     @Override
     public String toString() {
         return "GSSStoreService[id=" + getIdentifier() + "]";
@@ -411,6 +412,12 @@ public class GSSStore extends AbstractControllerService implements GSSService {
     BasicDataSource getDataSource() {
         return dataSource;
     }
+    
+	public DbmsType getBackendDBMSType() {
+		return dbmsType;
+	}
+	
+    @Override
     public boolean isView(String dataName) throws SQLException {
 		IGSSConnection conn = getConnection();
 		IGSSStatement stmt = null;
@@ -430,48 +437,40 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		finally {
 			rs.close();
 			stmt.close();
+			conn.close();
 		}
 	}
-
-	public DbmsType getBackendDBMSType() {
-		return dbmsType;
-	}
-	public boolean isLayer(String dataName) throws SQLException {
-		String[] names = getAllFeatureTableNames();
-		for (String name : names) {
-			if (name.indexOf('.') != -1) {
-				name = name.substring(name.indexOf('.') + 1);
-			}
-			
-			if (dataName.equalsIgnoreCase(name)) {
-				return true;
-			}
-		}
-		
-		return false;
-	}
-	public String[] getAllFeatureTableNames() throws SQLException {
+	@Override
+	public String[] getAllFeatureTableNames() {
 
 		IGSSConnection conn = getConnection();
 		IGSSStatement stmt = null;
 
-		stmt = conn.createStatement();
-
 		List<String> dataNames = new ArrayList<String>();
-		for (String name : stmt.getAllLayerNames()) {
-			int indexOfDot = name.lastIndexOf('.');
-			if (indexOfDot != -1) {
-				name = name.substring(indexOfDot + 1);
+		
+		try {
+			stmt = conn.createStatement();
+			for (String name : stmt.getAllLayerNames()) {
+				int indexOfDot = name.lastIndexOf('.');
+				if (indexOfDot != -1) {
+					name = name.substring(indexOfDot + 1);
+				}
+
+				dataNames.add(name);
 			}
 
-			dataNames.add(name);
+			Collections.sort(dataNames);
+			stmt.close();
+			conn.close();
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
-
-		Collections.sort(dataNames);
-		stmt.close();
+		
+		
 		return dataNames.toArray(new String[dataNames.size()]);
 	}
-
+	@Override
 	public String[] getAllDataNames() throws SQLException {
 
 		IGSSConnection conn = getConnection();
@@ -620,6 +619,9 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		if (databaseMetadata != null) {
 			databaseMetadata.close();
 		}
+		conn.close();
 		return dataNames.toArray(new String[dataNames.size()]);
 	}
+
+
 }
