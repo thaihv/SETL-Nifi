@@ -26,6 +26,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,6 +42,7 @@ import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.behavior.WritesAttributes;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateMap;
@@ -96,7 +98,7 @@ import com.jdvn.setl.geos.gss.PropertyConstants;
         + "This allows the Processor to not re-list tables the next time that the Processor is run. Specifying the refresh interval in the processor properties will "
         + "indicate that when the processor detects the interval has elapsed, the state will be reset and tables will be re-listed as a result. "
         + "This processor is meant to be run on the primary node only.")
-public class ListGSSFeatureTables extends AbstractProcessor {
+public class ListGSSTables extends AbstractProcessor {
 
     // Attribute names
     public static final String DB_TABLE_NAME = "db.table.name";
@@ -121,6 +123,20 @@ public class ListGSSFeatureTables extends AbstractProcessor {
             .required(true)
             .identifiesControllerService(GSSService.class)
             .build();
+    public static final AllowableValue LAYER = new AllowableValue("Layers", "Layers", "Loads GIS Layers in GSS store");
+    public static final AllowableValue TABLE = new AllowableValue("Tables", "Tables", "Loads all Tables");
+    public static final AllowableValue VIEW = new AllowableValue("Views", "Views", "Loads all Views");
+    public static final AllowableValue TABLE_AND_VIEW = new AllowableValue("Tables & Views", "Tables & Views", "Loads all Tables and Views");
+
+    public static final PropertyDescriptor DATA_TYPE = new PropertyDescriptor.Builder()
+            .name("gss-type-data-to-load")
+            .displayName("Data type")
+            .description("Which type of metadata to fetch. It could be Layers, Tables or Views")
+            .required(true)
+            .allowableValues(LAYER, TABLE, VIEW, TABLE_AND_VIEW)
+            .defaultValue(TABLE_AND_VIEW.getValue())
+            .build();
+    
     public static final PropertyDescriptor INCLUDE_COUNT = new PropertyDescriptor.Builder()
             .name("list-db-include-count")
             .displayName("Include Count")
@@ -170,6 +186,7 @@ public class ListGSSFeatureTables extends AbstractProcessor {
     static {
         final List<PropertyDescriptor> _propertyDescriptors = new ArrayList<>();
         _propertyDescriptors.add(GSS_STORE);
+        _propertyDescriptors.add(DATA_TYPE);
         _propertyDescriptors.add(INCLUDE_COUNT);
         _propertyDescriptors.add(RECORD_WRITER);
         _propertyDescriptors.add(REFRESH_INTERVAL);
@@ -194,6 +211,7 @@ public class ListGSSFeatureTables extends AbstractProcessor {
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         final ComponentLog logger = getLogger();
         final GSSService gssService = context.getProperty(GSS_STORE).asControllerService(GSSService.class);
+        final String gssType = context.getProperty(DATA_TYPE).getValue();
         final boolean includeCount = context.getProperty(INCLUDE_COUNT).asBoolean();
         final long refreshInterval = context.getProperty(REFRESH_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
 
@@ -219,7 +237,7 @@ public class ListGSSFeatureTables extends AbstractProcessor {
             IGSSDatabaseMetaData dbMetaData = (IGSSDatabaseMetaData) con.getMetaData();
             
             IGSSStatement stmt = (IGSSStatement) con.createStatement();
-            ResultSet rs_dt = null;
+            ResultSet rs = null;
             
     		String catalog = null;
     		String scheme = null;
@@ -230,118 +248,183 @@ public class ListGSSFeatureTables extends AbstractProcessor {
 				dbmsType = DbmsType.valueOf(dbmsTypeString);
 			}
     		if (DbmsType.mssql == dbmsType) {
-    			rs_dt = stmt.executeNativeQuery("SELECT UPPER(DB_NAME())");
-    			rs_dt.next();
-    			catalog = rs_dt.getString(1);
-    			rs_dt.close();
+    			rs = stmt.executeNativeQuery("SELECT UPPER(DB_NAME())");
+    			rs.next();
+    			catalog = rs.getString(1);
+    			rs.close();
 
-    			rs_dt = stmt.executeNativeQuery("SELECT SCHEMA_NAME()");
-    			rs_dt.next();
-    			scheme = rs_dt.getString(1);
-    			rs_dt.close();
+    			rs = stmt.executeNativeQuery("SELECT SCHEMA_NAME()");
+    			rs.next();
+    			scheme = rs.getString(1);
+    			rs.close();
 
     			dbmsPrefix = catalog + "." + scheme;
     		} else if (DbmsType.derby == dbmsType) {
     			dbmsPrefix = scheme = "APP";
     		} else {
-    			rs_dt = stmt.executeNativeQuery("SELECT USER FROM DUAL");
-    			rs_dt.next();
-    			scheme = rs_dt.getString(1);
-    			rs_dt.close();
+    			rs = stmt.executeNativeQuery("SELECT USER FROM DUAL");
+    			rs.next();
+    			scheme = rs.getString(1);
+    			rs.close();
 
     			dbmsPrefix = scheme;
-    		}            
-			
-            try (ResultSet rs = dbMetaData.getTables(catalog, scheme, "%", new String[] { "TABLE", "VIEW" })) {
-                while (rs.next()) {
-                	
-        			String name = rs.getString("TABLE_NAME").toUpperCase();
+    		}   
+    		// // Get alls table and views
+            String transitUri;
+    		boolean hasGeometryLods = false;
+    		final List<Map<String,String>> tableMetadata = new ArrayList<Map<String,String>>();
+    		
+    		String[] types = new String[] { "TABLE", "VIEW" };
+    		if (gssType.equals("Tables"))
+    			types = new String[] { "TABLE"};
+    		else if (gssType.equals("Views"))
+    			types = new String[] { "VIEW"};
+    		
+            try (ResultSet rs_ = dbMetaData.getTables(catalog, scheme, "%", types)) {
+                try {
+                    transitUri = dbMetaData.getURL();
+                } catch (final SQLException sqle) {
+                    transitUri = "<unknown>";
+                }
+                while (rs_.next()) {
+        			String name = rs_.getString("TABLE_NAME").toUpperCase();
+    				if (name.equals("GEOMETRY_LODS")) {
+    					hasGeometryLods = true;
+    				}
         			if (name.startsWith("BIN$") || name.startsWith("CREATE$JAVA$LOB$TABLE") || name.startsWith("MDRT_")
         					|| EXCLUSION_TABLES.contains(name)) {
         				continue;
         			}
-                    final String tableCatalog = rs.getString(1);
-                    final String tableSchema = rs.getString(2);
-                    final String tableName = rs.getString(3);
-                    final String tableType = rs.getString(4);
-                    final String tableRemarks = rs.getString(5);
+                    final String tableCatalog = rs_.getString(1);
+                    final String tableSchema = rs_.getString(2);
+                    final String tableName = rs_.getString(3);
+                    final String tableType = rs_.getString(4);
+                    final String tableRemarks = rs_.getString(5);
 
                     // Build fully-qualified name
                     final String fqn = Stream.of(tableCatalog, tableSchema, tableName)
                         .filter(segment -> !StringUtils.isEmpty(segment))
                         .collect(Collectors.joining("."));
 
-                    final String lastTimestampForTable = stateMapProperties.get(fqn);
-                    boolean refreshTable = true;
-                    try {
-                        // Refresh state if the interval has elapsed
-                        long lastRefreshed = -1;
-                        final long currentTime = System.currentTimeMillis();
-                        if (!StringUtils.isEmpty(lastTimestampForTable)) {
-                            lastRefreshed = Long.parseLong(lastTimestampForTable);
-                        }
-
-                        if (lastRefreshed == -1 || (refreshInterval > 0 && currentTime >= (lastRefreshed + refreshInterval))) {
-                            stateMapProperties.remove(lastTimestampForTable);
-                        } else {
-                            refreshTable = false;
-                        }
-                    } catch (final NumberFormatException nfe) {
-                        getLogger().error(
-                          "Failed to retrieve observed last table fetches from the State Manager. Will not perform "
-                          + "query until this is accomplished.", nfe);
-                        context.yield();
-                        return;
+                    final Map<String, String> tableInformation = new HashMap<>();
+                    if (tableCatalog != null) {
+                        tableInformation.put(DB_TABLE_CATALOG, tableCatalog);
                     }
-
-                    if (refreshTable) {
-                        logger.info("Found {}: {}", new Object[] {tableType, fqn});
-                        final Map<String, String> tableInformation = new HashMap<>();
-
-                        if (includeCount) {
-                            try (Statement st = con.createStatement()) {
-                                final String countQuery = "SELECT COUNT(1) FROM " + fqn;
-
-                                logger.debug("Executing query: {}", new Object[] {countQuery});
-                                try (ResultSet countResult = st.executeQuery(countQuery)) {
-                                    if (countResult.next()) {
-                                        tableInformation.put(DB_TABLE_COUNT, Long.toString(countResult.getLong(1)));
-                                    }
-                                }
-                            } catch (final SQLException se) {
-                                logger.error("Couldn't get row count for {}", new Object[] {fqn});
-                                continue;
-                            }
-                        }
-
-                        if (tableCatalog != null) {
-                            tableInformation.put(DB_TABLE_CATALOG, tableCatalog);
-                        }
-                        if (tableSchema != null) {
-                            tableInformation.put(DB_TABLE_SCHEMA, tableSchema);
-                        }
-                        tableInformation.put(DB_TABLE_NAME, tableName);
-                        tableInformation.put(DB_TABLE_FULLNAME, fqn);
-                        tableInformation.put(DB_TABLE_TYPE, tableType);
-                        if (tableRemarks != null) {
-                            tableInformation.put(DB_TABLE_REMARKS, tableRemarks);
-                        }
-
-                        String transitUri;
-                        try {
-                            transitUri = dbMetaData.getURL();
-                        } catch (final SQLException sqle) {
-                            transitUri = "<unknown>";
-                        }
-
-                        writer.addToListing(tableInformation, transitUri);
-
-                        stateMapProperties.put(fqn, Long.toString(System.currentTimeMillis()));
+                    if (tableSchema != null) {
+                        tableInformation.put(DB_TABLE_SCHEMA, tableSchema);
                     }
+                    tableInformation.put(DB_TABLE_NAME, tableName);
+                    tableInformation.put(DB_TABLE_FULLNAME, fqn);
+                    tableInformation.put(DB_TABLE_TYPE, tableType);
+                    if (tableRemarks != null) {
+                        tableInformation.put(DB_TABLE_REMARKS, tableRemarks);
+                    }                    
+                    tableMetadata.add(tableInformation);
                 }
-
-                writer.finishListing();
+                rs_.close();
             }
+            dbMetaData.close();
+       
+			String operator = DbmsType.mssql == dbmsType ? "+" : "||";
+			String prefix = DbmsType.mssql == dbmsType ? "GSS.dbo" : (DbmsType.derby == dbmsType ? "APP" : "GSS");
+			
+			StringBuffer sb = new StringBuffer();
+			sb.append("SELECT 'X' ").append(operator);
+			if (DbmsType.derby == dbmsType) {
+				sb.append(" CHAR(THEME_ID)");
+			}
+			else {
+				sb.append(" CAST(THEME_ID as VARCHAR(50))");
+			}
+			sb.append(" FROM ").append(prefix).append(".THEMES WHERE OWNER='").append(dbmsPrefix).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT THEME_NAME FROM ").append(prefix).append(".THEMES WHERE OWNER='").append(dbmsPrefix).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT G_TABLE_NAME FROM ").append(prefix).append(".GEOMETRY_COLUMNS WHERE G_TABLE_CATALOG='").append((catalog == null ? "DEFAULT" : catalog)).append("' AND G_TABLE_SCHEMA='").append(scheme).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT NODE_TABLE_NAME FROM ").append(prefix).append(".NETWORKS WHERE OWNER='").append(dbmsPrefix).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT LINK_TABLE_NAME FROM ").append(prefix).append(".NETWORKS WHERE OWNER='").append(dbmsPrefix).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT 'XL' ").append(operator);
+			if (DbmsType.derby == dbmsType) {
+				sb.append(" CHAR(NETWORK_ID)");
+			}
+			else {
+				sb.append(" CAST(NETWORK_ID AS VARCHAR(50))");
+			}
+			sb.append(" FROM ").append(prefix).append(".NETWORKS WHERE OWNER='").append(dbmsPrefix).append("'");
+			sb.append(" UNION ");
+			sb.append("SELECT 'XN' ").append(operator);
+			if (DbmsType.derby == dbmsType) {
+				sb.append(" CHAR(NETWORK_ID)");
+			}
+			else {
+				sb.append(" CAST(NETWORK_ID AS VARCHAR(50))");
+			}
+			sb.append(" FROM ").append(prefix).append(".NETWORKS WHERE OWNER='").append(dbmsPrefix).append("'");
+			
+			if (hasGeometryLods) {
+				sb.append(" UNION ");
+				sb.append("SELECT 'L' ").append(operator);
+				if (DbmsType.derby == dbmsType) {
+					sb.append(" CHAR(THEME_ID)");
+				}
+				else {
+					sb.append(" CAST(THEME_ID as VARCHAR(50))");
+				}
+				sb.append(" FROM ").append(prefix).append(".GEOMETRY_LODS");
+			}
+			
+			rs = stmt.executeNativeQuery(sb.toString());
+			while (rs.next()) {
+				String excludeTable = rs.getString(1);
+				excludeTableFromList(tableMetadata,excludeTable);
+			}
+			rs.close();
+			
+			if (con.getGSSVersion().compareTo(3, 5, 0) >= 0) {
+				sb.setLength(0);
+				sb.append("SELECT RASTER_NAME FROM ").append(prefix).append(".RASTER_INFO");
+				try {
+					rs = stmt.executeNativeQuery(sb.toString());
+					while (rs.next()) {
+						String excludeTable = rs.getString("RASTER_NAME");
+						excludeTableFromList(tableMetadata,excludeTable);
+					}
+					rs.close();
+				}
+				catch (SQLException e) {
+				}
+			}
+			
+			
+			if (gssType.equals("Layers")) {
+				// Get only Layers
+	            final List<Map<String,String>> allLayerMetadata = new ArrayList<Map<String,String>>();
+				for (String name : stmt.getAllLayerNames()) {
+					int indexOfDot = name.lastIndexOf('.');
+					if (indexOfDot != -1) {
+						name = name.substring(indexOfDot + 1);
+					}
+					
+					Iterator<Map<String, String>> allTableIterator = tableMetadata.iterator();
+					while (allTableIterator.hasNext()) {
+						final Map<String, String> tableInformation = allTableIterator.next();
+						if (tableInformation.get(DB_TABLE_NAME).equals(name)) {
+							allLayerMetadata.add(tableInformation);
+							break;
+						}
+					}  
+				}
+				setMetadataInfoIntoList(con, logger, context, writer, allLayerMetadata, stateMapProperties, transitUri, refreshInterval, includeCount);
+			}
+			else {
+				setMetadataInfoIntoList(con, logger, context, writer, tableMetadata, stateMapProperties, transitUri, refreshInterval, includeCount);
+			}
+
+			stmt.close();			
+            writer.finishListing();
             session.replaceState(stateMap, stateMapProperties, Scope.CLUSTER);
             con.close();
             
@@ -352,7 +435,78 @@ public class ListGSSFeatureTables extends AbstractProcessor {
         }
         
     }
+    
+    private void excludeTableFromList(final List<Map<String, String>> tableMetadata, String excludeTable) {
+    	
+		Iterator<Map<String, String>> tableIterator = tableMetadata.iterator();
+		
+		while (tableIterator.hasNext()) {
+			final Map<String, String> tableInformation = tableIterator.next();
+			if (tableInformation.get(DB_TABLE_NAME) == excludeTable) {
+				tableMetadata.remove(tableInformation);
+			}
+		}    	
+    }
+	public void setMetadataInfoIntoList(final IGSSConnection con, final ComponentLog logger,
+			final ProcessContext context, final TableListingWriter writer,
+			final List<Map<String, String>> tableMetadata, final Map<String, String> stateMapProperties,
+			String transitUri, final long refreshInterval, final boolean includeCount) throws IOException {
+		Iterator<Map<String, String>> tableIterator = tableMetadata.iterator();
+		while (tableIterator.hasNext()) {
 
+			final Map<String, String> tableInformation = tableIterator.next();
+			String fqn = tableInformation.get(DB_TABLE_FULLNAME);
+
+			final String lastTimestampForTable = stateMapProperties.get(fqn);
+			boolean refreshTable = true;
+			try {
+				// Refresh state if the interval has elapsed
+				long lastRefreshed = -1;
+				final long currentTime = System.currentTimeMillis();
+				if (!StringUtils.isEmpty(lastTimestampForTable)) {
+					lastRefreshed = Long.parseLong(lastTimestampForTable);
+				}
+
+				if (lastRefreshed == -1 || (refreshInterval > 0 && currentTime >= (lastRefreshed + refreshInterval))) {
+					stateMapProperties.remove(lastTimestampForTable);
+				} else {
+					refreshTable = false;
+				}
+			} catch (final NumberFormatException nfe) {
+				getLogger().error(
+						"Failed to retrieve observed last table fetches from the State Manager. Will not perform "
+								+ "query until this is accomplished.",
+						nfe);
+				context.yield();
+				return;
+			}
+
+			if (refreshTable) {
+				logger.info("Found {}: {}", new Object[] { tableInformation.get(DB_TABLE_TYPE), fqn });
+
+				if (includeCount) {
+					try (Statement st = con.createStatement()) {
+						final String countQuery = "SELECT COUNT(1) FROM " + fqn;
+
+						logger.debug("Executing query: {}", new Object[] { countQuery });
+						try (ResultSet countResult = st.executeQuery(countQuery)) {
+							if (countResult.next()) {
+								tableInformation.put(DB_TABLE_COUNT, Long.toString(countResult.getLong(1)));
+							}
+						}
+					} catch (final SQLException se) {
+						logger.error("Couldn't get row count for {}", new Object[] { fqn });
+						continue;
+					}
+				}
+
+				writer.addToListing(tableInformation, transitUri);
+				stateMapProperties.put(fqn, Long.toString(System.currentTimeMillis()));
+			}
+
+		}
+	}
+    
     interface TableListingWriter {
         void beginListing() throws IOException, SchemaNotFoundException;
 
