@@ -19,7 +19,7 @@ package com.jdvn.setl.geos.gss;
 import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.ACCEPT_AND_CONTINUE;
 import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.REJECT_AND_TERMINATE;
 
-import java.sql.SQLException;
+import java.sql.Connection;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -40,18 +40,18 @@ public interface GSSService extends ControllerService {
 	default IGSSConnection getConnection(Map<String, String> attributes) throws ProcessException {
 		return getConnection();
 	}
-	default public String[] getAllFeatureTableNames() {
-		return null;
+
+	default void returnConnection(Connection connection) {
 	}
-	default public String[] getAllDataNames() throws SQLException {
-		return null;
-	}
-	default public boolean isView(String dataName) throws SQLException{
+
+	default boolean isWorkingWell() {
 		return false;
 	}
+
 	default FlowFileFilter getFlowFileFilter() {
 		return null;
 	}
+
 	default FlowFileFilter getFlowFileFilter(int batchSize) {
 		final FlowFileFilter filter = getFlowFileFilter();
 		if (filter == null) {

@@ -426,7 +426,7 @@ public class ListGSSTables extends AbstractProcessor {
 			stmt.close();			
             writer.finishListing();
             session.replaceState(stateMap, stateMapProperties, Scope.CLUSTER);
-            con.close();
+            gssService.returnConnection(con);
             
         } catch (final SQLException | IOException | SchemaNotFoundException e) {
             writer.finishListingExceptionally(e);

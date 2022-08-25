@@ -36,28 +36,21 @@ public class TestGSSStore {
     }
     @Test
     public void getConnectGSSStore() throws InitializationException, SQLException {
-//        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
-//        final GSSStore service = new GSSStore();
-//
-//        runner.addControllerService(SERVICE_ID, service);
-//        final String url = "jdbc:gss://14.160.24.128:8844";
-//        runner.setProperty(service, GSSStore.DATABASE_URL, url);
-//        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
-//        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
-//        runner.enableControllerService(service);
-//        
-//        IGSSConnection conn = service.getConnection();
-//        System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
-//        conn.close();
-//        
-//		for (String name : service.getAllFeatureTableNames()) {
-//			System.out.println(name);
-//		}
-//		for (String name : service.getAllDataNames()) {
-//			System.out.println(name);
-//		}		
-//		assertTrue(service.isView("CERT_INFO"));
+        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
+        final GSSStore service = new GSSStore();
 
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://14.160.24.128:8844";
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
+        runner.enableControllerService(service);
+        
+        IGSSConnection conn = service.getConnection();
+        System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
+        assertTrue(service.isWorkingWell());
+        conn.close();
+        
     }
     @Test
     public void setGSSService() throws InitializationException {
