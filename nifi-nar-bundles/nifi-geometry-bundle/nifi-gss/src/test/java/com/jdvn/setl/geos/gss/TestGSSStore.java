@@ -48,6 +48,8 @@ public class TestGSSStore {
         
         IGSSConnection conn = service.getConnection();
         System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
+        System.out.println(conn.getCurrentDriverVersion());
+        System.out.println(conn.getMetaData().getUserName());
         assertTrue(service.isWorkingWell());
         conn.close();
         
