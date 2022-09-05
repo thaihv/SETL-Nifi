@@ -346,7 +346,7 @@ public class GeoUtils {
 					if ((fName == geomFieldName) && (geomFieldName != shpGeoColumn))
 						fName = shpGeoColumn;
 					int index = featureBuilder.getFeatureType().indexOf(fName);
-					if (fName.contains(geomFieldName))
+					if (fName.contains(geomFieldName) || fName.contains(shpGeoColumn))
 						objs[index] = geo;
 					else
 						objs[index] = record.getValue(fName);

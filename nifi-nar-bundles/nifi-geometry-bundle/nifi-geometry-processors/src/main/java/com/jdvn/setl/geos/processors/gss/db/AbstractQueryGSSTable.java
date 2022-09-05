@@ -50,6 +50,8 @@ import org.apache.nifi.components.state.StateMap;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -58,13 +60,11 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
-import org.apache.nifi.util.db.JdbcCommon;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.io.WKBReader;
-import org.locationtech.jts.io.WKTWriter;
+
 
 import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSResultSet;
+import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
 import com.cci.gss.jdbc.driver.IGSSStatement;
 import com.jdvn.setl.geos.gss.GSSService;
 
@@ -73,6 +73,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
     public static final String RESULT_TABLENAME = "tablename";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
+    public static final String GEO_COLUMN = "geo.column";
+    public static final String GEO_FEATURE_TYPE = "geo.feature.type";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
             String.valueOf(Connection.TRANSACTION_READ_COMMITTED),
@@ -436,30 +438,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                 int fragmentIndex=0;
                 // Max values will be updated in the state property map by the callback
                 final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
-                String username = con.getMetaData().getUserName();
-                LayerMetadata md = getLayerMetadata(username,tableName, st);
-                ResultSetMetaData rsmd = resultSet.getMetaData();
-                while (resultSet.next()) {
-                    for (int i = 1; i <= rsmd.getColumnCount(); i++) {
-                    	String name = rsmd.getColumnName(i);
-                    	if (name.equals(md.mGeometryColumn)) {
-                    		byte[] wkb = resultSet.getGeometryAsWKB(i);
-                    		WKBReader reader = new WKBReader();
-                    	    WKTWriter writer= new WKTWriter();
-                    		Geometry g;
-                    		try {
-    							g = reader.read(wkb);
-    							String newVal = writer.write(g);
-    							resultSet.updateString(name, newVal);
-    							//System.out.println(writer.write(g));
-    						} catch (org.locationtech.jts.io.ParseException e) {
-    							// TODO Auto-generated catch block
-    							e.printStackTrace();
-    						}
-                    	}
-                    }                	
-                }
-                
                 while(true) {
                     final AtomicLong nrOfRows = new AtomicLong(0L);
 
@@ -483,6 +461,45 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+                        
+                        IGSSResultSetMetaData rsmd = resultSet.getMetaData();
+						if (rsmd.hasGeometryColumn()) {
+							attributesToAdd.put(GeoAttributes.CRS.key(), rsmd.getWKTCoordinateReferenceSystem());
+							attributesToAdd.put(GEO_COLUMN, rsmd.getGeometryColumn());
+							attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
+							if (maxRowsPerFlowFile > 0) {
+								attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
+										tableName + "_" + fragmentIdentifier + "_" + String.valueOf(fragmentIndex));
+							} else
+								attributesToAdd.put(GeoAttributes.GEO_NAME.key(), tableName);
+
+							String featureType = "Point";
+							switch (rsmd.getGeometryType()) {
+								case 1:
+									featureType = "Point";
+									break;
+								case 2:
+									featureType = "LineString";
+									break;
+								case 3:
+									featureType = "Polygon";
+									break;
+								case 4:
+									featureType = "MultiPoint";
+									break;
+								case 5:
+									featureType = "MultiLineString";
+									break;
+								case 6:
+									featureType = "MultiPolygon";
+									break;
+								default:
+									featureType = "Point";
+							}
+							attributesToAdd.put(GEO_FEATURE_TYPE, featureType);
+							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+						}
+
 
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);

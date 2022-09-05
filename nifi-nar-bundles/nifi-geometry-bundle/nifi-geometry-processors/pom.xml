@@ -88,7 +88,12 @@
 		   <groupId>org.geotools</groupId>
 		   <artifactId>gt-geopkg</artifactId>
 		   <version>${geotools.version}</version>
-		 </dependency>		         		
+		 </dependency>		     
+		<dependency>
+		    <groupId>com.vividsolutions</groupId>
+		    <artifactId>jts-core</artifactId>
+		    <version>1.14.0</version>
+		</dependency>		     		
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-avro-record-utils</artifactId>

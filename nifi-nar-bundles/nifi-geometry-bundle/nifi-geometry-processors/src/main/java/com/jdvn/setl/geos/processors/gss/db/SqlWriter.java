@@ -25,7 +25,7 @@ import java.sql.ResultSet;
 import java.util.Collections;
 import java.util.Map;
 
-import static org.apache.nifi.util.db.JdbcCommon.ResultSetRowCallback;
+import static com.jdvn.setl.geos.processors.gss.db.JdbcCommon.ResultSetRowCallback;
 
 
 /**

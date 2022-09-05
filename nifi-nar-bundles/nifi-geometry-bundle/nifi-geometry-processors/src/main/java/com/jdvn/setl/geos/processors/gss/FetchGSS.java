@@ -16,7 +16,6 @@
  */
 package com.jdvn.setl.geos.processors.gss;
 
-import static org.apache.nifi.util.db.JdbcProperties.USE_AVRO_LOGICAL_TYPES;
 import static org.apache.nifi.util.db.JdbcProperties.VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION;
 import static org.apache.nifi.util.db.JdbcProperties.VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE;
 
@@ -44,9 +43,9 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
-import org.apache.nifi.util.db.JdbcCommon;
 
 import com.jdvn.setl.geos.processors.gss.db.AbstractQueryGSSTable;
+import com.jdvn.setl.geos.processors.gss.db.JdbcCommon;
 import com.jdvn.setl.geos.processors.gss.db.RecordSqlWriter;
 import com.jdvn.setl.geos.processors.gss.db.SqlWriter;
 
@@ -129,7 +128,7 @@ public class FetchGSS extends AbstractQueryGSSTable {
         pds.add(OUTPUT_BATCH_SIZE);
         pds.add(MAX_FRAGMENTS);
         pds.add(NORMALIZE_NAMES);
-        pds.add(USE_AVRO_LOGICAL_TYPES);
+        //pds.add(USE_AVRO_LOGICAL_TYPES);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE);
 
@@ -140,7 +139,9 @@ public class FetchGSS extends AbstractQueryGSSTable {
     protected SqlWriter configureSqlWriter(ProcessSession session, ProcessContext context) {
         final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
         final boolean convertNamesForAvro = context.getProperty(NORMALIZE_NAMES).asBoolean();
-        final Boolean useAvroLogicalTypes = context.getProperty(USE_AVRO_LOGICAL_TYPES).asBoolean();
+        // Ignore selecting USE_AVRO_LOGICAL_TYPES by set it default is True
+        //final Boolean useAvroLogicalTypes = context.getProperty(USE_AVRO_LOGICAL_TYPES).asBoolean();
+        final Boolean useAvroLogicalTypes = true;
         final Integer defaultPrecision = context.getProperty(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION).evaluateAttributeExpressions().asInteger();
         final Integer defaultScale = context.getProperty(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE).evaluateAttributeExpressions().asInteger();
 
