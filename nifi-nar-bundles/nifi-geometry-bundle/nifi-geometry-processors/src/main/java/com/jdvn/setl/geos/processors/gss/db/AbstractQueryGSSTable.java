@@ -312,7 +312,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
         final ComponentLog logger = getLogger();
 
-        final GSSService dbcpService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+        final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
         final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
         final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
@@ -378,7 +378,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
             final String selectMaxQuery = dbAdapter.getSelectStatement(tableName, columnsClause, null, null, null, null);
 
-            try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
+            try (final Connection con = gssService.getConnection(Collections.emptyMap());
                  final Statement st = con.createStatement()) {
 
                 if (transIsolationLevel != null) {
@@ -394,6 +394,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                         maxValCollector.applyStateChanges();
                     }
                 }
+                gssService.returnConnection(con);
             } catch (final Exception e) {
                 logger.error("Unable to execute SQL select query {} due to {}", new Object[]{selectMaxQuery, e});
                 context.yield();
@@ -404,7 +405,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
 
-        try (final IGSSConnection con = dbcpService.getConnection(Collections.emptyMap());
+        try (final IGSSConnection con = gssService.getConnection(Collections.emptyMap());
              final IGSSStatement st = con.createStatement()) {
 
             if (fetchSize != null && fetchSize > 0) {
@@ -572,7 +573,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                 throw e;
             } 
             session.transfer(resultSetFlowFiles, REL_SUCCESS);
-
+            gssService.returnConnection(con);
         } catch (final ProcessException | SQLException e) {
             logger.error("Unable to execute SQL select query {} due to {}", new Object[]{selectQuery, e});
             if (!resultSetFlowFiles.isEmpty()) {

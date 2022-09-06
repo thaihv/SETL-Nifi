@@ -247,12 +247,12 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
             }
 
             // Try to fill the columnTypeMap with the types of the desired max-value columns
-            final GSSService dbcpService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+            final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
             final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
             final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
 
             final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
-            try (final Connection con = dbcpService.getConnection(flowFile == null ? Collections.emptyMap() : flowFile.getAttributes());
+            try (final Connection con = gssService.getConnection(flowFile == null ? Collections.emptyMap() : flowFile.getAttributes());
                  final Statement st = con.createStatement()) {
 
                 // Try a query that returns no rows, for the purposes of getting metadata about the columns. It is possible
@@ -307,7 +307,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
                 } else {
                     throw new ProcessException("No columns found in table from those specified: " + maxValueColumnNames);
                 }
-
+                gssService.returnConnection(con);
             } catch (SQLException e) {
                 throw new ProcessException("Unable to communicate with database in order to determine column types", e);
             }
