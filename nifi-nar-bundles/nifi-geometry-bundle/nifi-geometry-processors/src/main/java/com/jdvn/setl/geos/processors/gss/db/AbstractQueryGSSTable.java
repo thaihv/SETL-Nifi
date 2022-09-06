@@ -467,6 +467,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						if (rsmd.hasGeometryColumn()) {
 							attributesToAdd.put(GeoAttributes.CRS.key(), rsmd.getWKTCoordinateReferenceSystem());
 							attributesToAdd.put(GEO_COLUMN, rsmd.getGeometryColumn());
+							double[] bbox = rsmd.getBounds();
+							String envelop = "[[" + Double. toString(bbox[0]) + "," + Double. toString(bbox[2]) + "]" + ", [" + Double. toString(bbox[1]) + "," + Double. toString(bbox[3]) + "]]"; 
+							attributesToAdd.put(GeoAttributes.GEO_ENVELOPE.key(), envelop);
 							attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
 							if (maxRowsPerFlowFile > 0) {
 								attributesToAdd.put(GeoAttributes.GEO_NAME.key(),

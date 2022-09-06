@@ -78,6 +78,9 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
 
+import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
+import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
+import com.cci.gss.jdbc.driver.IGSSStatement;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jdvn.setl.geos.gss.GSSService;
@@ -181,8 +184,8 @@ public class PutGSS extends AbstractProcessor {
         .expressionLanguageSupported(NONE)
         .build();
 
-    static final PropertyDescriptor DBCP_SERVICE = new Builder()
-            .name("put-db-record-dcbp-service")
+    static final PropertyDescriptor GSS_SERVICE = new Builder()
+            .name("put-gss-service")
             .displayName("Database Connection Pooling Service")
             .description("The Controller Service that is used to obtain a connection to the database for sending records.")
             .required(true)
@@ -365,7 +368,7 @@ public class PutGSS extends AbstractProcessor {
         pds.add(STATEMENT_TYPE);
         pds.add(STATEMENT_TYPE_RECORD_PATH);
         pds.add(DATA_RECORD_PATH);
-        pds.add(DBCP_SERVICE);
+        pds.add(GSS_SERVICE);
         pds.add(CATALOG_NAME);
         pds.add(SCHEMA_NAME);
         pds.add(TABLE_NAME);
@@ -459,8 +462,8 @@ public class PutGSS extends AbstractProcessor {
             return;
         }
 
-        final GSSService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(GSSService.class);
-        final Connection connection = dbcpService.getConnection(flowFile.getAttributes());
+        final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+        final Connection connection = gssService.getConnection(flowFile.getAttributes());
 
         boolean originalAutoCommit = false;
         try {
@@ -472,6 +475,7 @@ public class PutGSS extends AbstractProcessor {
 
             session.transfer(flowFile, REL_SUCCESS);
             session.getProvenanceReporter().send(flowFile, getJdbcUrl(connection));
+            
         } catch (final Exception e) {
             // When an Exception is thrown, we want to route to 'retry' if we expect that attempting the same request again
             // might work. Otherwise, route to failure. SQLTransientException is a specific type that indicates that a retry may work.
@@ -507,12 +511,7 @@ public class PutGSS extends AbstractProcessor {
                     getLogger().warn("Failed to set auto-commit back to true on connection {} after finishing update", connection);
                 }
             }
-
-            try {
-                connection.close();
-            } catch (final Exception e) {
-                getLogger().warn("Failed to close database connection", e);
-            }
+            gssService.returnConnection(connection);
         }
     }
 
@@ -577,7 +576,7 @@ public class PutGSS extends AbstractProcessor {
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
         final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
-        final int timeoutMillis = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
+        //final int timeoutMillis = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
 
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
         if (StringUtils.isEmpty(tableName)) {
@@ -644,14 +643,14 @@ public class PutGSS extends AbstractProcessor {
                         // Create the Prepared Statement
                         final PreparedStatement preparedStatement = con.prepareStatement(sqlHolder.getSql());
 
-                        try {
-                            preparedStatement.setQueryTimeout(timeoutMillis); // timeout in seconds
-                        } catch (final SQLException se) {
-                            // If the driver doesn't support query timeout, then assume it is "infinite". Allow a timeout of zero only
-                            if (timeoutMillis > 0) {
-                                throw se;
-                            }
-                        }
+//                        try {
+//                            preparedStatement.setQueryTimeout(timeoutMillis); // timeout in seconds
+//                        } catch (final SQLException se) {
+//                            // If the driver doesn't support query timeout, then assume it is "infinite". Allow a timeout of zero only
+//                            if (timeoutMillis > 0) {
+//                                throw se;
+//                            }
+//                        }
 
                         preparedSqlAndColumns = new PreparedSqlAndColumns(sqlHolder, preparedStatement);
                         preparedSql.put(statementType, preparedSqlAndColumns);
@@ -869,7 +868,7 @@ public class PutGSS extends AbstractProcessor {
             getLogger().warn("Could not determine JDBC URL based on the Driver Connection.", e);
         }
 
-        return "DBCPService";
+        return "GSSService";
     }
 
     private String getStatementType(final ProcessContext context, final FlowFile flowFile) {
@@ -1401,53 +1400,59 @@ public class PutGSS extends AbstractProcessor {
 
         public static TableSchema from(final Connection conn, final String catalog, final String schema, final String tableName,
                                        final boolean translateColumnNames, final boolean includePrimaryKeys, ComponentLog log) throws SQLException {
-            final DatabaseMetaData dmd = conn.getMetaData();
+            final IGSSDatabaseMetaData dmd = (IGSSDatabaseMetaData) conn.getMetaData();
+     
+            IGSSStatement stmt = (IGSSStatement) conn.createStatement();
+            IGSSResultSetMetaData rsmd = stmt.querySchema(tableName);
+            final List<ColumnDescription> cols = new ArrayList<>();
+            for (int i=0, size=rsmd.getColumnCount(); i<size ; i++) {
+            	final int dataType = rsmd.getColumnType(i + 1);
+				int precision = rsmd.getPrecision(i + 1);
+				int scale = rsmd.getScale(i + 1);
+				final String columnName = rsmd.getColumnName(i + 1);
+				final boolean required = true;
+				final boolean nullable = false;
+				ColumnDescription col = new ColumnDescription(columnName, dataType, required, precision, nullable);
+				cols.add(col);
+			}
 
-            try (final ResultSet colrs = dmd.getColumns(catalog, schema, tableName, "%")) {
-                final List<ColumnDescription> cols = new ArrayList<>();
-                while (colrs.next()) {
-                    final ColumnDescription col = ColumnDescription.from(colrs);
-                    cols.add(col);
-                }
-                // If no columns are found, check that the table exists
-                if (cols.isEmpty()) {
-                    try (final ResultSet tblrs = dmd.getTables(catalog, schema, tableName, null)) {
-                        List<String> qualifiedNameSegments = new ArrayList<>();
-                        if (catalog != null) {
-                            qualifiedNameSegments.add(catalog);
-                        }
-                        if (schema != null) {
-                            qualifiedNameSegments.add(schema);
-                        }
-                        if (tableName != null) {
-                            qualifiedNameSegments.add(tableName);
-                        }
-                        if (!tblrs.next()) {
+            // If no columns are found, check that the table exists
+            if (cols.isEmpty()) {
+                try (final ResultSet tblrs = dmd.getTables(catalog, schema, tableName, null)) {
+                    List<String> qualifiedNameSegments = new ArrayList<>();
+                    if (catalog != null) {
+                        qualifiedNameSegments.add(catalog);
+                    }
+                    if (schema != null) {
+                        qualifiedNameSegments.add(schema);
+                    }
+                    if (tableName != null) {
+                        qualifiedNameSegments.add(tableName);
+                    }
+                    if (!tblrs.next()) {
 
-                            throw new SQLException("Table "
-                                    + String.join(".", qualifiedNameSegments)
-                                    + " not found, ensure the Catalog, Schema, and/or Table Names match those in the database exactly");
-                        } else {
-                            log.warn("Table "
-                                    + String.join(".", qualifiedNameSegments)
-                                    + " found but no columns were found, if this is not expected then check the user permissions for getting table metadata from the database");
-                        }
+                        throw new SQLException("Table "
+                                + String.join(".", qualifiedNameSegments)
+                                + " not found, ensure the Catalog, Schema, and/or Table Names match those in the database exactly");
+                    } else {
+                        log.warn("Table "
+                                + String.join(".", qualifiedNameSegments)
+                                + " found but no columns were found, if this is not expected then check the user permissions for getting table metadata from the database");
                     }
                 }
-
-                final Set<String> primaryKeyColumns = new HashSet<>();
-                if (includePrimaryKeys) {
-                    try (final ResultSet pkrs = dmd.getPrimaryKeys(catalog, schema, tableName)) {
-
-                        while (pkrs.next()) {
-                            final String colName = pkrs.getString("COLUMN_NAME");
-                            primaryKeyColumns.add(normalizeColumnName(colName, translateColumnNames));
-                        }
-                    }
-                }
-
-                return new TableSchema(cols, translateColumnNames, primaryKeyColumns, dmd.getIdentifierQuoteString());
             }
+
+            final Set<String> primaryKeyColumns = new HashSet<>();
+            if (includePrimaryKeys) {
+                try (final ResultSet pkrs = dmd.getPrimaryKeys(catalog, schema, tableName)) {
+
+                    while (pkrs.next()) {
+                        final String colName = pkrs.getString("COLUMN_NAME");
+                        primaryKeyColumns.add(normalizeColumnName(colName, translateColumnNames));
+                    }
+                }
+            }
+            return new TableSchema(cols, translateColumnNames, primaryKeyColumns, dmd.getIdentifierQuoteString());
         }
 
         @Override
