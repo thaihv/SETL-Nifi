@@ -79,12 +79,17 @@ import org.apache.nifi.serialization.record.util.DataTypeUtils;
 import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
 
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
+import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
 import com.cci.gss.jdbc.driver.IGSSStatement;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jdvn.setl.geos.gss.GSSService;
 import com.jdvn.setl.geos.processors.gss.db.DatabaseAdapter;
+import com.vividsolutions.jts.geom.Geometry;
+import com.vividsolutions.jts.io.ParseException;
+import com.vividsolutions.jts.io.WKBWriter;
+import com.vividsolutions.jts.io.WKTReader;
 
 @EventDriven
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -642,25 +647,15 @@ public class PutGSS extends AbstractProcessor {
 
                         // Create the Prepared Statement
                         final PreparedStatement preparedStatement = con.prepareStatement(sqlHolder.getSql());
-
-//                        try {
-//                            preparedStatement.setQueryTimeout(timeoutMillis); // timeout in seconds
-//                        } catch (final SQLException se) {
-//                            // If the driver doesn't support query timeout, then assume it is "infinite". Allow a timeout of zero only
-//                            if (timeoutMillis > 0) {
-//                                throw se;
-//                            }
-//                        }
-
                         preparedSqlAndColumns = new PreparedSqlAndColumns(sqlHolder, preparedStatement);
                         preparedSql.put(statementType, preparedSqlAndColumns);
                     }
 
-                    final PreparedStatement ps = preparedSqlAndColumns.getPreparedStatement();
+                    final IGSSPreparedStatement stmt = (IGSSPreparedStatement) preparedSqlAndColumns.getPreparedStatement();
                     final List<Integer> fieldIndexes = preparedSqlAndColumns.getSqlAndIncludedColumns().getFieldIndexes();
                     final String sql = preparedSqlAndColumns.getSqlAndIncludedColumns().getSql();
 
-                    if (currentBatchSize > 0 && ps != lastPreparedStatement && lastPreparedStatement != null) {
+                    if (currentBatchSize > 0 && stmt != lastPreparedStatement && lastPreparedStatement != null) {
                         batchIndex++;
                         log.debug("Executing query {} because Statement Type changed between Records for {}; fieldIndexes: {}; batch index: {}; batch size: {}",
                             sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
@@ -669,7 +664,7 @@ public class PutGSS extends AbstractProcessor {
                         session.adjustCounter("Batches Executed", 1, false);
                         currentBatchSize = 0;
                     }
-                    lastPreparedStatement = ps;
+                    lastPreparedStatement = stmt;
 
                     final Object[] values = currentRecord.getValues();
                     final List<DataType> dataTypes = currentRecord.getSchema().getDataTypes();
@@ -739,28 +734,43 @@ public class PutGSS extends AbstractProcessor {
 
                         // If DELETE type, insert the object twice if the column is nullable because of the null check (see generateDelete for details)
                         if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                            setParameter(ps, ++deleteIndex, currentValue, fieldSqlType, sqlType);
+                            setParameter(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
                             if (column.isNullable()) {
-                                setParameter(ps, ++deleteIndex, currentValue, fieldSqlType, sqlType);
+                                setParameter(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
                             }
                         } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
                             final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
                             for (int j = 0; j < timesToAddObjects; j++) {
-                                setParameter(ps, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
+                                setParameter(stmt, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
                             }
                         } else {
-                            setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
+                        	if (sqlType == 10001) {
+            					WKTReader reader = new WKTReader();
+            					Geometry g = null;
+            					try {
+									g = reader.read((String) currentValue);
+								} catch (ParseException e) {
+									// TODO Auto-generated catch block
+									e.printStackTrace();
+								}
+            					
+            					byte[] wkb = new WKBWriter().write(g);
+            					stmt.setBytes(i + 1, wkb);
+                        	}else {
+                        		stmt.setObject(i + 1, currentValue);
+                        	}                        	
+                            //setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
 
-                    ps.addBatch();
+                    stmt.addBatch();
                     session.adjustCounter(statementType + " updates performed", 1, false);
                     if (++currentBatchSize == maxBatchSize) {
                         batchIndex++;
                         log.debug("Executing query {} because batch reached max size for {}; fieldIndexes: {}; batch index: {}; batch size: {}",
                             sql, flowFile, fieldIndexes, batchIndex, currentBatchSize);
                         session.adjustCounter("Batches Executed", 1, false);
-                        ps.executeBatch();
+                        stmt.executeBatch();
                         currentBatchSize = 0;
                     }
                 }
@@ -1007,7 +1017,21 @@ public class PutGSS extends AbstractProcessor {
 
             // complete the SQL statements by adding ?'s for all of the values to be escaped.
             sqlBuilder.append(") VALUES (");
-            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size()));
+            for (int i = 0; i < fieldCount; i++) {
+                RecordField field = recordSchema.getField(i);
+                String fieldName = field.getFieldName();
+                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+				if (i > 0) {
+					sqlBuilder.append(",");
+				}
+				
+				if (desc.getDataType() == 10001) {
+					sqlBuilder.append("GEOMFROMWKB(?)");
+				}
+				else {
+					sqlBuilder.append('?');
+				}
+			}
             sqlBuilder.append(")");
 
             if (fieldsFound.get() == 0) {
@@ -1402,18 +1426,25 @@ public class PutGSS extends AbstractProcessor {
                                        final boolean translateColumnNames, final boolean includePrimaryKeys, ComponentLog log) throws SQLException {
             final IGSSDatabaseMetaData dmd = (IGSSDatabaseMetaData) conn.getMetaData();
      
+            final Set<String> primaryKeyColumns = new HashSet<>();
+            
             IGSSStatement stmt = (IGSSStatement) conn.createStatement();
             IGSSResultSetMetaData rsmd = stmt.querySchema(tableName);
             final List<ColumnDescription> cols = new ArrayList<>();
             for (int i=0, size=rsmd.getColumnCount(); i<size ; i++) {
             	final int dataType = rsmd.getColumnType(i + 1);
 				int precision = rsmd.getPrecision(i + 1);
-				int scale = rsmd.getScale(i + 1);
 				final String columnName = rsmd.getColumnName(i + 1);
-				final boolean required = true;
-				final boolean nullable = false;
-				ColumnDescription col = new ColumnDescription(columnName, dataType, required, precision, nullable);
+				
+				final boolean isNullable = rsmd.isNullable(i+1) == 1 ? true : false;
+				final boolean isAutoIncrement = rsmd.isAutoIncrement(i+1);
+				final boolean required = !isNullable && !isAutoIncrement;
+				ColumnDescription col = new ColumnDescription(columnName, dataType, required, precision, isNullable);
 				cols.add(col);
+				
+                if (rsmd.isKeyColumn(i+1))
+                	primaryKeyColumns.add(normalizeColumnName(columnName, translateColumnNames));
+                
 			}
 
             // If no columns are found, check that the table exists
@@ -1438,17 +1469,6 @@ public class PutGSS extends AbstractProcessor {
                         log.warn("Table "
                                 + String.join(".", qualifiedNameSegments)
                                 + " found but no columns were found, if this is not expected then check the user permissions for getting table metadata from the database");
-                    }
-                }
-            }
-
-            final Set<String> primaryKeyColumns = new HashSet<>();
-            if (includePrimaryKeys) {
-                try (final ResultSet pkrs = dmd.getPrimaryKeys(catalog, schema, tableName)) {
-
-                    while (pkrs.next()) {
-                        final String colName = pkrs.getString("COLUMN_NAME");
-                        primaryKeyColumns.add(normalizeColumnName(colName, translateColumnNames));
                     }
                 }
             }
