@@ -76,7 +76,6 @@ import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
-import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
 
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
 import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
@@ -467,16 +466,16 @@ public class PutGSS extends AbstractProcessor {
             return;
         }
 
+        final String TX_NAME = "transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
-        final Connection connection = gssService.getConnection(flowFile.getAttributes());
-
-        boolean originalAutoCommit = false;
+        
+        gssService.enableTransaction(true, TX_NAME);
+        final Connection connection = gssService.getConnection(TX_NAME);
+        
         try {
-            originalAutoCommit = connection.getAutoCommit();
-            connection.setAutoCommit(false);
-
+        	
             putToDatabase(context, session, flowFile, connection);
-            connection.commit();
+            gssService.commit(TX_NAME);
 
             session.transfer(flowFile, REL_SUCCESS);
             session.getProvenanceReporter().send(flowFile, getJdbcUrl(connection));
@@ -509,13 +508,9 @@ public class PutGSS extends AbstractProcessor {
                 getLogger().error("Failed to rollback JDBC transaction", e1);
             }
         } finally {
-            if (originalAutoCommit) {
-                try {
-                    connection.setAutoCommit(true);
-                } catch (final Exception e) {
-                    getLogger().warn("Failed to set auto-commit back to true on connection {} after finishing update", connection);
-                }
-            }
+			if (gssService.hasTransaction(TX_NAME)) {
+				gssService.enableTransaction(false, TX_NAME);
+			}
             gssService.returnConnection(connection);
         }
     }
@@ -581,7 +576,6 @@ public class PutGSS extends AbstractProcessor {
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
         final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
-        //final int timeoutMillis = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
 
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
         if (StringUtils.isEmpty(tableName)) {
@@ -613,7 +607,7 @@ public class PutGSS extends AbstractProcessor {
         int currentBatchSize = 0;
         int batchIndex = 0;
         Record outerRecord;
-        PreparedStatement lastPreparedStatement = null;
+        IGSSPreparedStatement lastPreparedStatement = null;
 
         try {
             while ((outerRecord = recordReader.nextRecord()) != null) {
@@ -646,7 +640,7 @@ public class PutGSS extends AbstractProcessor {
                         }
 
                         // Create the Prepared Statement
-                        final PreparedStatement preparedStatement = con.prepareStatement(sqlHolder.getSql());
+                        final IGSSPreparedStatement preparedStatement = (IGSSPreparedStatement) con.prepareStatement(sqlHolder.getSql());
                         preparedSqlAndColumns = new PreparedSqlAndColumns(sqlHolder, preparedStatement);
                         preparedSql.put(statementType, preparedSqlAndColumns);
                     }
@@ -694,44 +688,6 @@ public class PutGSS extends AbstractProcessor {
                             sqlType = column.dataType;
                         }
 
-                        // Convert (if necessary) from field data type to column data type
-                        if (fieldSqlType != sqlType) {
-                            try {
-                                DataType targetDataType = DataTypeUtils.getDataTypeFromSQLTypeValue(sqlType);
-                                if (targetDataType != null) {
-                                    if (sqlType == Types.BLOB || sqlType == Types.BINARY) {
-                                        if (currentValue instanceof Object[]) {
-                                            // Convert Object[Byte] arrays to byte[]
-                                            Object[] src = (Object[]) currentValue;
-                                            if (src.length > 0) {
-                                                if (!(src[0] instanceof Byte)) {
-                                                    throw new IllegalTypeConversionException("Cannot convert value " + currentValue + " to BLOB/BINARY");
-                                                }
-                                            }
-                                            byte[] dest = new byte[src.length];
-                                            for (int j = 0; j < src.length; j++) {
-                                                dest[j] = (Byte) src[j];
-                                            }
-                                            currentValue = dest;
-                                        } else if (currentValue instanceof String) {
-                                            currentValue = ((String) currentValue).getBytes(StandardCharsets.UTF_8);
-                                        } else if (currentValue != null && !(currentValue instanceof byte[])) {
-                                            throw new IllegalTypeConversionException("Cannot convert value " + currentValue + " to BLOB/BINARY");
-                                        }
-                                    } else {
-                                        currentValue = DataTypeUtils.convertType(
-                                                currentValue,
-                                                targetDataType,
-                                                fieldName);
-                                    }
-                                }
-                            } catch (IllegalTypeConversionException itce) {
-                                // If the field and column types don't match or the value can't otherwise be converted to the column datatype,
-                                // try with the original object and field datatype
-                                sqlType = DataTypeUtils.getSQLTypeValue(dataType);
-                            }
-                        }
-
                         // If DELETE type, insert the object twice if the column is nullable because of the null check (see generateDelete for details)
                         if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
                             setParameter(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
@@ -759,10 +715,10 @@ public class PutGSS extends AbstractProcessor {
                         	}else {
                         		stmt.setObject(i + 1, currentValue);
                         	}                        	
-                            //setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
-
+                     	
+//                    stmt.executeUpdate(); // For mode single insert use executeUpdate()
                     stmt.addBatch();
                     session.adjustCounter(statementType + " updates performed", 1, false);
                     if (++currentBatchSize == maxBatchSize) {
@@ -780,6 +736,7 @@ public class PutGSS extends AbstractProcessor {
                 lastPreparedStatement.executeBatch();
                 session.adjustCounter("Batches Executed", 1, false);
             }
+            
         } finally {
             for (final PreparedSqlAndColumns preparedSqlAndColumns : preparedSql.values()) {
                 preparedSqlAndColumns.getPreparedStatement().close();
@@ -976,15 +933,13 @@ public class PutGSS extends AbstractProcessor {
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("INSERT INTO ");
         sqlBuilder.append(tableName);
-        sqlBuilder.append(" (");
+
 
         // iterate over all of the fields in the record, building the SQL statement by adding the column names
         List<String> fieldNames = recordSchema.getFieldNames();
         final List<Integer> includedColumns = new ArrayList<>();
         if (fieldNames != null) {
             int fieldCount = fieldNames.size();
-            AtomicInteger fieldsFound = new AtomicInteger(0);
-
             for (int i = 0; i < fieldCount; i++) {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
@@ -996,17 +951,6 @@ public class PutGSS extends AbstractProcessor {
                 }
 
                 if (desc != null) {
-                    if (fieldsFound.getAndIncrement() > 0) {
-                        sqlBuilder.append(", ");
-                    }
-
-                    if (settings.escapeColumnNames) {
-                        sqlBuilder.append(tableSchema.getQuotedIdentifierString())
-                                .append(desc.getColumnName())
-                                .append(tableSchema.getQuotedIdentifierString());
-                    } else {
-                        sqlBuilder.append(desc.getColumnName());
-                    }
                     includedColumns.add(i);
                 } else {
                     // User is ignoring unmapped fields, but log at debug level just in case
@@ -1015,8 +959,8 @@ public class PutGSS extends AbstractProcessor {
                 }
             }
 
-            // complete the SQL statements by adding ?'s for all of the values to be escaped.
-            sqlBuilder.append(") VALUES (");
+            sqlBuilder.append(" VALUES (");
+            
             for (int i = 0; i < fieldCount; i++) {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
@@ -1033,11 +977,6 @@ public class PutGSS extends AbstractProcessor {
 				}
 			}
             sqlBuilder.append(")");
-
-            if (fieldsFound.get() == 0) {
-                throw new SQLDataException("None of the fields in the record map to the columns defined by the " + tableName + " table\n"
-                        + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-            }
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }

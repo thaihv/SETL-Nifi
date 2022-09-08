@@ -27,7 +27,6 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,7 +59,6 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
-
 
 import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSResultSet;
@@ -378,7 +376,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
             final String selectMaxQuery = dbAdapter.getSelectStatement(tableName, columnsClause, null, null, null, null);
 
-            try (final Connection con = gssService.getConnection(Collections.emptyMap());
+            try (final Connection con = gssService.getConnection();
                  final Statement st = con.createStatement()) {
 
                 if (transIsolationLevel != null) {
@@ -405,7 +403,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
 
-        try (final IGSSConnection con = gssService.getConnection(Collections.emptyMap());
+        try (final IGSSConnection con = gssService.getConnection();
              final IGSSStatement st = con.createStatement()) {
 
             if (fetchSize != null && fetchSize > 0) {

@@ -22,7 +22,9 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.dbcp2.BasicDataSource;
@@ -142,13 +144,15 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	private String m_password;
 
 	private GenericObjectPool<Connection> mConnectionPool;
+	protected Map<String, Connection> mTxConnections = new HashMap<String, Connection>();
 
 	protected boolean validateConnection(Connection connection) throws SQLException {
 		return connection.isValid(0);
 	}
 
 	protected Connection createConnection() throws SQLException {
-		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, m_userName, m_password);
+		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, m_userName,
+				m_password);
 		if (dbmsType == null) {
 			try {
 				dbmsType = DbmsType.valueOf(connection.getProperty(PropertyConstants.GSS_DBMS_TYPE));
@@ -194,40 +198,39 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		final String passw = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
 		final String dburl = context.getProperty(DATABASE_URL).evaluateAttributeExpressions().getValue();
 		final Integer maxTotal = context.getProperty(MAX_TOTAL_CONNECTIONS).evaluateAttributeExpressions().asInteger();
-		final Long maxWaitMillis = extractMillisWithInfinite(context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
+		final Long maxWaitMillis = extractMillisWithInfinite(
+				context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
 		final Integer minIdle = context.getProperty(MIN_IDLE).evaluateAttributeExpressions().asInteger();
 		final Integer maxIdle = context.getProperty(MAX_IDLE).evaluateAttributeExpressions().asInteger();
 
 		this.m_connectionURL = dburl;
 		this.m_userName = user;
 		this.m_password = passw;
-		
-		
+
 		getDriver(driverName, dburl);
 
 		// Init a connection pool
-		mConnectionPool = new GenericObjectPool<Connection>(
-				new BasePooledObjectFactory<Connection>() {
-					public Connection create() throws Exception {
-						return createConnection();
-					}
+		mConnectionPool = new GenericObjectPool<Connection>(new BasePooledObjectFactory<Connection>() {
+			public Connection create() throws Exception {
+				return createConnection();
+			}
 
-					public PooledObject<Connection> wrap(Connection connection) {
-						return new DefaultPooledObject<Connection>(connection);
-					}
+			public PooledObject<Connection> wrap(Connection connection) {
+				return new DefaultPooledObject<Connection>(connection);
+			}
 
-					public boolean validateObject(PooledObject<Connection> pooledConnection) {
-						try {
-							return validateConnection(pooledConnection.getObject());
-						} catch (Throwable t) {
-							return false;
-						}
-					}
+			public boolean validateObject(PooledObject<Connection> pooledConnection) {
+				try {
+					return validateConnection(pooledConnection.getObject());
+				} catch (Throwable t) {
+					return false;
+				}
+			}
 
-					public void destroyObject(PooledObject<Connection> pooledConnection) throws Exception {
-						pooledConnection.getObject().close();
-					}
-				});
+			public void destroyObject(PooledObject<Connection> pooledConnection) throws Exception {
+				pooledConnection.getObject().close();
+			}
+		});
 		mConnectionPool.setMaxTotal(maxTotal);
 		mConnectionPool.setBlockWhenExhausted(true);
 		mConnectionPool.setMaxIdle(maxIdle);
@@ -289,16 +292,35 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	@OnDisabled
 	public void shutdown() {
 		mConnectionPool.close();
+		for (Connection connection : mTxConnections.values()) {
+			if (connection != null) {
+				try {
+					connection.close();
+				} catch (Exception e) {
+				}
+			}
+		}
 	}
 
 	@Override
-	public IGSSConnection getConnection() {
-		try {
-			IGSSConnection conn = (IGSSConnection) mConnectionPool.borrowObject();
-			return conn;
-		} catch (Throwable t) {
-			throw new ProcessException(t);
+	public IGSSConnection getConnection(String txName) {
+
+		if (txName == null) {
+			try {
+				IGSSConnection conn = (IGSSConnection) mConnectionPool.borrowObject();
+				return conn;
+			} catch (Throwable t) {
+				throw new ProcessException(t);
+			}
+		} else {
+			txName = txName.toUpperCase();
+			if (!mTxConnections.containsKey(txName)) {
+				throw new ProcessException("Transaction '" + txName + "' is not found.");
+			}
+
+			return (IGSSConnection) mTxConnections.get(txName);
 		}
+
 	}
 
 	@Override
@@ -334,6 +356,101 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 
 	public DbmsType getBackendDBMSType() {
 		return dbmsType;
+	}
+
+	@Override
+	public IGSSConnection getConnection() throws ProcessException {
+		return getConnection(null);
+	}
+
+	@Override
+	public boolean hasTransaction(String txName) {
+		return mTxConnections.containsKey(txName.toUpperCase());
+	}
+
+	@Override
+	public void enableTransaction(boolean enable, String txName) {
+		if (txName == null) {
+			throw new ProcessException("Transaction name is null.");
+		}
+
+		txName = txName.toUpperCase();
+
+		if (enable) {
+			if (mTxConnections.containsKey(txName)) {
+				throw new ProcessException("Transaction '" + txName + "' is already initialized.");
+			}
+
+			try {
+				Connection connection = createConnection();
+				mTxConnections.put(txName, connection);
+
+				connection.setAutoCommit(false);
+			} catch (SQLException e) {
+				throw new ProcessException("Failed to create an exclusive connection for Transaction '" + txName + "'.",
+						e);
+			}
+		} else {
+			if (!mTxConnections.containsKey(txName)) {
+				throw new ProcessException("Transaction '" + txName + "' is not found.");
+			}
+
+			Connection connection = mTxConnections.remove(txName);
+			try {
+				connection.setAutoCommit(true);
+			} catch (SQLException e) {
+				throw new ProcessException(e);
+			} finally {
+				if (connection != null) {
+					try {
+						connection.close();
+					} catch (Exception e) {
+					}
+				}
+			}
+		}
+
+	}
+
+	@Override
+	public void commit(String txName) {
+
+		if (txName == null) {
+			throw new ProcessException("Transaction name is null.");
+		}
+
+		txName = txName.toUpperCase();
+		if (!mTxConnections.containsKey(txName)) {
+			throw new ProcessException("Transaction '" + txName + "' is not found.");
+		}
+
+		Connection connection = mTxConnections.get(txName);
+		try {
+			connection.commit();
+		} catch (SQLException e) {
+			throw new ProcessException(e);
+		}
+
+	}
+
+	@Override
+	public void rollback(String txName) {
+		if (txName == null) {
+			throw new ProcessException("Transaction name is null.");
+		}
+
+		txName = txName.toUpperCase();
+		if (!mTxConnections.containsKey(txName)) {
+			throw new ProcessException("Transaction '" + txName + "' is not found.");
+		}
+
+		Connection connection = mTxConnections.get(txName);
+		try {
+			connection.rollback();
+		} catch (SQLException e) {
+			throw new ProcessException(e);
+		}
+
 	}
 
 }

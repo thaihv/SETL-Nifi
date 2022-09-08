@@ -20,7 +20,6 @@ import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.ACCE
 import static org.apache.nifi.processor.FlowFileFilter.FlowFileFilterResult.REJECT_AND_TERMINATE;
 
 import java.sql.Connection;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
@@ -37,10 +36,14 @@ import com.cci.gss.jdbc.driver.IGSSConnection;
 public interface GSSService extends ControllerService {
 	IGSSConnection getConnection() throws ProcessException;
 
-	default IGSSConnection getConnection(Map<String, String> attributes) throws ProcessException {
+	public boolean hasTransaction(String txName);
+	public void enableTransaction(boolean enable, String txName);
+	public void commit(String txName);
+	public void rollback(String txName);
+	
+	default IGSSConnection getConnection(String txName) throws ProcessException {
 		return getConnection();
 	}
-
 	default void returnConnection(Connection connection) {
 	}
 
