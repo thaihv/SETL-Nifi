@@ -59,6 +59,8 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
     private static final String DOUBLE_CLASS_NAME = Double.class.getName();
     private static final String FLOAT_CLASS_NAME = Float.class.getName();
     private static final String BIGDECIMAL_CLASS_NAME = BigDecimal.class.getName();
+    
+    private static final String GEO_FID = "FID";
 
     public GSSResultSetRecordSet(final ResultSet rs, final RecordSchema readerSchema) throws SQLException {
         this(rs, readerSchema, JDBC_DEFAULT_PRECISION_VALUE, JDBC_DEFAULT_SCALE_VALUE);
@@ -146,15 +148,16 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 					g = reader.read(wkb);
 					value = writer.write(g);
             	}
-            	else
-            		value = normalizeValue(rs.getObject(fieldName));
+            	else if (fieldName.equals("FID")) {
+            		value = gssResultSet.getFID();
+            	}else
+            		value = normalizeValue(gssResultSet.getObject(fieldName));
             } else {
                 value = null;
             }
 
             values.put(fieldName, value);
         }
-
         return new MapRecord(schema, values);
     }
 
@@ -185,7 +188,13 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
         final ResultSetMetaData metadata = rs.getMetaData();
         final int numCols = metadata.getColumnCount();
         final List<RecordField> fields = new ArrayList<>(numCols);
+        
+        // Add an extra colum FID for GSS
 
+        final RecordField geo_field = new RecordField(GEO_FID, RecordFieldType.INT.getDataType(), true);
+        fields.add(geo_field);
+        rsColumnNames.add(GEO_FID);
+        
         for (int i = 0; i < numCols; i++) {
             final int column = i + 1;
             final int sqlType = metadata.getColumnType(column);

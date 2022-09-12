@@ -9,6 +9,7 @@ import static org.apache.nifi.expression.ExpressionLanguageScope.VARIABLE_REGIST
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.BatchUpdateException;
 import java.sql.Clob;
@@ -26,6 +27,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -67,6 +69,7 @@ import org.apache.nifi.record.path.FieldValue;
 import org.apache.nifi.record.path.RecordPath;
 import org.apache.nifi.record.path.RecordPathResult;
 import org.apache.nifi.record.path.validation.RecordPathValidator;
+import org.apache.nifi.schema.access.SchemaNotFoundException;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.RecordReaderFactory;
@@ -77,6 +80,7 @@ import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 
+import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
 import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
@@ -128,6 +132,8 @@ public class PutGSS extends AbstractProcessor {
             "Fail on Unmatched Columns",
             "A flow will fail if any column in the database that does not have a field in the document.  An error will be logged");
 
+    private static final String GEO_FID = "FID";
+    public static final String GEO_COLUMN = "geo.column";
     // Relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
@@ -458,7 +464,6 @@ public class PutGSS extends AbstractProcessor {
         final String dataRecordPathValue = context.getProperty(DATA_RECORD_PATH).getValue();
         dataRecordPath = dataRecordPathValue == null ? null : RecordPath.compile(dataRecordPathValue);
     }
-
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile flowFile = session.get();
@@ -468,6 +473,117 @@ public class PutGSS extends AbstractProcessor {
 
         final String TX_NAME = "transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+              
+/*        final String statementType = getStatementType(context, flowFile);
+        String geo_column = flowFile.getAttribute("geo.column");
+        if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
+        	final IGSSConnection connection = gssService.getConnection();
+            try (final InputStream in = session.read(flowFile)) {
+                final RecordReaderFactory recordReaderFactory = context.getProperty(RECORD_READER_FACTORY).asControllerService(RecordReaderFactory.class);
+                try {
+					final RecordReader recordReader = recordReaderFactory.createRecordReader(flowFile, in, getLogger());
+					IGSSPreparedStatement stmt = null;
+					StringBuffer sb = new StringBuffer("UPDATE GEO_SRC_1 SET VALUE1=?, VALUE2=?, ID=?, AREA=?, SHAPE=GEOMFROMWKB(?) WHERE (FKEY IN (12))");
+					stmt = connection.prepareStatement(sb.toString());
+					
+					
+					Record outerRecord;
+					while ((outerRecord = recordReader.nextRecord()) != null) {
+		                final List<Record> dataRecords = getDataRecords(outerRecord);
+		                for (final Record currentRecord : dataRecords) {
+		                    final Object[] values = currentRecord.getValues();
+		                    final List<DataType> dataTypes = currentRecord.getSchema().getDataTypes();
+		                    final RecordSchema recordSchema = currentRecord.getSchema();
+		                    
+		                    
+					        // iterate over all of the fields in the record, building the SQL statement by adding the column names
+					        List<String> fieldNames = recordSchema.getFieldNames();
+					        final List<Integer> includedColumns = new ArrayList<>();
+					        if (fieldNames != null) {
+					            int fieldCount = fieldNames.size();
+					            for (int i = 0; i < fieldCount; i++) {
+					                RecordField field = recordSchema.getField(i);
+					                String fieldName = field.getFieldName();
+
+					                if (!GEO_FID.equals(fieldName)) {
+					                	includedColumns.add(i);             	
+					                }
+
+					            }
+					        }
+		                    
+		                    for (int i = 0; i < includedColumns.size(); i++) {
+		                    	int column_idx = includedColumns.get(i);
+		                    	Object value = values[column_idx];
+		                    	final DataType dataType = dataTypes.get(column_idx);
+		                    	final int fieldSqlType = DataTypeUtils.getSQLTypeValue(dataType);
+		                    	String column_name = recordSchema.getFieldNames().get(column_idx);
+	                        	if (column_name.equals(geo_column)) { 
+	            					WKTReader reader = new WKTReader();
+	            					Geometry g = null;
+	            					try {
+										g = reader.read((String) value);
+									} catch (ParseException e) {
+										// TODO Auto-generated catch block
+										e.printStackTrace();
+									}
+	            					
+	            					byte[] wkb = new WKBWriter().write(g);
+	            					stmt.setBytes(i + 1, wkb);
+	                        	}else {
+	    							if (value instanceof Boolean) {
+	    								value = ((Boolean)value).booleanValue() ? 1 : 0;
+	    							}
+	    							if (value instanceof java.util.Date) {
+	    								java.sql.Date sqlDate = new java.sql.Date(((Date) value).getTime());
+	    								value = sqlDate;
+	    							}
+	    							if (value instanceof BigDecimal) {
+	    								int precision = ((BigDecimal)value).precision();
+	    								int scale = ((BigDecimal)value).scale();
+	    								if (scale > 0) {
+	    									value = ((Number)value).doubleValue();
+	    								}
+	    								else if (precision > 10) {
+	    									value = ((Number)value).longValue();
+	    								}
+	    								else {
+	    									value = ((Number)value).intValue();
+	    								}
+	    							}
+	    							stmt.setObject(i + 1, value);
+	                        	}  
+		                    }
+		                }
+		                stmt.executeUpdate();
+					}
+					
+					gssService.returnConnection(connection);
+				} catch (MalformedRecordException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (SchemaNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (SQLException e1) {
+					gssService.returnConnection(connection);
+					e1.printStackTrace();
+				}
+                
+            } catch (IOException e1) {
+            	gssService.returnConnection(connection);
+				e1.printStackTrace();
+			}
+            return;
+        }else {
+
+        }
+        
+*/        
+        
         
         gssService.enableTransaction(true, TX_NAME);
         final Connection connection = gssService.getConnection(TX_NAME);
@@ -577,6 +693,8 @@ public class PutGSS extends AbstractProcessor {
         final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
 
+        String geo_column = flowFile.getAttribute(GEO_COLUMN);
+        
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException(format("Cannot process %s because Table Name is null or empty", flowFile));
@@ -700,7 +818,7 @@ public class PutGSS extends AbstractProcessor {
                                 setParameter(stmt, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
                             }
                         } else {
-                        	if (sqlType == 10001) {
+                        	if (geo_column.equals(fieldName)) { //sqlType = 10001
             					WKTReader reader = new WKTReader();
             					Geometry g = null;
             					try {
@@ -713,12 +831,33 @@ public class PutGSS extends AbstractProcessor {
             					byte[] wkb = new WKBWriter().write(g);
             					stmt.setBytes(i + 1, wkb);
                         	}else {
+    							if (currentValue instanceof Boolean) {
+    								currentValue = ((Boolean)currentValue).booleanValue() ? 1 : 0;
+    							}
+    							if (currentValue instanceof java.util.Date) {
+    								java.sql.Date sqlDate = new java.sql.Date(((Date) currentValue).getTime());
+    								currentValue = sqlDate;
+    							}
+    							if (currentValue instanceof BigDecimal) {
+    								int precision = ((BigDecimal)currentValue).precision();
+    								int scale = ((BigDecimal)currentValue).scale();
+    								if (scale > 0) {
+    									currentValue = ((Number)currentValue).doubleValue();
+    								}
+    								else if (precision > 10) {
+    									currentValue = ((Number)currentValue).longValue();
+    								}
+    								else {
+    									currentValue = ((Number)currentValue).intValue();
+    								}
+    							}
+
                         		stmt.setObject(i + 1, currentValue);
                         	}                        	
                         }
                     }
                      	
-//                    stmt.executeUpdate(); // For mode single insert use executeUpdate()
+//                  stmt.executeUpdate(); // For mode single insert use executeUpdate()
                     stmt.addBatch();
                     session.adjustCounter(statementType + " updates performed", 1, false);
                     if (++currentBatchSize == maxBatchSize) {
@@ -944,26 +1083,31 @@ public class PutGSS extends AbstractProcessor {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
 
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                if (!GEO_FID.equals(fieldName)) {
+                    final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                    if (desc == null && !settings.ignoreUnmappedFields) {
+                        throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                    }
+
+                    if (desc != null) {
+                        includedColumns.add(i);
+                    } else {
+                        // User is ignoring unmapped fields, but log at debug level just in case
+                        getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                    }                	
                 }
 
-                if (desc != null) {
-                    includedColumns.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
             }
 
             sqlBuilder.append(" VALUES (");
             
-            for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
+            for (int i = 0; i < includedColumns.size(); i++) {
+            	int column_idx = includedColumns.get(i);
+                RecordField field = recordSchema.getField(column_idx);
                 String fieldName = field.getFieldName();
+                
                 final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
 				if (i > 0) {
 					sqlBuilder.append(",");
@@ -1126,8 +1270,12 @@ public class PutGSS extends AbstractProcessor {
                     } else {
                         sqlBuilder.append(desc.getColumnName());
                     }
-
-                    sqlBuilder.append(" = ?");
+    				if (desc.getDataType() == 10001) { //desc.getDataType() == GSSConstants.SQLTypeOfWKBGeometry
+    					sqlBuilder.append(" = GEOMFROMWKB(?)");
+    				}
+    				else {
+    					sqlBuilder.append(" = ?");
+    				}
                     includedColumns.add(i);
                 }
             }

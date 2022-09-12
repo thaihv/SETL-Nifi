@@ -45,6 +45,7 @@ import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.RecordSet;
 
+import com.cci.gss.jdbc.driver.IGSSResultSet;
 import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.AvroConversionOptions;
 import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.ResultSetRowCallback;
 import com.vividsolutions.jts.io.ParseException;
@@ -121,11 +122,12 @@ public class RecordSqlWriter implements SqlWriter {
     @Override
     public long writeResultSet(ResultSet resultSet, OutputStream outputStream, ComponentLog logger, ResultSetRowCallback callback) throws Exception {
         final RecordSet recordSet;
+        IGSSResultSet gssResultSet = (IGSSResultSet) resultSet;
         try {
             if (fullRecordSet == null) {
-                final Schema avroSchema = JdbcCommon.createSchema(resultSet, options);
+                final Schema avroSchema = JdbcCommon.createSchema(gssResultSet, options);
                 final RecordSchema recordAvroSchema = AvroTypeUtil.createSchema(avroSchema);
-                fullRecordSet = new ResultSetRecordSetWithCallback(resultSet, recordAvroSchema, callback, options.getDefaultPrecision(), options.getDefaultScale(), options.isUseLogicalTypes());
+                fullRecordSet = new ResultSetRecordSetWithCallback(gssResultSet, recordAvroSchema, callback, options.getDefaultPrecision(), options.getDefaultScale(), options.isUseLogicalTypes());
                 writeSchema = recordSetWriterFactory.getSchema(originalAttributes, fullRecordSet.getSchema());         
             }
             recordSet = (maxRowsPerFlowFile > 0) ? fullRecordSet.limit(maxRowsPerFlowFile) : fullRecordSet;
