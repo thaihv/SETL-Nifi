@@ -151,8 +151,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	}
 
 	protected Connection createConnection() throws SQLException {
-		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, m_userName,
-				m_password);
+		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, m_userName, m_password);
 		if (dbmsType == null) {
 			try {
 				dbmsType = DbmsType.valueOf(connection.getProperty(PropertyConstants.GSS_DBMS_TYPE));

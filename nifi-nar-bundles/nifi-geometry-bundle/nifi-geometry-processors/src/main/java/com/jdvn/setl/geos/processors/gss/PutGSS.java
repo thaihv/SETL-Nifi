@@ -692,13 +692,7 @@ public class PutGSS extends AbstractProcessor {
                             sqlType = column.dataType;
                         }
 
-                        // If DELETE type, insert the object twice if the column is nullable because of the null check (see generateDelete for details)
-                        if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                            setParameter(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
-                            if (column.isNullable()) {
-                                setParameter(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
-                            }
-                        } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
+                        if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
                             final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
                             for (int j = 0; j < timesToAddObjects; j++) {
                                 setParameter(stmt, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
@@ -716,6 +710,7 @@ public class PutGSS extends AbstractProcessor {
             					
             					byte[] wkb = new WKBWriter().write(g);
             					stmt.setBytes(i + 1, wkb);
+            					
                         	}else {
     							if (currentValue instanceof Boolean) {
     								currentValue = ((Boolean)currentValue).booleanValue() ? 1 : 0;
@@ -737,15 +732,25 @@ public class PutGSS extends AbstractProcessor {
     									currentValue = ((Number)currentValue).intValue();
     								}
     							}
-
-                        		stmt.setObject(i + 1, currentValue);
+            					if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
+            						stmt.setObject(++deleteIndex, currentValue);
+                                    if (column.isNullable()) {
+                                    	stmt.setObject(++deleteIndex, currentValue);
+                                    }
+            					}
+            					else
+            						stmt.setObject(i + 1, currentValue);
                         	}                        	
                         }
                     }
                     if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
                     	stmt.executeUpdate();
                     	break;
-                    } 	
+                    }
+                    if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
+                    	stmt.executeUpdate();
+                    	break;
+                    } 	                    
                     stmt.addBatch(); // For mode single insert use executeUpdate()
                     session.adjustCounter(statementType + " updates performed", 1, false);
                     if (++currentBatchSize == maxBatchSize) {
@@ -1032,25 +1037,28 @@ public class PutGSS extends AbstractProcessor {
             for (int i = 0; i < fieldCount; i++) {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
-
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (settings.escapeColumnNames) {
-                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                    } else {
-                        usedColumnNames.add(desc.getColumnName());
+                
+                if (!GEO_FID.equals(fieldName)) {
+                    final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                    if (desc == null && !settings.ignoreUnmappedFields) {
+                        throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                     }
-                    usedColumnIndices.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+
+                    if (desc != null) {
+                        if (settings.escapeColumnNames) {
+                            usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
+                        } else {
+                            usedColumnNames.add(desc.getColumnName());
+                        }
+                        usedColumnIndices.add(i);
+                    } else {
+                        // User is ignoring unmapped fields, but log at debug level just in case
+                        getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                    }                	
                 }
+
             }
         }
 
@@ -1240,44 +1248,45 @@ public class PutGSS extends AbstractProcessor {
 
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
-
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (fieldsFound.getAndIncrement() > 0) {
-                        sqlBuilder.append(" AND ");
+                if (!GEO_FID.equals(fieldName)) {
+                    final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                    if (desc == null && !settings.ignoreUnmappedFields) {
+                        throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                     }
 
-                    String columnName;
-                    if (settings.escapeColumnNames) {
-                        columnName = tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString();
+                    if (desc != null && desc.getDataType() != 10001) { // GSS jdbc Driver not work with GEOMFROMWKB(?) in WHERE clause of DELETE statement, ignore
+                        if (fieldsFound.getAndIncrement() > 0) {
+                            sqlBuilder.append(" AND ");
+                        }
+
+                        String columnName;
+                        if (settings.escapeColumnNames) {
+                            columnName = tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString();
+                        } else {
+                            columnName = desc.getColumnName();
+                        }
+                        // Need to build a null-safe construct for the WHERE clause, since we are using PreparedStatement and won't know if the values are null. If they are null,
+                        // then the filter should be "column IS null" vs "column = null". Since we don't know whether the value is null, we can use the following construct (from NIFI-3742):
+                        //   (column = ? OR (column is null AND ? is null))
+                        sqlBuilder.append("(");
+    					sqlBuilder.append(columnName);
+    					sqlBuilder.append(" = ?");
+                        // Only need null check if the column is nullable, otherwise the row wouldn't exist
+                        if (desc.isNullable()) {
+                            sqlBuilder.append(" OR (");
+                            sqlBuilder.append(columnName);
+                            sqlBuilder.append(" is null AND ? is null))");
+                        } else {
+                            sqlBuilder.append(")");
+                        }
+                        includedColumns.add(i);
+
                     } else {
-                        columnName = desc.getColumnName();
-                    }
-                    // Need to build a null-safe construct for the WHERE clause, since we are using PreparedStatement and won't know if the values are null. If they are null,
-                    // then the filter should be "column IS null" vs "column = null". Since we don't know whether the value is null, we can use the following construct (from NIFI-3742):
-                    //   (column = ? OR (column is null AND ? is null))
-                    sqlBuilder.append("(");
-                    sqlBuilder.append(columnName);
-                    sqlBuilder.append(" = ?");
-
-                    // Only need null check if the column is nullable, otherwise the row wouldn't exist
-                    if (desc.isNullable()) {
-                        sqlBuilder.append(" OR (");
-                        sqlBuilder.append(columnName);
-                        sqlBuilder.append(" is null AND ? is null))");
-                    } else {
-                        sqlBuilder.append(")");
-                    }
-                    includedColumns.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                        // User is ignoring unmapped fields, but log at debug level just in case
+                        getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
+                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                    }                	
                 }
             }
 
