@@ -105,15 +105,11 @@ public class FetchGSS extends AbstractQueryGSSTable {
         pds.add(WHERE_CLAUSE);
         pds.add(SQL_QUERY);
         pds.add(RECORD_WRITER_FACTORY);
-        pds.add(MAX_VALUE_COLUMN_NAMES);
-        pds.add(INITIAL_LOAD_STRATEGY);
-        pds.add(QUERY_TIMEOUT);
         pds.add(FETCH_SIZE);
         pds.add(MAX_ROWS_PER_FLOW_FILE);
         pds.add(OUTPUT_BATCH_SIZE);
         pds.add(MAX_FRAGMENTS);
         pds.add(NORMALIZE_NAMES);
-        //pds.add(USE_AVRO_LOGICAL_TYPES);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE);
 
@@ -124,8 +120,6 @@ public class FetchGSS extends AbstractQueryGSSTable {
     protected SqlWriter configureSqlWriter(ProcessSession session, ProcessContext context) {
         final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
         final boolean convertNamesForAvro = context.getProperty(NORMALIZE_NAMES).asBoolean();
-        // Ignore selecting USE_AVRO_LOGICAL_TYPES by set it default is True
-        //final Boolean useAvroLogicalTypes = context.getProperty(USE_AVRO_LOGICAL_TYPES).asBoolean();
         final Boolean useAvroLogicalTypes = true;
         final Integer defaultPrecision = context.getProperty(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION).evaluateAttributeExpressions().asInteger();
         final Integer defaultScale = context.getProperty(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE).evaluateAttributeExpressions().asInteger();

@@ -20,13 +20,9 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.text.ParseException;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,16 +30,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
-import org.apache.nifi.components.ValidationContext;
-import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateMap;
 import org.apache.nifi.expression.AttributeExpression;
@@ -73,6 +65,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
     public static final String GEO_COLUMN = "geo.column";
     public static final String GEO_FEATURE_TYPE = "geo.feature.type";
+    public static final String GSS_FID = "FKEY";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
             String.valueOf(Connection.TRANSACTION_READ_COMMITTED),
@@ -150,20 +143,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             .allowableValues(TRANSACTION_NONE,TRANSACTION_READ_COMMITTED, TRANSACTION_READ_UNCOMMITTED, TRANSACTION_REPEATABLE_READ, TRANSACTION_SERIALIZABLE)
             .build();
 
-    public static final AllowableValue INITIAL_LOAD_STRATEGY_ALL_ROWS = new AllowableValue("Start at Beginning", "Start at Beginning", "Loads all existing rows from the database table.");
-    public static final AllowableValue INITIAL_LOAD_STRATEGY_NEW_ROWS = new AllowableValue("Start at Current Maximum Values", "Start at Current Maximum Values", "Loads only the newly " +
-            "inserted or updated rows based on the maximum value(s) of the column(s) configured in the '" + MAX_VALUE_COLUMN_NAMES.getDisplayName() + "' property.");
-
-    public static final PropertyDescriptor INITIAL_LOAD_STRATEGY = new PropertyDescriptor.Builder()
-            .name("initial-load-strategy")
-            .displayName("Initial Load Strategy")
-            .description("How to handle existing rows in the database table when the processor is started for the first time (or its state has been cleared). The property will be ignored, " +
-                    "if any '" + INITIAL_MAX_VALUE_PROP_START + "*' dynamic property has also been configured.")
-            .required(true)
-            .allowableValues(INITIAL_LOAD_STRATEGY_ALL_ROWS, INITIAL_LOAD_STRATEGY_NEW_ROWS)
-            .defaultValue(INITIAL_LOAD_STRATEGY_ALL_ROWS.getValue())
-            .build();
-    
 	public static LayerMetadata getLayerMetadata(int layerId, Statement stmt) 
 	throws SQLException {
 		StringBuffer sb = new StringBuffer();
@@ -270,24 +249,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                 .build();
     }
 
-    @Override
-    protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
-        final List<ValidationResult> results = new ArrayList<>(super.customValidate(validationContext));
-
-        final boolean maxValueColumnNames = validationContext.getProperty(MAX_VALUE_COLUMN_NAMES).isSet();
-        final String initialLoadStrategy = validationContext.getProperty(INITIAL_LOAD_STRATEGY).getValue();
-        if (!maxValueColumnNames && initialLoadStrategy.equals(INITIAL_LOAD_STRATEGY_NEW_ROWS.getValue())) {
-            results.add(new ValidationResult.Builder().valid(false)
-                    .subject(INITIAL_LOAD_STRATEGY.getDisplayName())
-                    .input(INITIAL_LOAD_STRATEGY_NEW_ROWS.getDisplayName())
-                    .explanation(String.format("'%s' strategy can only be used when '%s' property is also configured",
-                            INITIAL_LOAD_STRATEGY_NEW_ROWS.getDisplayName(), MAX_VALUE_COLUMN_NAMES.getDisplayName()))
-                    .build());
-        }
-
-        return results;
-    }
-
     @OnScheduled
     public void setup(final ProcessContext context) {
         maxValueProperties = getDefaultMaxValueProperties(context, null);
@@ -315,10 +276,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
         final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
         final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
-        final String maxValueColumnNames = context.getProperty(MAX_VALUE_COLUMN_NAMES).evaluateAttributeExpressions().getValue();
-        final String initialLoadStrategy = context.getProperty(INITIAL_LOAD_STRATEGY).getValue();
         final String customWhereClause = context.getProperty(WHERE_CLAUSE).evaluateAttributeExpressions().getValue();
-        final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
         final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
         final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
         final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
@@ -365,41 +323,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             }
         }
 
-        List<String> maxValueColumnNameList = StringUtils.isEmpty(maxValueColumnNames)
-                ? null
-                : Arrays.asList(maxValueColumnNames.split("\\s*,\\s*"));
-
-        if (maxValueColumnNameList != null && statePropertyMap.isEmpty() && initialLoadStrategy.equals(INITIAL_LOAD_STRATEGY_NEW_ROWS.getValue())) {
-            final String columnsClause = maxValueColumnNameList.stream()
-                    .map(columnName -> String.format("MAX(%s) %s", columnName, columnName))
-                    .collect(Collectors.joining(", "));
-
-            final String selectMaxQuery = dbAdapter.getSelectStatement(tableName, columnsClause, null, null, null, null);
-
-            try (final Connection con = gssService.getConnection();
-                 final Statement st = con.createStatement()) {
-
-                if (transIsolationLevel != null) {
-                    con.setTransactionIsolation(transIsolationLevel);
-                }
-
-                st.setQueryTimeout(queryTimeout); // timeout in seconds
-
-                try (final ResultSet resultSet = st.executeQuery(selectMaxQuery)) {
-                    if (resultSet.next()) {
-                        final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
-                        maxValCollector.processRow(resultSet);
-                        maxValCollector.applyStateChanges();
-                    }
-                }
-                gssService.returnConnection(con);
-            } catch (final Exception e) {
-                logger.error("Unable to execute SQL select query {} due to {}", new Object[]{selectMaxQuery, e});
-                context.yield();
-            }
-        }
-
-        final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, maxValueColumnNameList, customWhereClause, statePropertyMap);
+        final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
 
@@ -612,40 +536,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             query = getWrappedQuery(dbAdapter, sqlQuery, tableName);
         }
 
-        List<String> whereClauses = new ArrayList<>();
-        // Check state map for last max values
-        if (stateMap != null && !stateMap.isEmpty() && maxValColumnNames != null) {
-            IntStream.range(0, maxValColumnNames.size()).forEach((index) -> {
-                String colName = maxValColumnNames.get(index);
-                String maxValueKey = getStateKey(tableName, colName, dbAdapter);
-                String maxValue = stateMap.get(maxValueKey);
-                if (StringUtils.isEmpty(maxValue)) {
-                    // If we can't find the value at the fully-qualified key name, it is possible (under a previous scheme)
-                    // the value has been stored under a key that is only the column name. Fall back to check the column name; either way, when a new
-                    // maximum value is observed, it will be stored under the fully-qualified key from then on.
-                    maxValue = stateMap.get(colName.toLowerCase());
-                }
-                if (!StringUtils.isEmpty(maxValue)) {
-                    Integer type = columnTypeMap.get(maxValueKey);
-                    if (type == null) {
-                        // This shouldn't happen as we are populating columnTypeMap when the processor is scheduled.
-                        throw new IllegalArgumentException("No column type found for: " + colName);
-                    }
-                    // Add a condition for the WHERE clause
-                    whereClauses.add(colName + (index == 0 ? " > " : " >= ") + getLiteralByType(type, maxValue, dbAdapter.getName()));
-                }
-            });
+        if (stateMap != null && !stateMap.isEmpty()) {
+        	String maxValueKey = getStateKey(tableName, GSS_FID, dbAdapter);
+        	String maxValue = stateMap.get(maxValueKey);
+        	query.append(" WHERE FKEY > ").append(maxValue);
         }
-
-        if (customWhereClause != null) {
-            whereClauses.add("(" + customWhereClause + ")");
-        }
-
-        if (!whereClauses.isEmpty()) {
-            query.append(" WHERE ");
-            query.append(StringUtils.join(whereClauses, " AND "));
-        }
-
         return query.toString();
     }
 
@@ -670,35 +565,23 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             if (resultSet == null) {
                 return;
             }
-            try {
-                // Iterate over the row, check-and-set max values
-                final ResultSetMetaData meta = resultSet.getMetaData();
-                final int nrOfColumns = meta.getColumnCount();
-                if (nrOfColumns > 0) {
-                    for (int i = 1; i <= nrOfColumns; i++) {
-                        String colName = meta.getColumnName(i).toLowerCase();
-                        String fullyQualifiedMaxValueKey = getStateKey(tableName, colName, dbAdapter);
-                        Integer type = columnTypeMap.get(fullyQualifiedMaxValueKey);
-                        // Skip any columns we're not keeping track of or whose value is null
-                        if (type == null || resultSet.getObject(i) == null) {
-                            continue;
-                        }
-                        String maxValueString = newColMap.get(fullyQualifiedMaxValueKey);
-                        // If we can't find the value at the fully-qualified key name, it is possible (under a previous scheme)
-                        // the value has been stored under a key that is only the column name. Fall back to check the column name; either way, when a new
-                        // maximum value is observed, it will be stored under the fully-qualified key from then on.
-                        if (StringUtils.isEmpty(maxValueString)) {
-                            maxValueString = newColMap.get(colName);
-                        }
-                        String newMaxValueString = getMaxValueFromRow(resultSet, i, type, maxValueString, dbAdapter.getName());
-                        if (newMaxValueString != null) {
-                            newColMap.put(fullyQualifiedMaxValueKey, newMaxValueString);
-                        }
-                    }
-                }
-            } catch (ParseException | SQLException e) {
-                throw new IOException(e);
-            }
+        	IGSSResultSet gssResultSet = (IGSSResultSet) resultSet;
+
+			try {
+				String fullyQualifiedMaxValueKey = getStateKey(tableName, GSS_FID, dbAdapter);
+	        	String maxValueString = newColMap.get(fullyQualifiedMaxValueKey);
+	            Integer maxIntValue = null;
+	            if (maxValueString != null) {
+	                maxIntValue = Integer.valueOf(maxValueString);
+	            }
+
+	        	Integer colIntValue = gssResultSet.getFID();
+	            if (maxIntValue == null || colIntValue > maxIntValue) {
+	            	newColMap.put(fullyQualifiedMaxValueKey, colIntValue.toString());
+	            }    
+			} catch (SQLException e) {
+				e.printStackTrace();
+			}
         }
 
         @Override
