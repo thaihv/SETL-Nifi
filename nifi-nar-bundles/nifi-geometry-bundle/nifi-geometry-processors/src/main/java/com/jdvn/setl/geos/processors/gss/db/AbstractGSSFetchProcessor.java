@@ -167,18 +167,18 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
         setup(context,true,null);
     }
 
-    boolean tableExists(Connection connection, String tableName) throws SQLException {
-        DatabaseMetaData meta = connection.getMetaData();
-        String schemaName = meta.getUserName();
-        ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[] {"TABLE"});
-        while (resultSet.next()) {
-        	String currTableName = resultSet.getString("TABLE_NAME");
-        	if (tableName.toUpperCase().equals(currTableName.toUpperCase())) {
-        		return true;
-        	}
-       }
-        return false;
-    }
+	boolean tableExists(Connection connection, String tableName) throws SQLException {
+		DatabaseMetaData meta = connection.getMetaData();
+		String schemaName = meta.getUserName();
+		ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[] { "TABLE" });
+		while (resultSet.next()) {
+			String currTableName = resultSet.getString("TABLE_NAME");
+			if (tableName.toUpperCase().equals(currTableName.toUpperCase())) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	void createSETLEventTable(Connection connection, String tableName) throws SQLException {
 		try {
@@ -216,18 +216,48 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		}
 	}
 
-    boolean triggerExists(Connection connection, String triggerName) throws SQLException {
-        DatabaseMetaData meta = connection.getMetaData();
-        String schemaName = meta.getUserName();
-        ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[]{ "TRIGGER" });
-        while (resultSet.next()) {
-        	String currTriggerName = resultSet.getString("TABLE_NAME");
-        	if (triggerName.toUpperCase().equals(currTriggerName.toUpperCase())) {
-        		return true;
-        	}
-       }
-        return false;
-    }    
+	boolean triggerExists(Connection connection, String triggerName) throws SQLException {
+		DatabaseMetaData meta = connection.getMetaData();
+		String schemaName = meta.getUserName();
+		ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[] { "TRIGGER" });
+		while (resultSet.next()) {
+			String currTriggerName = resultSet.getString("TABLE_NAME");
+			if (triggerName.toUpperCase().equals(currTriggerName.toUpperCase())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	void createSETLTrigger(Connection connection, String triggerName) throws SQLException {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+//			sqlBuilder.append(" ");
+//			stmt.execute(sqlBuilder.toString());
+			
+			System.out.println("SETL Trigger " + triggerName + " Created......");
+			stmt.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	void dropSETLTrigger(Connection connection, String triggerName) throws SQLException {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+//			sqlBuilder.append(" ");
+//			stmt.execute(sqlBuilder.toString());
+			
+			System.out.println("SETL Trigger " + triggerName + " Dropped......");
+			stmt.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}  	
     public void setup(final ProcessContext context, boolean shouldCleanCache, FlowFile flowFile) {
 		synchronized (setupComplete) {
 			setupComplete.set(false);
@@ -255,10 +285,15 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 				} else {
 					dropSETLEventTable(con, setl_table);
 				}
-				System.out.println("The existance of table " + setl_trigger + " is: " + triggerExists(con, setl_trigger));
+
+				bExist = triggerExists(con, setl_trigger);
+				if (!bExist) {
+					createSETLTrigger(con, setl_trigger);
+				} else {
+					dropSETLTrigger(con, setl_trigger);
+				}
 				gssService.returnConnection(con);
 			} catch (SQLException e) {
-
 				e.printStackTrace();
 			} finally {
 				gssService.returnConnection(con);
