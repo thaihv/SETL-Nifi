@@ -229,14 +229,25 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		return false;
 	}
 
-	void createSETLTrigger(Connection connection, String triggerName) throws SQLException {
+	void createSETLTrigger(Connection connection, String triggerName, String onTableName) throws SQLException {
 		try {
 			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
 
-//			sqlBuilder.append(" ");
-//			stmt.execute(sqlBuilder.toString());
+			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
+			sqlBuilder.append(triggerName);
+			sqlBuilder.append(" AFTER UPDATE or DELETE ON ");
+			sqlBuilder.append(onTableName);
+			sqlBuilder.append(" FOR EACH ROW ");
+			sqlBuilder.append(" BEGIN ");
+			sqlBuilder.append(" END");
+			stmt.execute(sqlBuilder.toString());
 			
+			sqlBuilder.delete(0, sqlBuilder.length());
+			sqlBuilder.append("ALTER TRIGGER ");
+			sqlBuilder.append(triggerName);
+			sqlBuilder.append(" ENABLE");
+			stmt.execute(sqlBuilder.toString());
 			System.out.println("SETL Trigger " + triggerName + " Created......");
 			stmt.close();
 		} catch (SQLException e) {
@@ -249,9 +260,10 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
 
-//			sqlBuilder.append(" ");
-//			stmt.execute(sqlBuilder.toString());
+			sqlBuilder.append("DROP TRIGGER ");
+			sqlBuilder.append(triggerName);
 			
+			stmt.execute(sqlBuilder.toString());
 			System.out.println("SETL Trigger " + triggerName + " Dropped......");
 			stmt.close();
 		} catch (SQLException e) {
@@ -288,7 +300,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 
 				bExist = triggerExists(con, setl_trigger);
 				if (!bExist) {
-					createSETLTrigger(con, setl_trigger);
+					createSETLTrigger(con, setl_trigger, tableName);
 				} else {
 					dropSETLTrigger(con, setl_trigger);
 				}
