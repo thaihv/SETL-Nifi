@@ -16,6 +16,11 @@
  */
 package com.jdvn.setl.geos.processors.gss.db;
 
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -162,21 +167,107 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
         setup(context,true,null);
     }
 
+    boolean tableExists(Connection connection, String tableName) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        String schemaName = meta.getUserName();
+        ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[] {"TABLE"});
+        while (resultSet.next()) {
+        	String currTableName = resultSet.getString("TABLE_NAME");
+        	if (tableName.toUpperCase().equals(currTableName.toUpperCase())) {
+        		return true;
+        	}
+       }
+        return false;
+    }
+
+	void createSETLEventTable(Connection connection, String tableName) throws SQLException {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("CREATE TABLE ");
+			sqlBuilder.append(tableName);
+			sqlBuilder.append("(FID NUMBER(9), ");
+			sqlBuilder.append("Event VARCHAR2(16), ");
+			sqlBuilder.append("Changed TIMESTAMP DEFAULT SYSTIMESTAMP)");
+
+			stmt.execute(sqlBuilder.toString());
+			System.out.println("Event Table " + tableName + " Created......");
+			stmt.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+	void dropSETLEventTable(Connection connection, String tableName) throws SQLException {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("DROP TABLE ");
+			sqlBuilder.append(tableName);
+
+			stmt.execute(sqlBuilder.toString());
+			System.out.println("Event Table " + tableName + " Dropped......");
+			stmt.close();
+
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+	}
+
+    boolean triggerExists(Connection connection, String triggerName) throws SQLException {
+        DatabaseMetaData meta = connection.getMetaData();
+        String schemaName = meta.getUserName();
+        ResultSet resultSet = meta.getTables("%", schemaName, "%", new String[]{ "TRIGGER" });
+        while (resultSet.next()) {
+        	String currTriggerName = resultSet.getString("TABLE_NAME");
+        	if (triggerName.toUpperCase().equals(currTriggerName.toUpperCase())) {
+        		return true;
+        	}
+       }
+        return false;
+    }    
     public void setup(final ProcessContext context, boolean shouldCleanCache, FlowFile flowFile) {
-        synchronized (setupComplete) {
-            setupComplete.set(false);
+		synchronized (setupComplete) {
+			setupComplete.set(false);
 
-            if (shouldCleanCache) {
-                columnTypeMap.clear();
-            }
-            final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
-            final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
-            String colKey = getStateKey(tableName, GSS_FID, dbAdapter);
-            columnTypeMap.putIfAbsent(colKey, 4);  // FID is a Integer Type 4
-            setupComplete.set(true);
-            return;
+			if (shouldCleanCache) {
+				columnTypeMap.clear();
+			}
+			
+			final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
+			final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+			String colKey = getStateKey(tableName, GSS_FID, dbAdapter);
+			columnTypeMap.putIfAbsent(colKey, 4); // FID is a Integer Type 4
 
-        }
+			// Create Tables and Trigers to catch events of DELETE and UPDATE on the same
+			// GSS Store instance
+			final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+			final Connection con = gssService.getConnection();
+			String setl_table = tableName + "_nifi_setl";
+			String setl_trigger = tableName + "_nifi_setl_trackchanges";
+			try {
+				boolean bExist = tableExists(con, setl_table);
+
+				if (!bExist) {
+					createSETLEventTable(con, setl_table);
+				} else {
+					dropSETLEventTable(con, setl_table);
+				}
+				System.out.println("The existance of table " + setl_trigger + " is: " + triggerExists(con, setl_trigger));
+				gssService.returnConnection(con);
+			} catch (SQLException e) {
+
+				e.printStackTrace();
+			} finally {
+				gssService.returnConnection(con);
+			}
+
+			setupComplete.set(true);
+			return;
+
+		}
     }
 
     protected static StringBuilder getWrappedQuery(DatabaseAdapter dbAdapter, String sqlQuery, String tableName) {
