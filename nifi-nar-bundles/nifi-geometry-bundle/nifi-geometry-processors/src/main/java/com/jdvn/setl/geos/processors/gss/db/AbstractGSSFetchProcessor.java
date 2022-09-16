@@ -297,8 +297,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			// GSS Store instance
 			final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 			final Connection con = gssService.getConnection();
-			String setl_table = tableName + "_nifi_setl";
-			String setl_trigger = tableName + "_nifi_setl_trackchanges";
+			String setl_table = "nifi_"+ tableName;
+			setl_table = setl_table.substring(0, Math.min(setl_table.length(), 30));
+			String setl_trigger = setl_table;
 			try {
 				boolean bExist = tableExists(con, setl_table);
 				if (!bExist) {

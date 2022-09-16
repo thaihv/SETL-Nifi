@@ -462,6 +462,66 @@ public class PutGSS extends AbstractProcessor {
         final String dataRecordPathValue = context.getProperty(DATA_RECORD_PATH).getValue();
         dataRecordPath = dataRecordPathValue == null ? null : RecordPath.compile(dataRecordPathValue);
     }
+    
+    
+    private boolean checkColumnExisted(Connection connection, String tableName, String columnName) {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();		
+			
+			sqlBuilder.append("SELECT COUNT(*) as B FROM ALL_TAB_COLUMNS WHERE ");
+			sqlBuilder.append("TABLE_NAME=");
+			sqlBuilder.append("'").append(tableName).append("'");
+			sqlBuilder.append(" AND ");
+			sqlBuilder.append("COLUMN_NAME=");
+			sqlBuilder.append("'").append(columnName).append("'");
+			
+			ResultSet resultSet = stmt.executeQuery(sqlBuilder.toString()); 
+			while (resultSet.next()) {
+				int n = resultSet.getInt("B");
+				if (n > 0) 
+					return true;
+			}
+
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		return false;
+		
+    }
+	private boolean checkAndFillSETLCondition(final ProcessContext context) {
+
+		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+		final Connection connection = gssService.getConnection();
+		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+		final String columnName = "SETL_ID";
+
+		try {
+			
+			boolean fidExisted = checkColumnExisted(connection, tableName, columnName);
+			if (!fidExisted) {
+				Statement stmt = connection.createStatement();
+				final StringBuilder sqlBuilder = new StringBuilder();
+				sqlBuilder.append("ALTER LAYER ");
+				sqlBuilder.append(tableName);
+				sqlBuilder.append(" ADD (");
+				sqlBuilder.append("SETL_ID NUMBER(9, 0)");
+				sqlBuilder.append(")");
+
+				stmt.execute(sqlBuilder.toString());
+				System.out.println("FID column in " + tableName + " is created......");
+				stmt.close();
+				gssService.returnConnection(connection);
+			}
+
+		} catch (SQLException e) {
+			gssService.returnConnection(connection);
+			e.printStackTrace();
+			return false;
+		}
+		return true;
+	}
+    
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile flowFile = session.get();
@@ -469,11 +529,17 @@ public class PutGSS extends AbstractProcessor {
             return;
         }
 
+        boolean capableToPut = checkAndFillSETLCondition(context);
+        if (!capableToPut) {
+        	return;
+        }
+        
+        
         final String TX_NAME = "transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
         gssService.enableTransaction(true, TX_NAME);
         final Connection connection = gssService.getConnection(TX_NAME);
-        
+
         try {
         	
             putToDatabase(context, session, flowFile, connection);
