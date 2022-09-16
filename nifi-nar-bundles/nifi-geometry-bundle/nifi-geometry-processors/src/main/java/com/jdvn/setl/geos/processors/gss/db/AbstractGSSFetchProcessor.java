@@ -187,9 +187,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 
 			sqlBuilder.append("CREATE TABLE ");
 			sqlBuilder.append(tableName);
-			sqlBuilder.append("(FID NUMBER(9), ");
+			sqlBuilder.append("(FKEY NUMBER(9), ");
 			sqlBuilder.append("Event VARCHAR2(16), ");
-			sqlBuilder.append("Changed TIMESTAMP DEFAULT SYSTIMESTAMP)");
+			sqlBuilder.append("Changed TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL)");
 
 			stmt.execute(sqlBuilder.toString());
 			System.out.println("Event Table " + tableName + " Created......");
@@ -229,18 +229,29 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		return false;
 	}
 
-	void createSETLTrigger(Connection connection, String triggerName, String onTableName) throws SQLException {
+	void createSETLTrigger(Connection connection, String triggerName, String layerName, String eventTableName) throws SQLException {
 		try {
 			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
 
 			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
 			sqlBuilder.append(triggerName);
-			sqlBuilder.append(" AFTER UPDATE or DELETE ON ");
-			sqlBuilder.append(onTableName);
+			sqlBuilder.append(" BEFORE UPDATE or DELETE ON ");
+			sqlBuilder.append(layerName);
 			sqlBuilder.append(" FOR EACH ROW ");
-			sqlBuilder.append(" BEGIN ");
-			sqlBuilder.append(" END");
+			sqlBuilder.append("DECLARE ");
+			sqlBuilder.append("BEGIN ");
+			sqlBuilder.append("IF UPDATING THEN ");
+			sqlBuilder.append("INSERT INTO ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" VALUES(:old.SHAPE, 'u', SYSTIMESTAMP);");
+			sqlBuilder.append("END IF;");
+			sqlBuilder.append("IF DELETING THEN ");
+			sqlBuilder.append("INSERT INTO ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" VALUES(:old.SHAPE, 'd', SYSTIMESTAMP);");			
+			sqlBuilder.append("END IF;");
+			sqlBuilder.append("END;");
 			stmt.execute(sqlBuilder.toString());
 			
 			sqlBuilder.delete(0, sqlBuilder.length());
@@ -254,7 +265,6 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			e.printStackTrace();
 		}
 	}
-
 	void dropSETLTrigger(Connection connection, String triggerName) throws SQLException {
 		try {
 			Statement stmt = connection.createStatement();
@@ -291,7 +301,6 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			String setl_trigger = tableName + "_nifi_setl_trackchanges";
 			try {
 				boolean bExist = tableExists(con, setl_table);
-
 				if (!bExist) {
 					createSETLEventTable(con, setl_table);
 				} else {
@@ -300,10 +309,13 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 
 				bExist = triggerExists(con, setl_trigger);
 				if (!bExist) {
-					createSETLTrigger(con, setl_trigger, tableName);
+					createSETLTrigger(con, setl_trigger, tableName, setl_table);
 				} else {
 					dropSETLTrigger(con, setl_trigger);
 				}
+				
+				//testFID(con);
+				
 				gssService.returnConnection(con);
 			} catch (SQLException e) {
 				e.printStackTrace();
