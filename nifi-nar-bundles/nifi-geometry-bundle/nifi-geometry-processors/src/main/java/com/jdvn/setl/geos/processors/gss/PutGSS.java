@@ -505,7 +505,7 @@ public class PutGSS extends AbstractProcessor {
 				sqlBuilder.append("ALTER LAYER ");
 				sqlBuilder.append(tableName);
 				sqlBuilder.append(" ADD (");
-				sqlBuilder.append("SETL_ID NUMBER(9, 0)");
+				sqlBuilder.append("SETL_ID VARCHAR(254)");
 				sqlBuilder.append(")");
 
 				stmt.execute(sqlBuilder.toString());

@@ -326,8 +326,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
-
-        try (final IGSSConnection con = gssService.getConnection();
+        final IGSSConnection con = gssService.getConnection();
+        try (
              final IGSSStatement st = con.createStatement()) {
 
             if (fetchSize != null && fetchSize > 0) {
@@ -494,8 +494,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                         }
                     }
                 }
-            } catch (final SQLException e) {
-                throw e;
+            } catch (final Exception e) {
+            	logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[]{selectQuery, e});
             } 
             session.transfer(resultSetFlowFiles, REL_SUCCESS);
             gssService.returnConnection(con);
@@ -512,7 +512,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             } catch (IOException ioe) {
                 getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded", new Object[]{this, ioe});
             }
-
+            gssService.returnConnection(con);
             session.commitAsync();
         }
     }

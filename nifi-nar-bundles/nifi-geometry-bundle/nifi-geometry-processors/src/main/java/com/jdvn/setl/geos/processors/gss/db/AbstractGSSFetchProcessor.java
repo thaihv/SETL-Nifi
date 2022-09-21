@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.nifi.components.AllowableValue;
@@ -54,6 +55,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
     public static final String GSS_FID = "FKEY";
+    public static final String EVENT_PREFIX = "nifi_";
     // Relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
@@ -193,12 +195,26 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 
 			stmt.execute(sqlBuilder.toString());
 			System.out.println("Event Table " + tableName + " Created......");
-			stmt.close();
+			stmt.close();					
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
 	}
 
+	UUID createGUIDfromFkey(Connection connection, String tableName, int FID) {
+		try {
+			DatabaseMetaData meta = connection.getMetaData();
+			String schemaName = meta.getUserName();
+			String url = meta.getURL();
+			String strEncode = url + "." + schemaName + "."+ tableName + "." + Integer.toString(FID);
+			return UUID.nameUUIDFromBytes(strEncode.getBytes());
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+		
+	}
 	void dropSETLEventTable(Connection connection, String tableName) throws SQLException {
 		try {
 			Statement stmt = connection.createStatement();
@@ -229,11 +245,47 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		return false;
 	}
 
-	void createSETLTrigger(Connection connection, String triggerName, String layerName, String eventTableName) throws SQLException {
+	String getGeometryTableNameFromGSS(Connection connection, String layerName) {
+		try {
+			Statement stmt = connection.createStatement();
+			DatabaseMetaData meta = connection.getMetaData();
+			String owner = meta.getUserName().toUpperCase();
+			
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("SELECT THEME_ID FROM GSS.THEMES WHERE THEME_NAME = ");
+			sqlBuilder.append("'").append(layerName).append("'");
+			sqlBuilder.append(" AND ");
+			sqlBuilder.append("OWNER = ");
+			sqlBuilder.append("'").append(owner).append("'");
+			
+			ResultSet resultSet = stmt.executeQuery(sqlBuilder.toString()); 
+			if (!resultSet.next()) {
+				System.out.println("Not a GSS layer ");
+				return null;
+			}
+			int n = resultSet.getInt("THEME_ID");
+			resultSet.close();		
+			stmt.close();
+			return "G"+ Integer.toString(n);
+			
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return null;
+		
+	}
+	void createSETLTriggers(Connection connection, String layerName, String eventTableName) throws SQLException {
+		
 		try {
 			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
-
+			
+			// Create Triger for event changes of DELETE and UPDATE atribute data
+			String triggerName = eventTableName;
+			sqlBuilder.delete(0, sqlBuilder.length());
 			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
 			sqlBuilder.append(triggerName);
 			sqlBuilder.append(" BEFORE UPDATE or DELETE ON ");
@@ -253,13 +305,38 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			sqlBuilder.append("END IF;");
 			sqlBuilder.append("END;");
 			stmt.execute(sqlBuilder.toString());
+			// Create Triger for event changes UPDATE of geometry data
+			String gtable = getGeometryTableNameFromGSS(connection, layerName);
+			String gTrigger = EVENT_PREFIX + gtable;
+			sqlBuilder.delete(0, sqlBuilder.length());
+			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
+			sqlBuilder.append(gTrigger);
+			sqlBuilder.append(" BEFORE UPDATE ON ");
+			sqlBuilder.append(gtable);
+			sqlBuilder.append(" FOR EACH ROW ");
+			sqlBuilder.append("DECLARE ");
+			sqlBuilder.append("BEGIN ");
+			sqlBuilder.append("IF UPDATING THEN ");
+			sqlBuilder.append("INSERT INTO ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" VALUES(:old.GID, 'u', SYSTIMESTAMP);");
+			sqlBuilder.append("END IF;");
+			sqlBuilder.append("END;");
+			stmt.execute(sqlBuilder.toString());
 			
 			sqlBuilder.delete(0, sqlBuilder.length());
 			sqlBuilder.append("ALTER TRIGGER ");
 			sqlBuilder.append(triggerName);
 			sqlBuilder.append(" ENABLE");
 			stmt.execute(sqlBuilder.toString());
-			System.out.println("SETL Trigger " + triggerName + " Created......");
+			
+			sqlBuilder.delete(0, sqlBuilder.length());
+			sqlBuilder.append("ALTER TRIGGER ");
+			sqlBuilder.append(gTrigger);
+			sqlBuilder.append(" ENABLE");
+			stmt.execute(sqlBuilder.toString());
+			
+			System.out.println("SETL Triggers are created......");
 			stmt.close();
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -297,9 +374,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			// GSS Store instance
 			final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 			final Connection con = gssService.getConnection();
-			String setl_table = "nifi_"+ tableName;
+			String setl_table = EVENT_PREFIX + tableName;
 			setl_table = setl_table.substring(0, Math.min(setl_table.length(), 30));
-			String setl_trigger = setl_table;
+
 			try {
 				boolean bExist = tableExists(con, setl_table);
 				if (!bExist) {
@@ -308,11 +385,13 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 					dropSETLEventTable(con, setl_table);
 				}
 
-				bExist = triggerExists(con, setl_trigger);
+				bExist = triggerExists(con, setl_table);
 				if (!bExist) {
-					createSETLTrigger(con, setl_trigger, tableName, setl_table);
+					createSETLTriggers(con, tableName, setl_table);
 				} else {
-					dropSETLTrigger(con, setl_trigger);
+					dropSETLTrigger(con, setl_table);
+					String gTrigger = EVENT_PREFIX + getGeometryTableNameFromGSS(con, tableName);
+					dropSETLTrigger(con, gTrigger);
 				}
 				
 				//testFID(con);
