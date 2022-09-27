@@ -1,19 +1,4 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 package com.jdvn.setl.geos.processors.gss.db;
 
 import java.sql.Connection;
@@ -45,9 +30,7 @@ import org.apache.nifi.processor.util.StandardValidators;
 
 import com.jdvn.setl.geos.gss.GSSService;
 
-/**
- * A base class for common code shared by processors that fetch RDBMS data.
- */
+
 public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryProcessor {
 
     public static final String INITIAL_MAX_VALUE_PROP_START = "initial.maxvalue.";
@@ -65,6 +48,10 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
     protected Set<Relationship> relationships;
 
     // Properties
+    
+    public static final AllowableValue ON_USE = new AllowableValue("Use Exists", "Use Exists", "Keep using the tables and triggers created from previously SETL jobs");
+    public static final AllowableValue RE_CREATED = new AllowableValue("Re-Created", "Re-Created", "Drop and create new ones to start SETL process from now on");
+    
     public static final PropertyDescriptor GSS_SERVICE = new PropertyDescriptor.Builder()
             .name("Database Connection Pooling Service")
             .description("The Controller Service that is used to obtain a connection to the database.")
@@ -109,7 +96,16 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
-
+    
+    public static final PropertyDescriptor GENERATE_EVENT_TRACKERS = new PropertyDescriptor.Builder()
+            .name("create-tables-and-triggers-for-setl")
+            .displayName("Generate SETL event trackers")
+            .description("Create tables and triggers to track changes from the source table. The information from this event trackers is useful to update to the target on PutGSS processor")
+            .required(true)
+            .allowableValues(ON_USE, RE_CREATED)
+            .defaultValue(ON_USE.getValue())
+            .build();
+    
     protected List<PropertyDescriptor> propDescriptors;
 
     // The delimiter to use when referencing qualified names (such as table@!@column in the state map)
@@ -194,9 +190,10 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			sqlBuilder.append("Changed TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL)");
 
 			stmt.execute(sqlBuilder.toString());
-			System.out.println("Event Table " + tableName + " Created......");
+			getLogger().info("Event tracker table for " + tableName + " is created.!");
 			stmt.close();					
 		} catch (SQLException e) {
+			getLogger().warn("Sorry, The table for event trackers can not created for some reason!");
 			e.printStackTrace();
 		}
 	}
@@ -224,7 +221,6 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			sqlBuilder.append(tableName);
 
 			stmt.execute(sqlBuilder.toString());
-			System.out.println("Event Table " + tableName + " Dropped......");
 			stmt.close();
 
 		} catch (SQLException e) {
@@ -261,7 +257,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			
 			ResultSet resultSet = stmt.executeQuery(sqlBuilder.toString()); 
 			if (!resultSet.next()) {
-				System.out.println("Not a GSS layer ");
+				getLogger().warn("Table is not a layer, we can not get geometry info!");
 				return null;
 			}
 			int n = resultSet.getInt("THEME_ID");
@@ -270,7 +266,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			return "G"+ Integer.toString(n);
 			
 		} catch (SQLException e) {
-			// TODO Auto-generated catch block
+			getLogger().warn("Sorry, we can not get geometry info!");
 			e.printStackTrace();
 		}
 		
@@ -336,9 +332,10 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			sqlBuilder.append(" ENABLE");
 			stmt.execute(sqlBuilder.toString());
 			
-			System.out.println("SETL Triggers are created......");
+			getLogger().info("Triggers for event trackers are created.!");
 			stmt.close();
 		} catch (SQLException e) {
+			getLogger().warn("Sorry, triggers for event trackers can not created for some reason!");
 			e.printStackTrace();
 		}
 	}
@@ -351,7 +348,6 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			sqlBuilder.append(triggerName);
 			
 			stmt.execute(sqlBuilder.toString());
-			System.out.println("SETL Trigger " + triggerName + " Dropped......");
 			stmt.close();
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -373,6 +369,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			// Create Tables and Trigers to catch events of DELETE and UPDATE on the same
 			// GSS Store instance
 			final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+			final String use_evt_trackers = context.getProperty(GENERATE_EVENT_TRACKERS).getValue();
 			final Connection con = gssService.getConnection();
 			String setl_table = EVENT_PREFIX + tableName;
 			setl_table = setl_table.substring(0, Math.min(setl_table.length(), 30));
@@ -382,20 +379,23 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 				if (!bExist) {
 					createSETLEventTable(con, setl_table);
 				} else {
-					dropSETLEventTable(con, setl_table);
+					if (use_evt_trackers.equals("Re-Created")) {
+						dropSETLEventTable(con, setl_table);
+						createSETLEventTable(con, setl_table);
+					}
 				}
 
 				bExist = triggerExists(con, setl_table);
 				if (!bExist) {
 					createSETLTriggers(con, tableName, setl_table);
 				} else {
-					dropSETLTrigger(con, setl_table);
-					String gTrigger = EVENT_PREFIX + getGeometryTableNameFromGSS(con, tableName);
-					dropSETLTrigger(con, gTrigger);
+					if (use_evt_trackers.equals("Re-Created")) {
+						dropSETLTrigger(con, setl_table);
+						String gTrigger = EVENT_PREFIX + getGeometryTableNameFromGSS(con, tableName);
+						dropSETLTrigger(con, gTrigger);
+						createSETLTriggers(con, tableName, setl_table);
+					}
 				}
-				
-				//testFID(con);
-				
 				gssService.returnConnection(con);
 			} catch (SQLException e) {
 				e.printStackTrace();

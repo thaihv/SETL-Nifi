@@ -40,11 +40,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.behavior.EventDriven;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.InputRequirement.Requirement;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
+import org.apache.nifi.annotation.behavior.TriggerSerially;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.SeeAlso;
@@ -92,6 +94,8 @@ import com.vividsolutions.jts.io.ParseException;
 import com.vividsolutions.jts.io.WKBWriter;
 import com.vividsolutions.jts.io.WKTReader;
 
+
+@TriggerSerially
 @EventDriven
 @InputRequirement(Requirement.INPUT_REQUIRED)
 @Tags({"layer", "list", "GSS", "feature table", "geo database"})
@@ -132,6 +136,8 @@ public class PutGSS extends AbstractProcessor {
 
     private static final String GEO_FID = "FID";
     public static final String GEO_COLUMN = "geo.column";
+    public static final String SETL_UUID = "SETL_UUID";
+    
     // Relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
@@ -494,29 +500,29 @@ public class PutGSS extends AbstractProcessor {
 		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final Connection connection = gssService.getConnection();
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
-		final String columnName = "SETL_ID";
 
 		try {
 			
-			boolean fidExisted = checkColumnExisted(connection, tableName, columnName);
+			boolean fidExisted = checkColumnExisted(connection, tableName, SETL_UUID);
 			if (!fidExisted) {
 				Statement stmt = connection.createStatement();
 				final StringBuilder sqlBuilder = new StringBuilder();
 				sqlBuilder.append("ALTER LAYER ");
 				sqlBuilder.append(tableName);
 				sqlBuilder.append(" ADD (");
-				sqlBuilder.append("SETL_ID VARCHAR(254)");
+				sqlBuilder.append(SETL_UUID);
+				sqlBuilder.append(" VARCHAR(254)");
 				sqlBuilder.append(")");
 
 				stmt.execute(sqlBuilder.toString());
-				System.out.println("FID column in " + tableName + " is created......");
+				getLogger().info("SETL_UUID column in " + tableName + " is created! ");
 				stmt.close();
 				gssService.returnConnection(connection);
 			}
 
 		} catch (SQLException e) {
 			gssService.returnConnection(connection);
-			e.printStackTrace();
+			getLogger().warn("Error SQL {}, we can not create UID column for the target table of SETL", e);
 			return false;
 		}
 		return true;
@@ -535,7 +541,7 @@ public class PutGSS extends AbstractProcessor {
         }
         
         
-        final String TX_NAME = "transaction";
+        final String TX_NAME = RandomStringUtils.randomAlphanumeric(12); //"transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
         gssService.enableTransaction(true, TX_NAME);
         final Connection connection = gssService.getConnection(TX_NAME);

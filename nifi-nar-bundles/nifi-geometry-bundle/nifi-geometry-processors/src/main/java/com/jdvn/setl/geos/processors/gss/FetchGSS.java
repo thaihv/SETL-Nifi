@@ -112,6 +112,8 @@ public class FetchGSS extends AbstractQueryGSSTable {
         pds.add(NORMALIZE_NAMES);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE);
+        pds.add(GENERATE_EVENT_TRACKERS);
+        
 
         propDescriptors = Collections.unmodifiableList(pds);
     }
