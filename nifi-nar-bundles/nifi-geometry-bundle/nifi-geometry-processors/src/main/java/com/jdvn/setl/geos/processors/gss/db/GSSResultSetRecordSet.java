@@ -60,7 +60,7 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
     private static final String FLOAT_CLASS_NAME = Float.class.getName();
     private static final String BIGDECIMAL_CLASS_NAME = BigDecimal.class.getName();
     
-    private static final String GEO_FID = "FID";
+    private static final String SETL_UUID = "NIFIUID";
 
     public GSSResultSetRecordSet(final ResultSet rs, final RecordSchema readerSchema) throws SQLException {
         this(rs, readerSchema, JDBC_DEFAULT_PRECISION_VALUE, JDBC_DEFAULT_SCALE_VALUE);
@@ -148,8 +148,8 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 					g = reader.read(wkb);
 					value = writer.write(g);
             	}
-            	else if (fieldName.equals("FID")) {
-            		value = gssResultSet.getFID();
+            	else if (fieldName.equals(SETL_UUID)) {
+            		value = Integer.toString(gssResultSet.getFID());
             	}else
             		value = normalizeValue(gssResultSet.getObject(fieldName));
             } else {
@@ -189,12 +189,6 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
         final int numCols = metadata.getColumnCount();
         final List<RecordField> fields = new ArrayList<>(numCols);
         
-        // Add an extra colum FID for GSS
-
-        final RecordField geo_field = new RecordField(GEO_FID, RecordFieldType.INT.getDataType(), true);
-        fields.add(geo_field);
-        rsColumnNames.add(GEO_FID);
-        
         for (int i = 0; i < numCols; i++) {
             final int column = i + 1;
             final int sqlType = metadata.getColumnType(column);
@@ -215,6 +209,11 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
             rsColumnNames.add(metadata.getColumnLabel(column));
         }
 
+        // Add an extra colum FID for GSS
+        final RecordField geo_IDfield = new RecordField(SETL_UUID, RecordFieldType.STRING.getDataType(), true);
+        fields.add(geo_IDfield);
+        rsColumnNames.add(SETL_UUID);
+        
         return new SimpleRecordSchema(fields);
     }
 

@@ -61,7 +61,9 @@ import com.jdvn.setl.geos.gss.GSSService;
 
 public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
-    public static final String RESULT_TABLENAME = "tablename";
+    public static final String RESULT_TABLENAME = "source.tablename";
+    public static final String RESULT_SCHEMANAME = "source.schemaname";
+    public static final String RESULT_URL = "source.url";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
     public static final String GEO_COLUMN = "geo.column";
     public static final String GEO_FEATURE_TYPE = "geo.feature.type";
@@ -344,10 +346,12 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             }
 
             String jdbcURL = "GSSService";
+            String schemaName = "Unknown";
             try {
                 DatabaseMetaData databaseMetaData = con.getMetaData();
                 if (databaseMetaData != null) {
                     jdbcURL = databaseMetaData.getURL();
+                    schemaName = databaseMetaData.getUserName();
                 }
             } catch (SQLException se) {
                 // Ignore and use default JDBC URL. This shouldn't happen unless the driver doesn't implement getMetaData() properly
@@ -383,7 +387,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        
+                        attributesToAdd.put(RESULT_URL, jdbcURL);
+                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+
                         
                         IGSSResultSetMetaData rsmd = resultSet.getMetaData();
 						if (rsmd.hasGeometryColumn()) {
@@ -395,7 +403,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 							attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
 							if (maxRowsPerFlowFile > 0) {
 								attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
-										tableName + "_" + fragmentIdentifier + "_" + String.valueOf(fragmentIndex));
+										tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							} else
 								attributesToAdd.put(GeoAttributes.GEO_NAME.key(), tableName);
 

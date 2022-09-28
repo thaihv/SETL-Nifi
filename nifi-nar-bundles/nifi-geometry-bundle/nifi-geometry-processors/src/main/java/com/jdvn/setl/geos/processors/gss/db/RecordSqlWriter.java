@@ -1,30 +1,12 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+
 package com.jdvn.setl.geos.processors.gss.db;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -36,12 +18,8 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
-import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.WriteResult;
-import org.apache.nifi.serialization.record.DataType;
 import org.apache.nifi.serialization.record.Record;
-import org.apache.nifi.serialization.record.RecordField;
-import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.RecordSet;
 
@@ -69,56 +47,6 @@ public class RecordSqlWriter implements SqlWriter {
         this.originalAttributes = originalAttributes;
     }
 
-    public RecordSchema createSchemaFromGSSResultSet(ResultSet resultSet) throws SQLException {
-    	final List<RecordField> fields = new ArrayList<>();
-        ResultSetMetaData rsmd = resultSet.getMetaData();
-        int cols = rsmd.getColumnCount();
-        for (int i = 1; i <= cols; i++) {
-        	int precision = rsmd.getPrecision(i);
-        	int scale     = rsmd.getScale(i);
-			DataType dataType;
-			switch (rsmd.getColumnTypeName(i)) {
-			case "NUMBER":
-				if (precision == 5)
-					dataType = RecordFieldType.SHORT.getDataType();
-				else if (precision == 9)
-					dataType = RecordFieldType.INT.getDataType();
-				else if (precision == 38) {
-					if (scale == 8)
-						dataType = RecordFieldType.DOUBLE.getDataType();
-					else
-						dataType = RecordFieldType.LONG.getDataType();
-				} else
-					dataType = RecordFieldType.FLOAT.getDataType();
-				
-				break;
-			case "VARCHAR2":
-				dataType = RecordFieldType.STRING.getDataType();
-				break;
-			case "GEOMETRY":
-				dataType = RecordFieldType.STRING.getDataType();
-				break;
-			case "BLOB":
-				dataType = RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType());
-				break;
-			case "DATE":
-				dataType = RecordFieldType.DATE.getDataType();
-				break;
-			case "TIMESTAMP":
-				dataType = RecordFieldType.TIMESTAMP.getDataType();
-				break;
-			default:
-				dataType = RecordFieldType.STRING.getDataType();
-			}
-			fields.add(new RecordField(rsmd.getColumnName(i), dataType));
-
-        }     	
-    	
-    	RecordSchema recordSchema = new SimpleRecordSchema(fields);
-		return recordSchema;
-    	
-    }
-    
     @Override
     public long writeResultSet(ResultSet resultSet, OutputStream outputStream, ComponentLog logger, ResultSetRowCallback callback) throws Exception {
         final RecordSet recordSet;
