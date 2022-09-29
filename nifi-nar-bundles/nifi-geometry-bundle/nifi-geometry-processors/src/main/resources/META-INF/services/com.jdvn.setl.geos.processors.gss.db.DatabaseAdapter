@@ -14,5 +14,4 @@
 # limitations under the License.
 com.jdvn.setl.geos.processors.gss.db.GenericDatabaseAdapter
 com.jdvn.setl.geos.processors.gss.db.OracleDatabaseAdapter
-com.jdvn.setl.geos.processors.gss.db.Oracle12DatabaseAdapter
 com.jdvn.setl.geos.processors.gss.db.PostgreSQLDatabaseAdapter

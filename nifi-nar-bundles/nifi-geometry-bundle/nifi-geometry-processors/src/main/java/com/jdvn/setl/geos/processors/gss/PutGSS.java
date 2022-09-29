@@ -25,7 +25,6 @@ import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -56,8 +55,6 @@ import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyDescriptor.Builder;
-import org.apache.nifi.components.ValidationContext;
-import org.apache.nifi.components.ValidationResult;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.logging.ComponentLog;
@@ -111,8 +108,6 @@ public class PutGSS extends AbstractProcessor {
     public static final String UPDATE_TYPE = "UPDATE";
     public static final String INSERT_TYPE = "INSERT";
     public static final String DELETE_TYPE = "DELETE";
-    public static final String UPSERT_TYPE = "UPSERT";
-    public static final String INSERT_IGNORE_TYPE = "INSERT_IGNORE";
     public static final String SQL_TYPE = "SQL";   // Not an allowable value in the Statement Type property, must be set by attribute
     public static final String USE_ATTR_TYPE = "Use statement.type Attribute";
     public static final String USE_RECORD_PATH = "Use Record Path";
@@ -179,7 +174,7 @@ public class PutGSS extends AbstractProcessor {
                     + "FlowFile. The 'Use statement.type Attribute' option is the only one that allows the 'SQL' statement type. If 'SQL' is specified, the value of the field specified by the "
                     + "'Field Containing SQL' property is expected to be a valid SQL statement on the target database, and will be executed as-is.")
             .required(true)
-            .allowableValues(UPDATE_TYPE, INSERT_TYPE, UPSERT_TYPE, INSERT_IGNORE_TYPE, DELETE_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
+            .allowableValues(UPDATE_TYPE, INSERT_TYPE, DELETE_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
             .build();
 
     static final PropertyDescriptor STATEMENT_TYPE_RECORD_PATH = new Builder()
@@ -274,7 +269,7 @@ public class PutGSS extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .required(false)
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
-            .dependsOn(STATEMENT_TYPE, UPDATE_TYPE, UPSERT_TYPE, SQL_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
+            .dependsOn(STATEMENT_TYPE, UPDATE_TYPE, SQL_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
             .build();
 
     static final PropertyDescriptor FIELD_CONTAINING_SQL = new Builder()
@@ -406,7 +401,6 @@ public class PutGSS extends AbstractProcessor {
         propDescriptors = Collections.unmodifiableList(pds);
     }
 
-    private DatabaseAdapter databaseAdapter;
     private volatile Function<Record, String> recordPathOperationType;
     private volatile RecordPath dataRecordPath;
 
@@ -433,28 +427,9 @@ public class PutGSS extends AbstractProcessor {
                 .build();
     }
 
-    @Override
-    protected Collection<ValidationResult> customValidate(ValidationContext validationContext) {
-        Collection<ValidationResult> validationResults = new ArrayList<>(super.customValidate(validationContext));
-
-        DatabaseAdapter databaseAdapter = dbAdapters.get(validationContext.getProperty(DB_TYPE).getValue());
-        String statementType = validationContext.getProperty(STATEMENT_TYPE).getValue();
-        if ((UPSERT_TYPE.equals(statementType) && !databaseAdapter.supportsUpsert())
-            || (INSERT_IGNORE_TYPE.equals(statementType) && !databaseAdapter.supportsInsertIgnore())) {
-            validationResults.add(new ValidationResult.Builder()
-                .subject(STATEMENT_TYPE.getDisplayName())
-                .valid(false)
-                .explanation(databaseAdapter.getName() + " does not support " + statementType)
-                .build()
-            );
-        }
-
-        return validationResults;
-    }
-
     @OnScheduled
     public void onScheduled(final ProcessContext context) {
-        databaseAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+        dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 
         final int tableSchemaCacheSize = context.getProperty(TABLE_SCHEMA_CACHE_SIZE).asInteger();
         schemaCache = Caffeine.newBuilder()
@@ -531,7 +506,7 @@ public class PutGSS extends AbstractProcessor {
 		}
 		return true;
 	}
-    
+
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile flowFile = session.get();
@@ -543,7 +518,6 @@ public class PutGSS extends AbstractProcessor {
         if (!capableToPut) {
         	return;
         }
-        
         
         final String TX_NAME = RandomStringUtils.randomAlphanumeric(12); //"transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
@@ -720,10 +694,6 @@ public class PutGSS extends AbstractProcessor {
                             sqlHolder = generateUpdate(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
                             sqlHolder = generateDelete(recordSchema, fqTableName, tableSchema, settings);
-                        } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateUpsert(recordSchema, fqTableName, updateKeys, tableSchema, settings);
-                        } else if (INSERT_IGNORE_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateInsertIgnore(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else {
                             throw new IllegalArgumentException(format("Statement Type %s is not valid, FlowFile %s", statementType, flowFile));
                         }
@@ -776,11 +746,9 @@ public class PutGSS extends AbstractProcessor {
                         } else {
                             sqlType = column.dataType;
                         }
-
                     	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
                     	// DELETE_TYPE need 02 times to set values
-						if (geo_column.equals(fieldName)) { // case of Geocolum: sqlType = 10001 ==
-															// GSSConstants.SQLTypeOfWKBGeometry
+						if (geo_column.equals(fieldName)) { // Case of Geocolum, get WKB - sqlType = 10001 == GSSConstants.SQLTypeOfWKBGeometry
 							WKTReader reader = new WKTReader();
 							Geometry g = null;
 							try {
@@ -794,43 +762,50 @@ public class PutGSS extends AbstractProcessor {
 							stmt.setBytes(i + 1, wkb);
 
 						} else {
-							if (SETL_UUID.equals(fieldName)) { // case of SETLUUID
+							if (SETL_UUID.equals(fieldName)) { // Case of SETLUUID, convert FKEY to UUID for global management
 								String Fkey = (String) currentValue;
 								currentValue = createGUIDfromFkeyString(idbase.toString() + Fkey).toString();
 							}
-							else {// normal cases
-								if (currentValue instanceof Boolean) {
-									currentValue = ((Boolean) currentValue).booleanValue() ? 1 : 0;
-								}
-								if (currentValue instanceof java.util.Date) {
-									java.sql.Date sqlDate = new java.sql.Date(((Date) currentValue).getTime());
-									currentValue = sqlDate;
-								}
-								if (currentValue instanceof BigDecimal) {
-									int precision = ((BigDecimal) currentValue).precision();
-									int scale = ((BigDecimal) currentValue).scale();
-									if (scale > 0) {
-										currentValue = ((Number) currentValue).doubleValue();
-									} else if (precision > 10) {
-										currentValue = ((Number) currentValue).longValue();
-									} else {
-										currentValue = ((Number) currentValue).intValue();
+							else {// Cases of others
+								if (sqlType == Types.BLOB || sqlType == Types.CLOB) {
+									if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
+										setParameterBLOB_CLOBTypes(stmt, ++deleteIndex, currentValue, fieldSqlType,sqlType);
+										if (column.isNullable()) {
+											setParameterBLOB_CLOBTypes(stmt, ++deleteIndex, currentValue, fieldSqlType, sqlType);
+										}
+									} else
+										setParameterBLOB_CLOBTypes(stmt, i + 1, currentValue, fieldSqlType, sqlType);
+									break;
+
+								} else {
+									if (currentValue instanceof Boolean) {
+										currentValue = ((Boolean) currentValue).booleanValue() ? 1 : 0;
+									}
+									if (currentValue instanceof java.util.Date) {
+										java.sql.Date sqlDate = new java.sql.Date(((Date) currentValue).getTime());
+										currentValue = sqlDate;
+									}
+									if (currentValue instanceof BigDecimal) {
+										int precision = ((BigDecimal) currentValue).precision();
+										int scale = ((BigDecimal) currentValue).scale();
+										if (scale > 0) {
+											currentValue = ((Number) currentValue).doubleValue();
+										} else if (precision > 10) {
+											currentValue = ((Number) currentValue).longValue();
+										} else {
+											currentValue = ((Number) currentValue).intValue();
+										}
 									}
 								}								
 							}
+							
 							if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
 								stmt.setObject(++deleteIndex, currentValue);
 								if (column.isNullable()) {
 									stmt.setObject(++deleteIndex, currentValue);
 								}
-							} else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
-								final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
-								for (int j = 0; j < timesToAddObjects; j++) {
-									stmt.setObject(i + (fieldIndexes.size() * j) + 1, currentValue);
-								}
 							} else
 								stmt.setObject(i + 1, currentValue);							
-							
 						}                                              
                     }
                     if (INSERT_TYPE.equalsIgnoreCase(statementType) != true) { // GSS is not support Batch for DELETE/UPDATE/UPSERT
@@ -862,7 +837,7 @@ public class PutGSS extends AbstractProcessor {
         }
     }
 
-    private void setParameter(PreparedStatement ps, int index, Object value, int fieldSqlType, int sqlType) throws IOException {
+    private void setParameterBLOB_CLOBTypes(PreparedStatement ps, int index, Object value, int fieldSqlType, int sqlType) throws IOException {
         if (sqlType == Types.BLOB) {
             // Convert Byte[] or String (anything that has been converted to byte[]) into BLOB
             if (fieldSqlType == Types.ARRAY || fieldSqlType == Types.VARCHAR) {
@@ -908,13 +883,6 @@ public class PutGSS extends AbstractProcessor {
                 }
             }
         } 
-//        else {
-//            try {
-//                ps.setObject(index, value, sqlType);
-//            } catch (SQLException e) {
-//                throw new IOException("Unable to setObject() with value " + value + " at index " + index + " of type " + sqlType , e);
-//            }
-//        }
     }
 
     private List<Record> getDataRecords(final Record outerRecord) {
@@ -968,20 +936,20 @@ public class PutGSS extends AbstractProcessor {
         return validateStatementType(statementType, flowFile);
     }
 
-    private String validateStatementType(final String statementType, final FlowFile flowFile) {
-        if (statementType == null || statementType.trim().isEmpty()) {
-            throw new ProcessException("No Statement Type specified for " + flowFile);
-        }
+	private String validateStatementType(final String statementType, final FlowFile flowFile) {
+		if (statementType == null || statementType.trim().isEmpty()) {
+			throw new ProcessException("No Statement Type specified for " + flowFile);
+		}
 
-        if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)
-                || UPSERT_TYPE.equalsIgnoreCase(statementType) || SQL_TYPE.equalsIgnoreCase(statementType) || USE_RECORD_PATH.equalsIgnoreCase(statementType)
-                || INSERT_IGNORE_TYPE.equalsIgnoreCase(statementType)) {
+		if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType)
+				|| DELETE_TYPE.equalsIgnoreCase(statementType) || SQL_TYPE.equalsIgnoreCase(statementType)
+				|| USE_RECORD_PATH.equalsIgnoreCase(statementType)) {
 
-            return statementType;
-        }
+			return statementType;
+		}
 
-        throw new ProcessException("Invalid Statement Type <" + statementType + "> for " + flowFile);
-    }
+		throw new ProcessException("Invalid Statement Type <" + statementType + "> for " + flowFile);
+	}
 
     private void putToDatabase(final ProcessContext context, final ProcessSession session, final FlowFile flowFile, final Connection connection) throws Exception {
         final String statementType = getStatementType(context, flowFile);
@@ -1099,100 +1067,6 @@ public class PutGSS extends AbstractProcessor {
             sqlBuilder.append(")");
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
-    }
-
-    SqlAndIncludedColumns generateUpsert(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                         final TableSchema tableSchema, final DMLSettings settings)
-        throws IllegalArgumentException, SQLException, MalformedRecordException {
-
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
-
-        Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, tableSchema.getQuotedIdentifierString());
-
-        List<String> usedColumnNames = new ArrayList<>();
-        List<Integer> usedColumnIndices = new ArrayList<>();
-
-        List<String> fieldNames = recordSchema.getFieldNames();
-        if (fieldNames != null) {
-            int fieldCount = fieldNames.size();
-
-            for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
-                
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (settings.escapeColumnNames) {
-                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                    } else {
-                        usedColumnNames.add(desc.getColumnName());
-                    }
-                    usedColumnIndices.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }                	
-                
-
-            }
-        }
-
-        String sql = databaseAdapter.getUpsertStatement(tableName, usedColumnNames, normalizedKeyColumnNames);
-
-        return new SqlAndIncludedColumns(sql, usedColumnIndices);
-    }
-
-    SqlAndIncludedColumns generateInsertIgnore(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                               final TableSchema tableSchema, final DMLSettings settings)
-            throws IllegalArgumentException, SQLException, MalformedRecordException {
-
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
-
-        Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, tableSchema.getQuotedIdentifierString());
-
-        List<String> usedColumnNames = new ArrayList<>();
-        List<Integer> usedColumnIndices = new ArrayList<>();
-
-        List<String> fieldNames = recordSchema.getFieldNames();
-        if (fieldNames != null) {
-            int fieldCount = fieldNames.size();
-
-            for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
-
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc == null && !settings.ignoreUnmappedFields) {
-                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-
-                if (desc != null) {
-                    if (settings.escapeColumnNames) {
-                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                    } else {
-                        usedColumnNames.add(desc.getColumnName());
-                    }
-                    usedColumnIndices.add(i);
-                } else {
-                    // User is ignoring unmapped fields, but log at debug level just in case
-                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                }
-            }
-        }
-
-        String sql = databaseAdapter.getInsertIgnoreStatement(tableName, usedColumnNames, normalizedKeyColumnNames);
-
-        return new SqlAndIncludedColumns(sql, usedColumnIndices);
     }
 
     SqlAndIncludedColumns generateUpdate(final RecordSchema recordSchema, final String tableName, final String updateKeys,
@@ -1751,7 +1625,6 @@ public class PutGSS extends AbstractProcessor {
                 case INSERT_TYPE:
                 case UPDATE_TYPE:
                 case DELETE_TYPE:
-                case UPSERT_TYPE:
                     return resultValue;
             }
 
