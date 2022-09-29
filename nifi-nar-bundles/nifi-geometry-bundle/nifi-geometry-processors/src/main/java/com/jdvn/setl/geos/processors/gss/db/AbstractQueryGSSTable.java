@@ -431,7 +431,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 									featureType = "Point";
 							}
 							attributesToAdd.put(GEO_FEATURE_TYPE, featureType);
-							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
 						}
 
 
@@ -441,6 +440,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
                         }
 
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
+                        if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
+                        	attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                        
                         fileToProcess = session.putAllAttributes(fileToProcess, attributesToAdd);
                         sqlWriter.updateCounters(session);
 

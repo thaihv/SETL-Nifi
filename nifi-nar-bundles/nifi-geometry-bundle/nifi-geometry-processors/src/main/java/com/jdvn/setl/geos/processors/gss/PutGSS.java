@@ -777,76 +777,63 @@ public class PutGSS extends AbstractProcessor {
                             sqlType = column.dataType;
                         }
 
-                        if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
-                            final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
-                            for (int j = 0; j < timesToAddObjects; j++) {
-                                setParameter(stmt, i + (fieldIndexes.size() * j) + 1, currentValue, fieldSqlType, sqlType);
-                            }
-                        } else { 
-                        	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
-                        	// DELETE_TYPE need 02 times to set values
-                        	if (geo_column.equals(fieldName)) { //case of Geocolum: sqlType = 10001 == GSSConstants.SQLTypeOfWKBGeometry
-            					WKTReader reader = new WKTReader();
-            					Geometry g = null;
-            					try {
-									g = reader.read((String) currentValue);
-								} catch (ParseException e) {
-									// TODO Auto-generated catch block
-									e.printStackTrace();
+                    	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
+                    	// DELETE_TYPE need 02 times to set values
+						if (geo_column.equals(fieldName)) { // case of Geocolum: sqlType = 10001 ==
+															// GSSConstants.SQLTypeOfWKBGeometry
+							WKTReader reader = new WKTReader();
+							Geometry g = null;
+							try {
+								g = reader.read((String) currentValue);
+							} catch (ParseException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+							byte[] wkb = new WKBWriter().write(g);
+							stmt.setBytes(i + 1, wkb);
+
+						} else {
+							if (SETL_UUID.equals(fieldName)) { // case of SETLUUID
+								String Fkey = (String) currentValue;
+								currentValue = createGUIDfromFkeyString(idbase.toString() + Fkey).toString();
+							}
+							else {// normal cases
+								if (currentValue instanceof Boolean) {
+									currentValue = ((Boolean) currentValue).booleanValue() ? 1 : 0;
 								}
-            					
-            					byte[] wkb = new WKBWriter().write(g);
-            					stmt.setBytes(i + 1, wkb);
-            					
-                        	}else if (SETL_UUID.equals(fieldName)){ // case of SETLUUID
-                        		String Fkey = (String) currentValue;
-                        		currentValue = createGUIDfromFkeyString(idbase.toString() + Fkey).toString();
-            					if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-            						stmt.setObject(++deleteIndex, currentValue);
-                                    if (column.isNullable()) {
-                                    	stmt.setObject(++deleteIndex, currentValue);
-                                    }
-            					}
-            					else                        		
-            						stmt.setObject(i + 1, currentValue);
-                        	}else{ // normal cases
-    							if (currentValue instanceof Boolean) {
-    								currentValue = ((Boolean)currentValue).booleanValue() ? 1 : 0;
-    							}
-    							if (currentValue instanceof java.util.Date) {
-    								java.sql.Date sqlDate = new java.sql.Date(((Date) currentValue).getTime());
-    								currentValue = sqlDate;
-    							}
-    							if (currentValue instanceof BigDecimal) {
-    								int precision = ((BigDecimal)currentValue).precision();
-    								int scale = ((BigDecimal)currentValue).scale();
-    								if (scale > 0) {
-    									currentValue = ((Number)currentValue).doubleValue();
-    								}
-    								else if (precision > 10) {
-    									currentValue = ((Number)currentValue).longValue();
-    								}
-    								else {
-    									currentValue = ((Number)currentValue).intValue();
-    								}
-    							}
-            					if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-            						stmt.setObject(++deleteIndex, currentValue);
-                                    if (column.isNullable()) {
-                                    	stmt.setObject(++deleteIndex, currentValue);
-                                    }
-            					}
-            					else
-            						stmt.setObject(i + 1, currentValue);  
-                        	} 	
-                     
-                        }
+								if (currentValue instanceof java.util.Date) {
+									java.sql.Date sqlDate = new java.sql.Date(((Date) currentValue).getTime());
+									currentValue = sqlDate;
+								}
+								if (currentValue instanceof BigDecimal) {
+									int precision = ((BigDecimal) currentValue).precision();
+									int scale = ((BigDecimal) currentValue).scale();
+									if (scale > 0) {
+										currentValue = ((Number) currentValue).doubleValue();
+									} else if (precision > 10) {
+										currentValue = ((Number) currentValue).longValue();
+									} else {
+										currentValue = ((Number) currentValue).intValue();
+									}
+								}								
+							}
+							if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
+								stmt.setObject(++deleteIndex, currentValue);
+								if (column.isNullable()) {
+									stmt.setObject(++deleteIndex, currentValue);
+								}
+							} else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
+								final int timesToAddObjects = databaseAdapter.getTimesToAddColumnObjectsForUpsert();
+								for (int j = 0; j < timesToAddObjects; j++) {
+									stmt.setObject(i + (fieldIndexes.size() * j) + 1, currentValue);
+								}
+							} else
+								stmt.setObject(i + 1, currentValue);							
+							
+						}                                              
                     }
-                    if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
-                    	stmt.executeUpdate();
-                    	break;
-                    }
-                    if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
+                    if (INSERT_TYPE.equalsIgnoreCase(statementType) != true) { // GSS is not support Batch for DELETE/UPDATE/UPSERT
                     	stmt.executeUpdate();
                     	break;
                     } 	                    
@@ -920,13 +907,14 @@ public class PutGSS extends AbstractProcessor {
                     throw new IOException("Unable to parse data as CLOB/String " + value, e.getCause());
                 }
             }
-        } else {
-            try {
-                ps.setObject(index, value, sqlType);
-            } catch (SQLException e) {
-                throw new IOException("Unable to setObject() with value " + value + " at index " + index + " of type " + sqlType , e);
-            }
-        }
+        } 
+//        else {
+//            try {
+//                ps.setObject(index, value, sqlType);
+//            } catch (SQLException e) {
+//                throw new IOException("Unable to setObject() with value " + value + " at index " + index + " of type " + sqlType , e);
+//            }
+//        }
     }
 
     private List<Record> getDataRecords(final Record outerRecord) {
@@ -1133,26 +1121,25 @@ public class PutGSS extends AbstractProcessor {
                 RecordField field = recordSchema.getField(i);
                 String fieldName = field.getFieldName();
                 
-                if (!SETL_UUID.equals(fieldName)) {
-                    final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                    if (desc == null && !settings.ignoreUnmappedFields) {
-                        throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
-                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                    }
-
-                    if (desc != null) {
-                        if (settings.escapeColumnNames) {
-                            usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
-                        } else {
-                            usedColumnNames.add(desc.getColumnName());
-                        }
-                        usedColumnIndices.add(i);
-                    } else {
-                        // User is ignoring unmapped fields, but log at debug level just in case
-                        getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
-                                + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
-                    }                	
+                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                if (desc == null && !settings.ignoreUnmappedFields) {
+                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
+                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                 }
+
+                if (desc != null) {
+                    if (settings.escapeColumnNames) {
+                        usedColumnNames.add(tableSchema.getQuotedIdentifierString() + desc.getColumnName() + tableSchema.getQuotedIdentifierString());
+                    } else {
+                        usedColumnNames.add(desc.getColumnName());
+                    }
+                    usedColumnIndices.add(i);
+                } else {
+                    // User is ignoring unmapped fields, but log at debug level just in case
+                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
+                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                }                	
+                
 
             }
         }
