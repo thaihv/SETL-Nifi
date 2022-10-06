@@ -35,6 +35,7 @@ import org.slf4j.LoggerFactory;
 
 import com.cci.gss.jdbc.driver.IGSSResultSet;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
+import com.jdvn.setl.geos.processors.util.GeoUtils;
 import com.vividsolutions.jts.geom.Geometry;
 import com.vividsolutions.jts.io.ParseException;
 import com.vividsolutions.jts.io.WKBReader;
@@ -60,7 +61,6 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
     private static final String FLOAT_CLASS_NAME = Float.class.getName();
     private static final String BIGDECIMAL_CLASS_NAME = BigDecimal.class.getName();
     
-    private static final String SETL_UUID = "NIFIUID";
 
     public GSSResultSetRecordSet(final ResultSet rs, final RecordSchema readerSchema) throws SQLException {
         this(rs, readerSchema, JDBC_DEFAULT_PRECISION_VALUE, JDBC_DEFAULT_SCALE_VALUE);
@@ -140,7 +140,7 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 
             final Object value;
             if (rsColumnNames.contains(fieldName)) {
-            	if (fieldName.equals(rsmd.getGeometryColumn())) {
+            	if (rsmd.hasGeometryColumn() && fieldName.equals(rsmd.getGeometryColumn())) {
 					byte[] wkb = gssResultSet.getGeometryAsWKB(fieldName);
 					WKBReader reader = new WKBReader();
 					WKTWriter writer = new WKTWriter();
@@ -148,10 +148,22 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 					g = reader.read(wkb);
 					value = writer.write(g);
             	}
-            	else if (fieldName.equals(SETL_UUID)) {
-            		value = Integer.toString(gssResultSet.getFID());
-            	}else
-            		value = normalizeValue(gssResultSet.getObject(fieldName));
+            	else {
+            		if (fieldName.equals(GeoUtils.SETL_UUID)) {
+            			if (rsmd.hasGeometryColumn()) 
+            				value = Integer.toString(gssResultSet.getFID());
+            			else
+            				value = normalizeValue(gssResultSet.getObject(fieldName));
+                	}else if (fieldName.equals("SHAPE")) {
+    					byte[] wkb = gssResultSet.getBytes(fieldName);
+    					WKBReader reader = new WKBReader();
+    					WKTWriter writer = new WKTWriter();
+    					Geometry g;
+    					g = reader.read(wkb);
+    					value = writer.write(g);                		
+                	}else
+                		value = normalizeValue(gssResultSet.getObject(fieldName));            		
+            	}
             } else {
                 value = null;
             }
@@ -183,9 +195,8 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 
         return value;
     }
-
     private RecordSchema createSchema(final ResultSet rs, final RecordSchema readerSchema, final boolean useLogicalTypes) throws SQLException {
-        final ResultSetMetaData metadata = rs.getMetaData();
+        final IGSSResultSetMetaData metadata = (IGSSResultSetMetaData) rs.getMetaData();
         final int numCols = metadata.getColumnCount();
         final List<RecordField> fields = new ArrayList<>(numCols);
         
@@ -209,11 +220,12 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
             rsColumnNames.add(metadata.getColumnLabel(column));
         }
 
-        // Add an extra colum FID for GSS
-        final RecordField geo_IDfield = new RecordField(SETL_UUID, RecordFieldType.STRING.getDataType(), true);
-        fields.add(geo_IDfield);
-        rsColumnNames.add(SETL_UUID);
-        
+        // Add an extra column FID for GSS
+        if (metadata.hasGeometryColumn()) {
+            final RecordField geo_IDfield = new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType(), true);
+            fields.add(geo_IDfield);
+            rsColumnNames.add(GeoUtils.SETL_UUID);
+        }
         return new SimpleRecordSchema(fields);
     }
 

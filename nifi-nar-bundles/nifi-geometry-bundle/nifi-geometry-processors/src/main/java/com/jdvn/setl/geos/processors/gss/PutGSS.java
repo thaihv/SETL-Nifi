@@ -690,6 +690,7 @@ public class PutGSS extends AbstractProcessor {
                         final SqlAndIncludedColumns sqlHolder;
                         if (INSERT_TYPE.equalsIgnoreCase(statementType)) {
                             sqlHolder = generateInsert(recordSchema, fqTableName, tableSchema, settings);
+                            // sqlHolder = generateInsertIgnore(recordSchema, fqTableName, tableSchema, settings);
                         } else if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
                             sqlHolder = generateUpdate(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
@@ -1068,7 +1069,70 @@ public class PutGSS extends AbstractProcessor {
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
+    SqlAndIncludedColumns generateInsertIgnore(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
+            throws IllegalArgumentException, SQLException {
 
+        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
+
+        final StringBuilder sqlBuilder = new StringBuilder();
+        sqlBuilder.append("INSERT INTO ");
+        sqlBuilder.append(tableName);
+
+
+        // iterate over all of the fields in the record, building the SQL statement by adding the column names
+        List<String> fieldNames = recordSchema.getFieldNames();
+        final List<Integer> includedColumns = new ArrayList<>();
+        if (fieldNames != null) {
+            int fieldCount = fieldNames.size();
+            for (int i = 0; i < fieldCount; i++) {
+                RecordField field = recordSchema.getField(i);
+                String fieldName = field.getFieldName();
+                
+                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                if (desc == null && !settings.ignoreUnmappedFields) {
+                    throw new SQLDataException("Cannot map field '" + fieldName + "' to any column in the database\n"
+                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                }
+
+                if (desc != null) {
+                    includedColumns.add(i);
+                } else {
+                    // User is ignoring unmapped fields, but log at debug level just in case
+                    getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
+                            + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
+                }                	
+            }
+
+            sqlBuilder.append(" SELECT ");
+            
+            for (int i = 0; i < includedColumns.size(); i++) {
+            	int column_idx = includedColumns.get(i);
+                RecordField field = recordSchema.getField(column_idx);
+                String fieldName = field.getFieldName();             
+                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+				if (i > 0) {
+					sqlBuilder.append(",");
+				}
+				
+				if (desc.getDataType() == 10001) {
+					sqlBuilder.append("GEOMFROMWKB(?)");
+				}
+				else {
+					sqlBuilder.append('?');
+				}
+			}
+            sqlBuilder.append(" FROM dual");
+//            sqlBuilder.append(" WHERE NOT EXISTS ");
+//            sqlBuilder.append("(SELECT 1 FROM ");
+//            sqlBuilder.append(tableName);
+//            sqlBuilder.append(" WHERE ");
+//            sqlBuilder.append(SETL_UUID);
+//            sqlBuilder.append(" = ?");
+//            sqlBuilder.append(")");
+
+        }
+        return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
+    }
     SqlAndIncludedColumns generateUpdate(final RecordSchema recordSchema, final String tableName, final String updateKeys,
                                          final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, MalformedRecordException, SQLException {

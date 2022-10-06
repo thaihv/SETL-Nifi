@@ -38,6 +38,11 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
     public static final String GSS_FID = "FKEY";
+    public static final String GSS_UPDATE_DATETIME = "updated";
+    public static final String GSS_DELETE_DATETIME = "deleted";
+    public static final String GSS_EVENT_DATETIME = "Changed";
+    public static final String GEO_COLUMN = "geo.column";
+    public static final String GEO_FEATURE_TYPE = "geo.feature.type";    
     public static final String EVENT_PREFIX = "nifi_";
     // Relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
@@ -279,47 +284,73 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
 			
-			// Create Triger for event changes of DELETE and UPDATE atribute data
+			// Create trigger for event of changes of DELETE and UPDATE attribute data
 			String triggerName = eventTableName;
 			sqlBuilder.delete(0, sqlBuilder.length());
-			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
-			sqlBuilder.append(triggerName);
-			sqlBuilder.append(" BEFORE UPDATE or DELETE ON ");
-			sqlBuilder.append(layerName);
-			sqlBuilder.append(" FOR EACH ROW ");
-			sqlBuilder.append("DECLARE ");
+			
+			sqlBuilder.append("CREATE OR REPLACE TRIGGER ").append(triggerName);
+			sqlBuilder.append(" BEFORE UPDATE or DELETE ON ").append(layerName);
+			sqlBuilder.append(" FOR EACH ROW DECLARE FKEY NUMBER(9,0); ");
 			sqlBuilder.append("BEGIN ");
-			sqlBuilder.append("IF UPDATING THEN ");
-			sqlBuilder.append("INSERT INTO ");
+
+			sqlBuilder.append("IF UPDATING THEN");
+			sqlBuilder.append(" BEGIN");
+			sqlBuilder.append(" SELECT DISTINCT FKEY into FKEY FROM ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" WHERE FKEY = :old.SHAPE; ");
+			sqlBuilder.append(" EXCEPTION WHEN NO_DATA_FOUND THEN FKEY := NULL;");
+			sqlBuilder.append(" END;");
+			sqlBuilder.append("	IF FKEY is null THEN");
+			sqlBuilder.append(" INSERT INTO ");
 			sqlBuilder.append(eventTableName);
 			sqlBuilder.append(" VALUES(:old.SHAPE, 'u', SYSTIMESTAMP);");
-			sqlBuilder.append("END IF;");
-			sqlBuilder.append("IF DELETING THEN ");
-			sqlBuilder.append("INSERT INTO ");
+			sqlBuilder.append("	ELSE");
+			sqlBuilder.append(" UPDATE ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" SET CHANGED = SYSTIMESTAMP WHERE FKEY = :old.SHAPE;");
+			sqlBuilder.append("	END IF;"); // End Check FKEY
+			sqlBuilder.append("END IF;"); // End UPDATING
+			sqlBuilder.append("IF DELETING THEN");
+			sqlBuilder.append(" INSERT INTO ");
 			sqlBuilder.append(eventTableName);
 			sqlBuilder.append(" VALUES(:old.SHAPE, 'd', SYSTIMESTAMP);");			
-			sqlBuilder.append("END IF;");
-			sqlBuilder.append("END;");
-			stmt.execute(sqlBuilder.toString());
-			// Create Triger for event changes UPDATE of geometry data
-			String gtable = getGeometryTableNameFromGSS(connection, layerName);
-			String gTrigger = EVENT_PREFIX + gtable;
-			sqlBuilder.delete(0, sqlBuilder.length());
-			sqlBuilder.append("CREATE OR REPLACE TRIGGER ");
-			sqlBuilder.append(gTrigger);
-			sqlBuilder.append(" BEFORE UPDATE ON ");
-			sqlBuilder.append(gtable);
-			sqlBuilder.append(" FOR EACH ROW ");
-			sqlBuilder.append("DECLARE ");
-			sqlBuilder.append("BEGIN ");
-			sqlBuilder.append("IF UPDATING THEN ");
-			sqlBuilder.append("INSERT INTO ");
-			sqlBuilder.append(eventTableName);
-			sqlBuilder.append(" VALUES(:old.GID, 'u', SYSTIMESTAMP);");
-			sqlBuilder.append("END IF;");
+			sqlBuilder.append("END IF;"); // End DELETING
+			
 			sqlBuilder.append("END;");
 			stmt.execute(sqlBuilder.toString());
 			
+			// Create trigger for event of changes UPDATE of geometry data
+			String gtable = getGeometryTableNameFromGSS(connection, layerName);
+			String gTrigger = EVENT_PREFIX + gtable;
+			sqlBuilder.delete(0, sqlBuilder.length());
+			sqlBuilder.append("CREATE OR REPLACE TRIGGER ").append(gTrigger);
+			sqlBuilder.append(" AFTER UPDATE ON ").append(gtable);
+			sqlBuilder.append(" FOR EACH ROW DECLARE FKEY NUMBER(9,0); ");
+			sqlBuilder.append("BEGIN ");
+			
+			sqlBuilder.append("IF UPDATING THEN ");
+			sqlBuilder.append(" BEGIN");
+			sqlBuilder.append(" SELECT DISTINCT FKEY into FKEY FROM ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" WHERE FKEY = :old.GID; ");
+			sqlBuilder.append(" EXCEPTION WHEN NO_DATA_FOUND THEN FKEY := NULL;");
+			sqlBuilder.append(" END;");		
+			
+			sqlBuilder.append("	IF FKEY is null THEN");
+			sqlBuilder.append(" INSERT INTO ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" VALUES(:old.GID, 'u', SYSTIMESTAMP);");
+			sqlBuilder.append("	ELSE");
+			sqlBuilder.append(" UPDATE ");
+			sqlBuilder.append(eventTableName);
+			sqlBuilder.append(" SET CHANGED = SYSTIMESTAMP WHERE FKEY = :old.GID;");
+			sqlBuilder.append("	END IF;"); // End Check FKEY
+			sqlBuilder.append("END IF;"); // End UPDATING
+			
+			sqlBuilder.append("END;");
+			stmt.execute(sqlBuilder.toString());
+			
+			// Finally, enable all 02 triggers
 			sqlBuilder.delete(0, sqlBuilder.length());
 			sqlBuilder.append("ALTER TRIGGER ");
 			sqlBuilder.append(triggerName);
@@ -352,7 +383,11 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		} catch (SQLException e) {
 			e.printStackTrace();
 		}
-	}  	
+	}
+	public String getEventTableFromLayer(final String layerName) {
+		String setl_table = EVENT_PREFIX + layerName;
+		return setl_table.substring(0, Math.min(setl_table.length(), 30));		
+	}
     public void setup(final ProcessContext context, boolean shouldCleanCache, FlowFile flowFile) {
 		synchronized (setupComplete) {
 			setupComplete.set(false);
@@ -364,15 +399,21 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
 			final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 			String colKey = getStateKey(tableName, GSS_FID, dbAdapter);
-			columnTypeMap.putIfAbsent(colKey, 4); // FID is a Integer Type 4
+			columnTypeMap.putIfAbsent(colKey, 4); // FID is a Integer Type 4 of java.sql.Types
+
 
 			// Create Tables and Trigers to catch events of DELETE and UPDATE on the same
 			// GSS Store instance
 			final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 			final String use_evt_trackers = context.getProperty(GENERATE_EVENT_TRACKERS).getValue();
 			final Connection con = gssService.getConnection();
-			String setl_table = EVENT_PREFIX + tableName;
-			setl_table = setl_table.substring(0, Math.min(setl_table.length(), 30));
+			
+			String setl_table = getEventTableFromLayer(tableName);
+			
+			colKey = getStateKey(setl_table, GSS_UPDATE_DATETIME, dbAdapter);
+			columnTypeMap.putIfAbsent(colKey, 93); // GSS_EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types		
+			colKey = getStateKey(setl_table, GSS_DELETE_DATETIME, dbAdapter);
+			columnTypeMap.putIfAbsent(colKey, 93); // GSS_EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types			
 
 			try {
 				boolean bExist = tableExists(con, setl_table);
