@@ -106,6 +106,8 @@ import org.apache.nifi.avro.AvroTypeUtil;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 import org.apache.nifi.util.db.AvroUtil;
 
+import com.jdvn.setl.geos.processors.util.GeoUtils;
+
 /**
  * JDBC / SQL common functions.
  */
@@ -652,7 +654,11 @@ public class JdbcCommon {
                 case LONGVARBINARY:
                 case ARRAY:
                 case BLOB:
-                    builder.name(columnName).type().unionOf().nullBuilder().endNull().and().bytesType().endUnion().noDefault();
+                	if (columnName.toUpperCase().equals(GeoUtils.GSS_GEO_COLUMN)) {
+                		builder.name(columnName).type().unionOf().nullBuilder().endNull().and().stringType().endUnion().noDefault();
+                	}
+                	else
+                		builder.name(columnName).type().unionOf().nullBuilder().endNull().and().bytesType().endUnion().noDefault();
                     break;
 
 

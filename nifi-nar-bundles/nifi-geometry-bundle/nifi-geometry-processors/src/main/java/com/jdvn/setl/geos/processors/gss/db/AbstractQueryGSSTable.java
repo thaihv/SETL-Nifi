@@ -69,7 +69,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
     public static final String RESULT_SCHEMANAME = "source.schemaname";
     public static final String RESULT_URL = "source.url";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
-    public static final String RESULT_ACTION = "event.type";
+    public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
             String.valueOf(Connection.TRANSACTION_READ_COMMITTED),
@@ -319,7 +319,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_URL, jdbcURL);
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
-						attributesToAdd.put(RESULT_ACTION, "insert");
+						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
 						
 
 						IGSSResultSetMetaData rsmd = resultSet.getMetaData();
@@ -500,9 +500,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
 		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet() ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger(): 0;
 
-				
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
-
 		final StateMap stateMap;
 		try {
 			stateMap = session.getState(Scope.CLUSTER);
@@ -514,8 +512,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		}
 		
 		final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
-
-
 
 		final IGSSConnection con = gssService.getConnection();
 		List<String> atrColumns = getAttributeColumns(con,tableName);
@@ -578,8 +574,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_URL, jdbcURL);
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
-						attributesToAdd.put(RESULT_ACTION, "update");
+						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
+						
+						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);						
 
+						
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
 							attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
@@ -695,7 +694,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
 		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet() ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger(): 0;
 
-				
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
 
 		final StateMap stateMap;
@@ -773,7 +771,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_URL, jdbcURL);
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
-						attributesToAdd.put(RESULT_ACTION, "delete");
+						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
 
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
@@ -909,7 +907,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final StringBuilder query;
 
 		String eventTable = getEventTableFromLayer(tableName);
-		query = new StringBuilder("SELECT DISTINCT FKEY, CHANGED FROM ");
+		query = new StringBuilder("SELECT DISTINCT FKEY");
+		query.append(" AS ").append(GeoUtils.SETL_UUID).append(", CHANGED FROM ");
 		query.append(eventTable);
 		query.append(" WHERE EVENT='d'");
 		

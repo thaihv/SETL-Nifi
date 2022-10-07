@@ -154,7 +154,7 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
             				value = Integer.toString(gssResultSet.getFID());
             			else
             				value = normalizeValue(gssResultSet.getObject(fieldName));
-                	}else if (fieldName.equals("SHAPE")) {
+                	}else if (fieldName.equals(GeoUtils.GSS_GEO_COLUMN)) {
     					byte[] wkb = gssResultSet.getBytes(fieldName);
     					WKBReader reader = new WKBReader();
     					WKTWriter writer = new WKTWriter();
@@ -195,6 +195,16 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
 
         return value;
     }
+    
+	public static boolean hasColumn(ResultSetMetaData rsmd, String columnName) throws SQLException {
+	    int columns = rsmd.getColumnCount();
+	    for (int x = 1; x <= columns; x++) {
+	        if (columnName.toUpperCase().equals(rsmd.getColumnName(x))) {
+	            return true;
+	        }
+	    }
+	    return false;
+	}	    
     private RecordSchema createSchema(final ResultSet rs, final RecordSchema readerSchema, final boolean useLogicalTypes) throws SQLException {
         final IGSSResultSetMetaData metadata = (IGSSResultSetMetaData) rs.getMetaData();
         final int numCols = metadata.getColumnCount();
@@ -214,18 +224,25 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
             } else {
                 nullable = true;
             }
-
-            final RecordField field = new RecordField(fieldName, dataType, nullable);
-            fields.add(field);
-            rsColumnNames.add(metadata.getColumnLabel(column));
+            if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID)) {
+                final RecordField geo_IDfield = new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType(), true);
+                fields.add(geo_IDfield);
+                rsColumnNames.add(GeoUtils.SETL_UUID);            	
+            }
+            else {
+                final RecordField field = new RecordField(fieldName, dataType, nullable);
+                fields.add(field);
+                rsColumnNames.add(metadata.getColumnLabel(column));            	
+            }
         }
 
-        // Add an extra column FID for GSS
-        if (metadata.hasGeometryColumn()) {
+        // Add an extra column FID to detect sources for GSS
+        if (metadata.hasGeometryColumn() && !hasColumn(metadata, GeoUtils.SETL_UUID) ) {
             final RecordField geo_IDfield = new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType(), true);
             fields.add(geo_IDfield);
             rsColumnNames.add(GeoUtils.SETL_UUID);
         }
+
         return new SimpleRecordSchema(fields);
     }
 
@@ -236,8 +253,19 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
                 return getArrayDataType(rs, columnIndex, useLogicalTypes);
             case Types.BINARY:
             case Types.LONGVARBINARY:
-            case Types.VARBINARY:
-                return RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType());
+            case Types.VARBINARY:{
+            	final String columnName = rs.getMetaData().getColumnName(columnIndex);
+                if (readerSchema != null) {
+                    Optional<DataType> dataType = readerSchema.getDataType(columnName);
+                    if (dataType.isPresent()) {
+                        return determineDataTypeToReturn(dataType.get(), useLogicalTypes);
+                    }
+                    else
+                    	return RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType());
+                }
+            	else
+            		return RecordFieldType.ARRAY.getArrayDataType(RecordFieldType.BYTE.getDataType());            	
+            }
             case Types.NUMERIC:
             case Types.DECIMAL:
                 if (useLogicalTypes) {

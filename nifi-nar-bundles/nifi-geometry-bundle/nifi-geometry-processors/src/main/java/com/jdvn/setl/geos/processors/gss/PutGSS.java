@@ -517,8 +517,7 @@ public class PutGSS extends AbstractProcessor {
         boolean capableToPut = checkAndFillSETLCondition(context);
         if (!capableToPut) {
         	return;
-        }
-        
+        } 
         final String TX_NAME = RandomStringUtils.randomAlphanumeric(12); //"transaction";
         final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
         gssService.enableTransaction(true, TX_NAME);
@@ -749,7 +748,7 @@ public class PutGSS extends AbstractProcessor {
                         }
                     	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
                     	// DELETE_TYPE need 02 times to set values
-						if (geo_column.equals(fieldName)) { // Case of Geocolum, get WKB - sqlType = 10001 == GSSConstants.SQLTypeOfWKBGeometry
+						if (geo_column != null && geo_column.equals(fieldName)) { // Case of Geocolum, get WKB - sqlType = 10001 == GSSConstants.SQLTypeOfWKBGeometry
 							WKTReader reader = new WKTReader();
 							Geometry g = null;
 							try {
@@ -1236,20 +1235,6 @@ public class PutGSS extends AbstractProcessor {
 
     SqlAndIncludedColumns generateDelete(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, MalformedRecordException, SQLDataException {
-
-        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
-        for (final String requiredColName : tableSchema.getRequiredColumnNames()) {
-            final String normalizedColName = normalizeColumnName(requiredColName, settings.translateFieldNames);
-            if (!normalizedFieldNames.contains(normalizedColName)) {
-                String missingColMessage = "Record does not have a value for the Required column '" + requiredColName + "'";
-                if (settings.failUnmappedColumns) {
-                    getLogger().error(missingColMessage);
-                    throw new MalformedRecordException(missingColMessage);
-                } else if (settings.warningUnmappedColumns) {
-                    getLogger().warn(missingColMessage);
-                }
-            }
-        }
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("DELETE FROM ");

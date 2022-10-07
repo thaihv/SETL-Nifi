@@ -69,6 +69,7 @@ import org.slf4j.LoggerFactory;
 public class GeoUtils {
 
 	public static final String SETL_UUID = "NIFIUID";
+	public static final String GSS_GEO_COLUMN = "SHAPE";
 	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
 
 	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
