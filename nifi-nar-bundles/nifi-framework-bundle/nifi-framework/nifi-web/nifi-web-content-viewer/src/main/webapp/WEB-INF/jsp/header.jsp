@@ -84,18 +84,36 @@
                     initialMode = 'Original';
                 }
                 
+                var options = [{
+                    text: 'original',
+                    value: 'Original'
+                }, {
+                    text: 'formatted',
+                    value: 'Formatted'
+                }, {
+                    text: 'hex',
+                    value: 'Hex'
+                }];
+                
+                var contentTpe = "<%= request.getAttribute("contentType") == null ? "" : org.apache.nifi.util.EscapeUtils.escapeHtml(request.getAttribute("contentType").toString()) %>";
+                if (contentTpe !== '' && (contentTpe.includes("avro+geowkt") || contentTpe.includes("avro+geotiles")) ) {
+                	options = [{
+                        text: 'original',
+                        value: 'Original'
+                    }, {
+                        text: 'formatted',
+                        value: 'Formatted'
+                    }, {
+                        text: 'hex',
+                        value: 'Hex'
+                    },{
+                        text: 'map',
+                        value: 'Map'
+                    }];
+                }                
                 var currentLocation = null;
                 $$('#view-as').combo({
-                    options: [{
-                            text: 'original',
-                            value: 'Original'
-                        }, {
-                            text: 'formatted',
-                            value: 'Formatted'
-                        }, {
-                            text: 'hex',
-                            value: 'Hex'
-                        }],
+                    options: options,
                     selectedOption: {
                         value: initialMode
                     },

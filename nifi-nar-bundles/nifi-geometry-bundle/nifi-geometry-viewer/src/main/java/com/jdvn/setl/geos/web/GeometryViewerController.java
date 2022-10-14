@@ -47,15 +47,14 @@ public class GeometryViewerController extends HttpServlet {
 		String contentType = content.getContentType();
 		if (supportedMimeTypes.contains(contentType)) {
 			final String formatted;
-
 			// leave the content alone if specified
 			if (DisplayMode.Original.equals(content.getDisplayMode())) {
 				formatted = content.getContent();
 				request.setAttribute("mode", contentType);
 				request.setAttribute("content", formatted);
-				request.getRequestDispatcher("/WEB-INF/jsp/geometry.jsp").include(request, response);
+				request.getRequestDispatcher("/WEB-INF/jsp/textview.jsp").include(request, response);
 			} else {
-				if ("application/avro+geowkt".equals(contentType)) {		            
+				if ("application/avro+geowkt".equals(contentType) || "application/avro+geotiles".equals(contentType)) {		            
 					final StringBuilder sb = new StringBuilder();
 					sb.append("[");
 					// Use Avro conversions to display logical type values in human readable way.
@@ -115,23 +114,19 @@ public class GeometryViewerController extends HttpServlet {
 					contentType = "application/json";
 					request.setAttribute("mode", contentType);
 					request.setAttribute("content", formatted);
-					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
-					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
-
-				} else if ("application/avro+geotiles".equals(contentType)) {				
-					contentType = "image/png";
-					request.setAttribute("mode", contentType);
-					request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
-					request.setAttribute("envelope", request.getAttribute(ViewableContent.GEO_CONTENT_ENVELOPE));
-					request.setAttribute("center", request.getAttribute(ViewableContent.GEO_CONTENT_CENTER));
-					request.setAttribute("zoom_min", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN));
-					request.setAttribute("zoom_max", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX));
-					request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);
-				} else {
-					formatted = content.getContent();
-					request.setAttribute("mode", contentType);
-					request.setAttribute("content", formatted);
-					request.getRequestDispatcher("/WEB-INF/jsp/geometry.jsp").include(request, response);					
+					if (DisplayMode.Map.equals(content.getDisplayMode())) {
+						if ("application/avro+geotiles".equals(contentType)) {
+							request.setAttribute("envelope", request.getAttribute(ViewableContent.GEO_CONTENT_ENVELOPE));
+							request.setAttribute("center", request.getAttribute(ViewableContent.GEO_CONTENT_CENTER));
+							request.setAttribute("zoom_min", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN));
+							request.setAttribute("zoom_max", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX));							
+						}
+						request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
+						request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);						
+					}
+					else {
+						request.getRequestDispatcher("/WEB-INF/jsp/textview.jsp").include(request, response);
+					}
 				}
 			}
 			
