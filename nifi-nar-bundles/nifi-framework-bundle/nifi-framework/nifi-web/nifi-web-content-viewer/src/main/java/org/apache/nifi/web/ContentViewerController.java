@@ -33,7 +33,6 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.authorization.AccessDeniedException;
-import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.stream.io.StreamUtils;
 import org.apache.nifi.web.ViewableContent.DisplayMode;
 import org.apache.tika.detect.DefaultDetector;
@@ -328,7 +327,6 @@ public class ContentViewerController extends HttpServlet {
      * @param request request
      * @return Get the content request context based on the specified request
      */
-    @SuppressWarnings("deprecation")
     private ContentRequestContext getContentRequest(final HttpServletRequest request) {
         final String ref = request.getParameter("ref");
         final String clientId = request.getParameter("clientId");
