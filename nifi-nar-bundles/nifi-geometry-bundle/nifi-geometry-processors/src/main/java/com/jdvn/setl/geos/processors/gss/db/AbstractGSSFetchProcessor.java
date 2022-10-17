@@ -55,7 +55,8 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
     // Properties
     
     public static final AllowableValue ON_USE = new AllowableValue("Use Exists", "Use Exists", "Keep using the tables and triggers created from previously SETL jobs");
-    public static final AllowableValue RE_CREATED = new AllowableValue("Re-Created", "Re-Created", "Drop and create new ones to start SETL process from now on");
+    public static final AllowableValue RE_CREATE_ALL = new AllowableValue("Re-Create-All", "Re-Create-All", "Drop and create new all event tables and triggers to start SETL process from now on");
+    public static final AllowableValue RE_CREATE_TABLES = new AllowableValue("Renew-Table", "Renew-Table", "Drop and create new only event tables");
     
     public static final PropertyDescriptor GSS_SERVICE = new PropertyDescriptor.Builder()
             .name("Database Connection Pooling Service")
@@ -107,7 +108,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
             .displayName("Generate SETL event trackers")
             .description("Create tables and triggers to track changes from the source table. The information from this event trackers is useful to update to the target on PutGSS processor")
             .required(true)
-            .allowableValues(ON_USE, RE_CREATED)
+            .allowableValues(ON_USE, RE_CREATE_TABLES, RE_CREATE_ALL)
             .defaultValue(ON_USE.getValue())
             .build();
     
@@ -420,17 +421,18 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 				if (!bExist) {
 					createSETLEventTable(con, setl_table);
 				} else {
-					if (use_evt_trackers.equals("Re-Created")) {
+					if (use_evt_trackers.equals("Re-Create-All") || use_evt_trackers.equals("Renew-Table")) {
 						dropSETLEventTable(con, setl_table);
 						createSETLEventTable(con, setl_table);
 					}
+					
 				}
 
 				bExist = triggerExists(con, setl_table);
 				if (!bExist) {
 					createSETLTriggers(con, tableName, setl_table);
 				} else {
-					if (use_evt_trackers.equals("Re-Created")) {
+					if (use_evt_trackers.equals("Re-Create-All")) {
 						dropSETLTrigger(con, setl_table);
 						String gTrigger = EVENT_PREFIX + getGeometryTableNameFromGSS(con, tableName);
 						dropSETLTrigger(con, gTrigger);
