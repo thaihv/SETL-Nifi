@@ -70,6 +70,7 @@ public class GeoUtils {
 
 	public static final String SETL_UUID = "NIFIUID";
 	public static final String GSS_GEO_COLUMN = "SHAPE";
+	public static final String SHP_GEO_COLUMN = "the_geom";
 	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
 
 	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
@@ -90,9 +91,9 @@ public class GeoUtils {
 		String geoKey = null;
 		for (int i = 0; i < record.getSchema().getFieldCount(); i++) {
 			String value = record.getAsString(record.getSchema().getFields().get(i).getFieldName());
-			if (value.contains("MULTILINESTRING") || value.contains("LINESTRING") || value.contains("MULTIPOLYGON")
+			if ((value != null) && (value.contains("MULTILINESTRING") || value.contains("LINESTRING") || value.contains("MULTIPOLYGON")
 					|| value.contains("POLYGON") || value.contains("POINT") || value.contains("MULTIPOINT")
-					|| value.contains("GEOMETRYCOLLECTION")) {
+					|| value.contains("GEOMETRYCOLLECTION"))) {
 
 				geoKey = record.getSchema().getFields().get(i).getFieldName();
 				break;
@@ -291,8 +292,7 @@ public class GeoUtils {
 	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName,
 			RecordReader avroReader, CoordinateReferenceSystem crs) {
 		List<SimpleFeature> features = new ArrayList<>();
-		String geomFieldName = "the_geom";
-		String shpGeoColumn = "the_geom";
+		String geomFieldName = SHP_GEO_COLUMN;
 		Record record;
 		try {
 			boolean bCreatedSchema = false;
@@ -332,7 +332,7 @@ public class GeoUtils {
 
 					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
 					// shp file with geo column is "the_geom"
-					TYPE = generateFeatureType(collectionName, crs, shpGeoColumn, geometryClass, attributes);
+					TYPE = generateFeatureType(collectionName, crs, SHP_GEO_COLUMN, geometryClass, attributes);
 					featureBuilder = new SimpleFeatureBuilder(TYPE);
 					bCreatedSchema = true;
 				}
@@ -345,10 +345,10 @@ public class GeoUtils {
 				Object[] objs = new Object[size];
 				for (int i = 0; i < size; i++) {
 					String fName = record.getSchema().getFieldNames().get(i);
-					if ((fName == geomFieldName) && (geomFieldName != shpGeoColumn))
-						fName = shpGeoColumn;
+					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
+						fName = SHP_GEO_COLUMN;
 					int index = featureBuilder.getFeatureType().indexOf(fName);
-					if (fName.contains(geomFieldName) || fName.contains(shpGeoColumn))
+					if (fName.contains(geomFieldName) || fName.contains(SHP_GEO_COLUMN))
 						objs[index] = geo;
 					else
 						objs[index] = record.getValue(fName);

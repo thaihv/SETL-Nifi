@@ -92,7 +92,8 @@ import com.jdvn.setl.geos.processors.util.GeoUtils;
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 
 public class ShpReader extends AbstractProcessor {
-
+    public static final String GEO_COLUMN = "geo.column";
+    public static final String GEO_URL = "source.url";
     public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
             .name("Input Directory")
             .description("The input directory from which to pull files")
@@ -322,6 +323,8 @@ public class ShpReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+                    transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+                    transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
                     transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
                     session.transfer(transformed, REL_SUCCESS);   
