@@ -59,6 +59,7 @@ import org.geotools.geopkg.TileMatrix;
 import org.geotools.referencing.CRS;
 import org.geotools.referencing.crs.DefaultGeographicCRS;
 import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
@@ -76,11 +77,11 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
-    public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
-            .name("CharSet")
-            .description("The name of charset for attributes in target shapfiles")
+    public static final PropertyDescriptor SRID = new PropertyDescriptor.Builder()
+            .name("Default EPSG")
+            .description("The number value of EPSG using for entries of Geopackage when no Reference System Identifier has been found from flow file")
             .required(true)
-            .defaultValue("UTF-8")
+            .defaultValue("4326")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
@@ -108,7 +109,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
         // descriptors
         final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
         supDescriptors.add(GEOPACKAGE_FILE_NAME);
-        supDescriptors.add(CHARSET);
+        supDescriptors.add(SRID);
         properties = Collections.unmodifiableList(supDescriptors);
     }
 
@@ -125,7 +126,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	public void onTrigger(final ProcessContext context, final ProcessSessionFactory sessionFactory) {
     	
 		File targetFile = new File(context.getProperty(GEOPACKAGE_FILE_NAME).evaluateAttributeExpressions().getValue());
-		String charset = context.getProperty(CHARSET).evaluateAttributeExpressions().getValue();
+		String epsg = context.getProperty(SRID).evaluateAttributeExpressions().getValue();
 		
 		try {
 			final GeoPackage geopkg = new GeoPackage(targetFile);
@@ -154,10 +155,17 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            						String geoName = flowFile.getAttribute(GeoAttributes.GEO_NAME.key());
 	            						if (geoType.contains("Features")){
 		            						FeatureEntry entry = new FeatureEntry();
-		            						entry.setDescription(geoName);
 		            						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+		            						CoordinateReferenceSystem crs = CRS.parseWKT(srs);
+		            						Integer srid = CRS.lookupEpsgCode(crs, true);
+		            						if (srid != null)
+		            							entry.setSrid(srid);
+		            						else
+		            							entry.setSrid(Integer.valueOf(epsg));
+		            						entry.setDescription(geoName);
+		            						
 		            						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(geoName, reader, CRS.parseWKT(srs));
+		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(geoName, reader, crs);
 		            						geopkg.add(entry, collection);
 		            						geopkg.createSpatialIndex(entry);
 	            						}
