@@ -72,11 +72,14 @@ import org.apache.nifi.record.path.validation.RecordPathValidator;
 import org.apache.nifi.serialization.MalformedRecordException;
 import org.apache.nifi.serialization.RecordReader;
 import org.apache.nifi.serialization.RecordReaderFactory;
+import org.apache.nifi.serialization.SimpleRecordSchema;
 import org.apache.nifi.serialization.record.DataType;
+import org.apache.nifi.serialization.record.MapRecord;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordField;
 import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.serialization.record.SchemaIdentifier;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
@@ -670,7 +673,7 @@ public class PutGSS extends AbstractProcessor {
         int batchIndex = 0;
         Record outerRecord;
         IGSSPreparedStatement lastPreparedStatement = null;
-
+        
         try {
             while ((outerRecord = recordReader.nextRecord()) != null) {
                 final String statementType;
@@ -680,7 +683,9 @@ public class PutGSS extends AbstractProcessor {
                     statementType = explicitStatementType;
                 }
 
-                final List<Record> dataRecords = getDataRecords(outerRecord);
+                RecordSchema recordSchemaAsTable =  getNormalizedSchemaAsTable(outerRecord.getSchema(), tableSchema, settings);
+                
+                final List<Record> dataRecords = getDataRecords(outerRecord, recordSchemaAsTable);
                 for (final Record currentRecord : dataRecords) {
                     PreparedSqlAndColumns preparedSqlAndColumns = preparedSql.get(statementType);
                     if (preparedSqlAndColumns == null) {
@@ -885,9 +890,20 @@ public class PutGSS extends AbstractProcessor {
         } 
     }
 
-    private List<Record> getDataRecords(final Record outerRecord) {
+    private List<Record> getDataRecords(final Record outerRecord, final RecordSchema recordSchemaAsTable) {
         if (dataRecordPath == null) {
-            return Collections.singletonList(outerRecord);
+        	if (recordSchemaAsTable != null) {
+            	RecordSchema srcSchema = outerRecord.getSchema();
+            	final LinkedHashMap<String, Object> values = new LinkedHashMap<>(srcSchema.getFieldCount());
+            	for (int i = 0; i < recordSchemaAsTable.getFields().size(); i++) {
+            		RecordField f = recordSchemaAsTable.getFields().get(i);
+            		String f_name = f.getFieldName();
+            		values.put(f_name, outerRecord.getValue(f_name));
+            	}
+            	Record resortedRecord = new MapRecord(recordSchemaAsTable, values);
+                return Collections.singletonList(resortedRecord);        		
+        	}else
+        		return Collections.singletonList(outerRecord);
         }
 
         final RecordPathResult result = dataRecordPath.evaluate(outerRecord);
@@ -1012,6 +1028,31 @@ public class PutGSS extends AbstractProcessor {
         return normalizedFieldNames;
     }
 
+    private RecordSchema getNormalizedSchemaAsTable(final RecordSchema srcSchema, final TableSchema targetTableSchema, final DMLSettings settings) {
+
+    	SchemaIdentifier identifier = srcSchema.getIdentifier();
+    	final SimpleRecordSchema targetRecordSchema = new SimpleRecordSchema(identifier);
+    	final List<RecordField> recordFields = new ArrayList<>(srcSchema.getFields().size());
+
+		List<String> fieldNames = new ArrayList<>(targetTableSchema.getColumns().keySet());
+    	if (fieldNames != null) {
+            int targetFieldCount = fieldNames.size();
+            for (int i = 0; i < targetFieldCount; i++) {
+            	String fieldName = fieldNames.get(i).toUpperCase();
+            	for (int j = 0; j < srcSchema.getFields().size(); j++) {
+            		RecordField f = srcSchema.getFields().get(j);
+            		String f_name = f.getFieldName().toUpperCase();
+            		if (fieldName.equals(f_name)) {
+            			recordFields.add(f);
+            			break;
+            		}
+            	}
+            }    		
+    	}
+    	targetRecordSchema.setFields(recordFields);
+		return targetRecordSchema;
+    	
+    } 
     SqlAndIncludedColumns generateInsert(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, SQLException {
 
@@ -1023,12 +1064,16 @@ public class PutGSS extends AbstractProcessor {
 
 
         // iterate over all of the fields in the record, building the SQL statement by adding the column names
-        List<String> fieldNames = recordSchema.getFieldNames();
+        //List<String> fieldNames = recordSchema.getFieldNames();
+        
+        RecordSchema recordSchemaAsTable =  getNormalizedSchemaAsTable(recordSchema, tableSchema, settings);
+        List<String> fieldNames = recordSchemaAsTable.getFieldNames();
+        
         final List<Integer> includedColumns = new ArrayList<>();
         if (fieldNames != null) {
             int fieldCount = fieldNames.size();
             for (int i = 0; i < fieldCount; i++) {
-                RecordField field = recordSchema.getField(i);
+                RecordField field = recordSchemaAsTable.getField(i);
                 String fieldName = field.getFieldName();
                 
                 final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
@@ -1050,7 +1095,7 @@ public class PutGSS extends AbstractProcessor {
             
             for (int i = 0; i < includedColumns.size(); i++) {
             	int column_idx = includedColumns.get(i);
-                RecordField field = recordSchema.getField(column_idx);
+                RecordField field = recordSchemaAsTable.getField(column_idx);
                 String fieldName = field.getFieldName();             
                 final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
 				if (i > 0) {

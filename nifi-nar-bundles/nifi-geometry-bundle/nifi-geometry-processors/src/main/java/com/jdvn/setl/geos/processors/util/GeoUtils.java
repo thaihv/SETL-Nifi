@@ -113,8 +113,11 @@ public class GeoUtils {
 			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
 			SimpleFeatureType schema = featureSource.getSchema();
 			final List<RecordField> fields = new ArrayList<>();
+			boolean hasIDField = false;
 			for (int i = 0; i < schema.getAttributeCount(); i++) {
 				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+				if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
+					hasIDField = true;
 				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
 				DataType dataType;
 				switch (fieldType) {
@@ -162,6 +165,9 @@ public class GeoUtils {
 				}
 				fields.add(new RecordField(fieldName, dataType));
 			}
+			if (!hasIDField)
+				fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));	
+			
 			SimpleFeatureCollection features = featureSource.getFeatures();
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
 			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
@@ -171,11 +177,12 @@ public class GeoUtils {
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
 					Object value = feature.getAttribute(i);
-					fieldMap.put(key, value);
+					fieldMap.put(key, value);						
 				}
+				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
+					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
 				Record r = new MapRecord(recordSchema, fieldMap);
 				returnRs.add(r);
-				// System.out.println(r);
 			}
 			it.close();
 			dataStore.dispose();
@@ -430,8 +437,11 @@ public class GeoUtils {
 			SimpleFeatureSource featureSource = store.getFeatureSource(tableName);
 			SimpleFeatureType schema = featureSource.getSchema();
 			final List<RecordField> fields = new ArrayList<>();
+			boolean hasIDField = false;
 			for (int i = 0; i < schema.getAttributeCount(); i++) {
 				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+				if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
+					hasIDField = true;
 				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
 				DataType dataType;
 				switch (fieldType) {
@@ -479,6 +489,9 @@ public class GeoUtils {
 				}
 				fields.add(new RecordField(fieldName, dataType));
 			}
+			if (!hasIDField)
+				fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));
+			
 			SimpleFeatureCollection features = featureSource.getFeatures();
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
 			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
@@ -490,9 +503,10 @@ public class GeoUtils {
 					Object value = feature.getAttribute(i);
 					fieldMap.put(key, value);
 				}
+				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
+					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
 				Record r = new MapRecord(recordSchema, fieldMap);
 				returnRs.add(r);
-				// System.out.println(r);
 			}
 			it.close();
 			return returnRs;
