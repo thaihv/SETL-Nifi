@@ -16,6 +16,11 @@
  */
 package com.jdvn.setl.geos.processors.gss;
 
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
@@ -34,6 +39,20 @@ public class FetchGSSTest {
     @Test
     public void testProcessor() {
 
+    	String dateStr = "2022-10-25 16.15.56.963";
+    	DateFormat readFormat = new SimpleDateFormat( "yyyy-MM-dd HH.mm.ss.S");
+    	DateFormat writeFormat = new SimpleDateFormat( "yyyy-MM-dd HH.mm.ss.S");
+    	Date date = null;
+    	try {
+    	    date = readFormat.parse(dateStr);
+    	} catch (ParseException e) {
+    	    e.printStackTrace();
+    	}
+
+    	if (date != null) {
+    	    String formattedDate = writeFormat.format(date);
+    	    System.out.println(formattedDate);
+    	}
     }
 
 }

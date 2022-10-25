@@ -23,8 +23,11 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Timestamp;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -499,6 +502,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
 		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet() ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger(): 0;
+		
+		
 
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
 		final StateMap stateMap;
@@ -514,6 +519,17 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
 		final IGSSConnection con = gssService.getConnection();
+		
+		String srs_target = null;
+		LayerMetadata md = null;
+		try {
+			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
+			srs_target = md.mCrs;
+		} catch (SQLException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		
 		List<String> atrColumns = getAttributeColumns(con,tableName);
 		String geo_table = getGeometryTableNameFromGSS(con,tableName);
 		final String selectQuery = getQueryUpdate(dbAdapter, tableName, atrColumns, geo_table, statePropertyMap);
@@ -576,16 +592,51 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
 						
-						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);						
-
+						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);
 						
+						if (srs_target != null) {
+							attributesToAdd.put(GeoAttributes.CRS.key(), srs_target);
+							attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
+							String featureType = "Point";
+							switch (md.mGeometryType) {
+							case 1:
+								featureType = "Point";
+								break;
+							case 2:
+								featureType = "LineString";
+								break;
+							case 3:
+								featureType = "Polygon";
+								break;
+							case 4:
+								featureType = "MultiPoint";
+								break;
+							case 5:
+								featureType = "MultiLineString";
+								break;
+							case 6:
+								featureType = "MultiPolygon";
+								break;
+							default:
+								featureType = "Point";
+							}
+							attributesToAdd.put(GEO_FEATURE_TYPE, featureType);
+
+							if (maxRowsPerFlowFile > 0) {
+								attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
+										tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+							} else
+								attributesToAdd.put(GeoAttributes.GEO_NAME.key(), tableName);
+						}
+					
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
 							attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
 						}
-
 						attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
-
+						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
+							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+						
 						fileToProcess = session.putAllAttributes(fileToProcess, attributesToAdd);
 						sqlWriter.updateCounters(session);
 
@@ -908,7 +959,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		String eventTable = getEventTableFromLayer(tableName);
 		query = new StringBuilder("SELECT DISTINCT FKEY");
-		query.append(" AS ").append(GeoUtils.SETL_UUID).append(", CHANGED FROM ");
+		query.append(" AS ").append(GeoUtils.SETL_UUID).append(", to_char(CHANGED,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
 		query.append(eventTable);
 		query.append(" WHERE EVENT='d'");
 		
@@ -916,7 +967,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			String maxValueKey = getStateKey(eventTable, GSS_DELETE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" AND Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH.MI.SS.FF'").append(")");
+				query.append(" AND Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF3'").append(")");
 		}
 		return query.toString();
 	}
@@ -934,7 +985,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final StringBuilder query;
 		String eventTable = getEventTableFromLayer(tableName);
 		
-		query = new StringBuilder("SELECT S.*, V.Changed FROM (");
+		query = new StringBuilder("SELECT S.*, to_char(V.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM (");
 		query.append(fieldsQuery.toString());
 		query.append("WHERE A.SHAPE=G.GID AND A.SHAPE IN (SELECT DISTINCT FKEY FROM ");
 		query.append(eventTable);
@@ -943,7 +994,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			String maxValueKey = getStateKey(eventTable, GSS_UPDATE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" WHERE Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH.MI.SS.FF'").append("))) S, ");
+				query.append(" WHERE Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF3'").append("))) S, ");
 			else
 				query.append(")) S, ");
 		}
@@ -952,86 +1003,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		query.append(eventTable).append(" V ");
 		query.append(" WHERE S.").append(GeoUtils.SETL_UUID).append(" = V.FKEY");
 		return query.toString();
-	}
-	public static LayerMetadata getLayerMetadata(int layerId, Statement stmt) throws SQLException {
-		StringBuffer sb = new StringBuffer();
-		sb.append("SELECT * FROM GSS.THEMES ");
-		sb.append("WHERE THEME_ID=").append(layerId);
-		
-		return getLayerMetadata(sb, stmt);
-	}
-	public static LayerMetadata getLayerMetadata(String username, String name, Statement stmt) throws SQLException {
-		StringBuffer sb = new StringBuffer();
-		sb.append("SELECT * FROM GSS.THEMES WHERE THEME_NAME='").append(name.toUpperCase());
-		sb.append("' AND OWNER='").append(username.toUpperCase()).append("'");
-		
-		return getLayerMetadata(sb, stmt);
-	}	
-	private static LayerMetadata getLayerMetadata(StringBuffer querySb, Statement stmt) throws SQLException {
-		LayerMetadata md = null;
-		ResultSet rs = null;
-		try {
-			rs = stmt.executeQuery(querySb.toString());
-			if (!rs.next()) {
-				return null;
-			}
-			
-			md = new LayerMetadata();
-			md.mThemeTableSchema = rs.getString("OWNER");
-			md.mThemeTableName = rs.getString("THEME_NAME");
-			md.mThemeId = rs.getInt("THEME_ID");
-			md.mViewLink = rs.getInt("VLINK");
-			md.mBitEncodeValue = rs.getInt("BIT_ENCODE_VALUE");
-			
-			if (md.mViewLink > 0) {
-				rs.close();
-				querySb.setLength(0);
-				
-				querySb.append("SELECT MINX, MINY, MAXX, MAXY, GRID_SIZE ");
-				querySb.append("FROM GSS.THEMES ");
-				querySb.append("WHERE THEME_ID=").append(md.mViewLink);
-				rs = stmt.executeQuery(querySb.toString());
-				if (!rs.next()) {
-					return null;
-				}
-			}
-			
-			md.mMinX = rs.getDouble("MINX");
-			md.mMinY = rs.getDouble("MINY");
-			md.mMaxX = rs.getDouble("MAXX");
-			md.mMaxY = rs.getDouble("MAXY");
-			md.mGridSize = rs.getDouble("GRID_SIZE");
-			
-			rs.close();
-			
-			querySb.setLength(0);
-			querySb.append("SELECT B.F_GEOMETRY_COLUMN, B.G_TABLE_SCHEMA, B.G_TABLE_NAME,");
-			querySb.append(" B.GEOMETRY_TYPE, B.STORAGE_TYPE, C.SRID, C.SRTEXT ");
-			querySb.append("FROM GSS.GEOMETRY_COLUMNS B, GSS.SPATIAL_REF_SYS C ");
-			querySb.append("WHERE B.F_TABLE_NAME='").append(md.mThemeTableName).append("'");
-			querySb.append(" AND B.SRID=C.SRID");
-			
-			rs = stmt.executeQuery(querySb.toString());
-			if (!rs.next()) {
-				return null;
-			}
-			
-			md.mGeometryColumn = rs.getString(1);
-			md.mGeometryTableSchema = rs.getString(2);
-			md.mGeometryTableName = rs.getString(3);
-			md.mGeometryType = rs.getInt(4);
-			md.mStorageType = rs.getInt(5);
-			md.mSrId = rs.getInt(6);
-			md.mCrs = rs.getString(7);
-
-			
-			rs.close();
-			
-			return md;
-		}
-		finally {
-			rs.close();
-		}
 	}
 	public static boolean hasColumn(ResultSet rs, String columnName) throws SQLException {
 	    ResultSetMetaData rsmd = rs.getMetaData();
@@ -1092,18 +1063,21 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						fullyQualifiedMaxValueKey = getStateKey(setl_table, GSS_DELETE_DATETIME, dbAdapter);
 			        	maxValueString = newColMap.get(fullyQualifiedMaxValueKey);	            		
 	            	}
-		        	Timestamp maxTimestampValue = null;
+	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");
+	            	Date maxTimestampValue = null;
 		            if (maxValueString != null) {
-		            	maxTimestampValue = Timestamp.valueOf(maxValueString);
+		            	maxTimestampValue = dateFormat.parse(maxValueString);
 		            }
-		        	Timestamp colTimestampValue = gssResultSet.getTimestamp(GSS_EVENT_DATETIME);
+		        	String latestTime = gssResultSet.getString(GSS_EVENT_DATETIME);
+		        	Date colTimestampValue = dateFormat.parse(latestTime);
+		        	
 		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
-		            	newColMap.put(fullyQualifiedMaxValueKey, colTimestampValue.toString());
+		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
 		            }  	            	
 	            }
   	            
 	                     
-			} catch (SQLException e) {
+			} catch (SQLException | ParseException e) {
 				e.printStackTrace();
 			}
         }

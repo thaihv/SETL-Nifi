@@ -57,6 +57,7 @@ import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyDescriptor.Builder;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
 import org.apache.nifi.processor.ProcessContext;
@@ -81,6 +82,12 @@ import org.apache.nifi.serialization.record.RecordFieldType;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.SchemaIdentifier;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
+import org.geotools.geometry.jts.JTS;
+import org.geotools.referencing.CRS;
+import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.opengis.referencing.operation.MathTransform;
+import org.opengis.referencing.operation.TransformException;
 
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
 import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
@@ -90,10 +97,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jdvn.setl.geos.gss.GSSService;
 import com.jdvn.setl.geos.processors.gss.db.DatabaseAdapter;
-import com.vividsolutions.jts.geom.Geometry;
-import com.vividsolutions.jts.io.ParseException;
-import com.vividsolutions.jts.io.WKBWriter;
-import com.vividsolutions.jts.io.WKTReader;
+import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 
 @TriggerSerially
@@ -623,7 +627,7 @@ public class PutGSS extends AbstractProcessor {
 	}
     private void executeDML(final ProcessContext context, final ProcessSession session, final FlowFile flowFile,
                             final Connection con, final RecordReader recordReader, final String explicitStatementType, final DMLSettings settings)
-        throws IllegalArgumentException, MalformedRecordException, IOException, SQLException {
+        throws IllegalArgumentException, MalformedRecordException, IOException, SQLException, FactoryException {
 
         final ComponentLog log = getLogger();
 
@@ -633,13 +637,25 @@ public class PutGSS extends AbstractProcessor {
         final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
 
-        String geo_column = flowFile.getAttribute(GEO_COLUMN);
+        final String geo_column = flowFile.getAttribute(GEO_COLUMN);
+        final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+        final String srs_target = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement()).mCrs;
         
-        String src_url = flowFile.getAttribute(SOURCE_URL);
-        String src_schemaName = flowFile.getAttribute(SOURCE_SCHEMANAME);
-        String src_tableName = flowFile.getAttribute(SOURCE_TABLENAME);
+        CoordinateReferenceSystem sourceCRS = null;
+        CoordinateReferenceSystem targetCRS = null;
+        if (srs_source != null && srs_source != null) {
+        	sourceCRS = CRS.parseWKT(srs_source);
+        	targetCRS = CRS.parseWKT(srs_target);
+        }
+
+        
+        final String src_url = flowFile.getAttribute(SOURCE_URL);
+        final String src_schemaName = flowFile.getAttribute(SOURCE_SCHEMANAME);
+        final String src_tableName = flowFile.getAttribute(SOURCE_TABLENAME);
         
 
+		
+		
         UuidBase idbase = new UuidBase(src_url,src_schemaName,src_tableName);
         
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
@@ -754,16 +770,20 @@ public class PutGSS extends AbstractProcessor {
                     	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
                     	// DELETE_TYPE need 02 times to set values
 						if (geo_column != null && geo_column.equals(fieldName)) { // Case of Geocolum, get WKB - sqlType = 10001 == GSSConstants.SQLTypeOfWKBGeometry
-							WKTReader reader = new WKTReader();
-							Geometry g = null;
+							org.locationtech.jts.io.WKTReader reader = new org.locationtech.jts.io.WKTReader();
+							org.locationtech.jts.geom.Geometry g = null;
 							try {
 								g = reader.read((String) currentValue);
-							} catch (ParseException e) {
+								if (sourceCRS != null && targetCRS != null) {
+							        MathTransform transform = CRS.findMathTransform(sourceCRS, targetCRS);
+							        g = JTS.transform(g, transform);									
+								}
+							} catch (org.locationtech.jts.io.ParseException | TransformException e) {
 								// TODO Auto-generated catch block
 								e.printStackTrace();
 							}
 
-							byte[] wkb = new WKBWriter().write(g);
+							byte[] wkb = new org.locationtech.jts.io.WKBWriter().write(g);
 							stmt.setBytes(i + 1, wkb);
 
 						} else {
