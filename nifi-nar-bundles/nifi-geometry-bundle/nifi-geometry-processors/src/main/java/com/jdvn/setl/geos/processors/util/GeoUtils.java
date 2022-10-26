@@ -62,6 +62,7 @@ import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.geometry.MismatchedDimensionException;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.operation.MathTransform;
@@ -302,7 +303,7 @@ public class GeoUtils {
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName,
-			RecordReader avroReader, CoordinateReferenceSystem crs) {
+			RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
 		List<SimpleFeature> features = new ArrayList<>();
 		String geomFieldName = SHP_GEO_COLUMN;
 		Record record;
@@ -344,7 +345,10 @@ public class GeoUtils {
 
 					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
 					// shp file with geo column is "the_geom"
-					TYPE = generateFeatureType(collectionName, crs, SHP_GEO_COLUMN, geometryClass, attributes);
+					if (crs_target == null)
+						TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
+					else
+						TYPE = generateFeatureType(collectionName, crs_target, SHP_GEO_COLUMN, geometryClass, attributes);
 					featureBuilder = new SimpleFeatureBuilder(TYPE);
 					bCreatedSchema = true;
 				}
@@ -352,6 +356,10 @@ public class GeoUtils {
 				WKTReader reader = new WKTReader(geometryFactory);
 				// Add geometry
 				Geometry geo = reader.read(record.getAsString(geomFieldName));
+				if (crs_target != null) {
+			        MathTransform transform = CRS.findMathTransform(crs_source, crs_target);
+			        geo = JTS.transform(geo, transform);									
+				}
 				// Add attributes
 				int size = record.getSchema().getFieldCount();
 				Object[] objs = new Object[size];
@@ -372,7 +380,7 @@ public class GeoUtils {
 			}
 
 			return new ListFeatureCollection(TYPE, features);
-		} catch (IOException | MalformedRecordException | ParseException e) {
+		} catch (IOException | MalformedRecordException | ParseException | FactoryException | MismatchedDimensionException | TransformException e) {
 			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });
 		}
 		return null;

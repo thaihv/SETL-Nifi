@@ -156,8 +156,8 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            						if (geoType.contains("Features")){
 		            						FeatureEntry entry = new FeatureEntry();
 		            						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-		            						CoordinateReferenceSystem crs = CRS.parseWKT(srs);
-		            						Integer srid = CRS.lookupEpsgCode(crs, true);
+		            						CoordinateReferenceSystem crs_source = CRS.parseWKT(srs);
+		            						Integer srid = CRS.lookupEpsgCode(crs_source, true);
 		            						if (srid != null)
 		            							entry.setSrid(srid);
 		            						else
@@ -165,7 +165,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 		            						entry.setDescription(geoName);
 		            						
 		            						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(geoName, reader, crs);
+		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(geoName, reader, crs_source, null);
 		            						geopkg.add(entry, collection);
 		            						geopkg.createSpatialIndex(entry);
 	            						}

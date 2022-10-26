@@ -67,6 +67,7 @@ import org.geotools.data.simple.SimpleFeatureStore;
 import org.geotools.referencing.CRS;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.FactoryException;
+import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
@@ -120,13 +121,21 @@ public class ShpWriter extends AbstractProcessor {
             .addValidator(StandardValidators.INTEGER_VALIDATOR)
             .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
-            .name("CharSet")
+            .name("Character Set")
             .description("The name of charset for attributes in target shapfiles")
             .required(true)
             .defaultValue("ISO-8859-1")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
+    public static final PropertyDescriptor CRS_WKT = new PropertyDescriptor.Builder()
+            .name("Coordinate Reference System OGC WKT")
+            .description("The presentation of Coordinate Reference System in OGC Well-Known Text Format . If the number is 0, the Coordinate Reference System will be set same as CRS flowfile attribute")
+            .required(true)
+            .defaultValue("0")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .build();    
     public static final PropertyDescriptor CONFLICT_RESOLUTION = new PropertyDescriptor.Builder()
             .name("Conflict Resolution Strategy")
             .description("Indicates what should happen when a file with the same name already exists in the output directory")
@@ -201,6 +210,7 @@ public class ShpWriter extends AbstractProcessor {
         supDescriptors.add(DIRECTORY);
         supDescriptors.add(CONFLICT_RESOLUTION);
         supDescriptors.add(CHARSET);
+        supDescriptors.add(CRS_WKT);
         supDescriptors.add(CREATE_DIRS);
         supDescriptors.add(MAX_DESTINATION_FILES);
         supDescriptors.add(CHANGE_LAST_MODIFIED_TIME);
@@ -233,16 +243,27 @@ public class ShpWriter extends AbstractProcessor {
         if (FilenameUtils.getExtension(filename).contains("shp") == false)
         	filename = filename + ".shp";
         
-		File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
-		String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
+        final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
+        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
+        final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
 		try {
 			session.read(flowFile, new InputStreamCallback() {
 				@Override
 				public void process(final InputStream in) {
 					try {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("shpfile", reader, CRS.parseWKT(srs));
+						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
+						CoordinateReferenceSystem crs_target = crs_source;
+						if (!srs_wkt.equals("0")) {
+							try {
+								crs_target = CRS.parseWKT(srs_wkt);
+							} catch (FactoryException e) {
+								logger.error("Unable to create the CRS from {}, We will use CRS from flowfile. Verify your CRS Well-Known Text!", new Object[]{srs_wkt});
+								crs_target = crs_source;
+							}
+						}				
+						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("shpfile", reader, crs_source, crs_target);
 						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
 							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
 						else {
