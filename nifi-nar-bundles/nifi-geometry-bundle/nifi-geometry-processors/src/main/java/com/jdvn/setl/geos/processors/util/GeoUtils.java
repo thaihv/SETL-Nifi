@@ -13,8 +13,10 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -40,6 +42,7 @@ import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.factory.CommonFactoryFinder;
 import org.geotools.feature.simple.SimpleFeatureBuilder;
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
 import org.geotools.geometry.jts.JTS;
@@ -62,6 +65,9 @@ import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.filter.FilterFactory;
+import org.opengis.filter.Id;
+import org.opengis.filter.identity.FeatureId;
 import org.opengis.geometry.MismatchedDimensionException;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -109,6 +115,84 @@ public class GeoUtils {
 
 	}
 
+	private static Set<FeatureId> getFeatureIds(SimpleFeatureCollection features, int from, int to) {
+		List<FeatureId> featureIds = new ArrayList<FeatureId>();
+		if ((to < 0) || (from > features.size()) || (from > to))
+			return null;
+		SimpleFeatureIterator it = features.features();
+		try {
+			while (it.hasNext()) {
+				SimpleFeature feature = it.next();
+				featureIds.add(feature.getIdentifier());
+			}
+
+		} finally {
+			it.close();
+		}
+		Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
+		return selectedIds;
+	}
+	public static RecordSchema createRecordSchema(SimpleFeatureSource featureSource) {
+		SimpleFeatureType schema = featureSource.getSchema();
+		final List<RecordField> fields = new ArrayList<>();
+		boolean hasIDField = false;
+		for (int i = 0; i < schema.getAttributeCount(); i++) {
+			String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+			if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
+				hasIDField = true;
+			String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+			DataType dataType;
+			switch (fieldType) {
+			case "Long":
+				dataType = RecordFieldType.LONG.getDataType();
+				break;
+			case "String":
+				dataType = RecordFieldType.STRING.getDataType();
+				break;
+			case "Double":
+				dataType = RecordFieldType.DOUBLE.getDataType();
+				break;
+			case "Boolean":
+				dataType = RecordFieldType.BOOLEAN.getDataType();
+				break;
+			case "Byte":
+				dataType = RecordFieldType.BYTE.getDataType();
+				break;
+			case "Character":
+				dataType = RecordFieldType.CHAR.getDataType();
+				break;
+			case "Integer":
+				dataType = RecordFieldType.INT.getDataType();
+				break;
+			case "Float":
+				dataType = RecordFieldType.FLOAT.getDataType();
+				break;
+			case "Number":
+				dataType = RecordFieldType.BIGINT.getDataType();
+				break;
+			case "Date":
+				dataType = RecordFieldType.DATE.getDataType();
+				break;
+			case "Time":
+				dataType = RecordFieldType.TIME.getDataType();
+				break;
+			case "Timestamp":
+				dataType = RecordFieldType.TIMESTAMP.getDataType();
+				break;
+			case "Short":
+				dataType = RecordFieldType.SHORT.getDataType();
+				break;
+			default:
+				dataType = RecordFieldType.STRING.getDataType();
+			}
+			fields.add(new RecordField(fieldName, dataType));
+		}
+		if (!hasIDField)
+			fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));
+		
+		RecordSchema recordSchema = new SimpleRecordSchema(fields);
+		return recordSchema;
+	}	
 	public static ArrayList<Record> getRecordsFromShapeFile(final File shpFile) {
 		Map<String, Object> mapAttrs = new HashMap<>();
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
@@ -117,66 +201,9 @@ public class GeoUtils {
 			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 			String typeName = dataStore.getTypeNames()[0];
 			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-			SimpleFeatureType schema = featureSource.getSchema();
-			final List<RecordField> fields = new ArrayList<>();
-			boolean hasIDField = false;
-			for (int i = 0; i < schema.getAttributeCount(); i++) {
-				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
-				if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
-					hasIDField = true;
-				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
-				DataType dataType;
-				switch (fieldType) {
-				case "Long":
-					dataType = RecordFieldType.LONG.getDataType();
-					break;
-				case "String":
-					dataType = RecordFieldType.STRING.getDataType();
-					break;
-				case "Double":
-					dataType = RecordFieldType.DOUBLE.getDataType();
-					break;
-				case "Boolean":
-					dataType = RecordFieldType.BOOLEAN.getDataType();
-					break;
-				case "Byte":
-					dataType = RecordFieldType.BYTE.getDataType();
-					break;
-				case "Character":
-					dataType = RecordFieldType.CHAR.getDataType();
-					break;
-				case "Integer":
-					dataType = RecordFieldType.INT.getDataType();
-					break;
-				case "Float":
-					dataType = RecordFieldType.FLOAT.getDataType();
-					break;
-				case "Number":
-					dataType = RecordFieldType.BIGINT.getDataType();
-					break;
-				case "Date":
-					dataType = RecordFieldType.DATE.getDataType();
-					break;
-				case "Time":
-					dataType = RecordFieldType.TIME.getDataType();
-					break;
-				case "Timestamp":
-					dataType = RecordFieldType.TIMESTAMP.getDataType();
-					break;
-				case "Short":
-					dataType = RecordFieldType.SHORT.getDataType();
-					break;
-				default:
-					dataType = RecordFieldType.STRING.getDataType();
-				}
-				fields.add(new RecordField(fieldName, dataType));
-			}
-			if (!hasIDField)
-				fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));	
-			
+			final RecordSchema recordSchema = createRecordSchema(featureSource);
 			SimpleFeatureCollection features = featureSource.getFeatures();
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
-			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
 			while (it.hasNext()) {
 				SimpleFeature feature = it.next();
 				Map<String, Object> fieldMap = new HashMap<String, Object>();
@@ -201,7 +228,46 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
+	public static ArrayList<Record> getRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, final int from, final int to ) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		try {
+			SimpleFeatureCollection features = featureSource.getFeatures();
+			FilterFactory ff = CommonFactoryFinder.getFilterFactory(null);
+			Set<FeatureId> featureIds = getFeatureIds(features, from, to);
+			Id fids = ff.id(featureIds);
+			
+			SimpleFeatureCollection selectedfeatures;
+			if (fids != null)
+				selectedfeatures = featureSource.getFeatures(fids);
+			else
+				selectedfeatures = featureSource.getFeatures();
+	        	
+			SimpleFeatureIterator it = (SimpleFeatureIterator) selectedfeatures.features();
+			
+			while (it.hasNext()) {
+				SimpleFeature feature = it.next();
+				System.out.println(feature.getID());
+				Map<String, Object> fieldMap = new HashMap<String, Object>();
+				for (int i = 0; i < feature.getAttributeCount(); i++) {
+					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
+					Object value = feature.getAttribute(i);
+					fieldMap.put(key, value);						
+				}
+				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
+					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
+				Record r = new MapRecord(recordSchema, fieldMap);
+				returnRs.add(r);
+			}
+			it.close();
+			return returnRs;
 
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+
+		}
+		return returnRs;
+	}
 	public static CoordinateReferenceSystem getCRSFromShapeFile(final File shpFile) {
 		Map<String, Object> mapAttrs = new HashMap<>();
 		CoordinateReferenceSystem cRS = null;
