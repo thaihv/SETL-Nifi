@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Locale;
@@ -84,6 +85,7 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.simple.SimpleFeatureSource;
+import org.opengis.filter.identity.FeatureId;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
@@ -320,6 +322,7 @@ public class ShpReader extends AbstractProcessor {
                 }
 
 				if (maxRowsPerFlowFile > 0) {
+					long timeStart = System.nanoTime();
 					Map<String, Object> mapAttrs = new HashMap<>();
 					mapAttrs.put("url", file.toURI().toURL());
 					DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
@@ -334,11 +337,16 @@ public class ShpReader extends AbstractProcessor {
 					final String fragmentIdentifier = UUID.randomUUID().toString();
 					int fragmentIndex = 0;
 					final RecordSchema rSchema = GeoUtils.createRecordSchema(featureSource);
+					List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
+					
 					while (from < maxRecord) {
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
-						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, rSchema, from, to);
+						
+						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
+						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, rSchema, selectedIds);
+						
 		                if (records.size() > 0) {
 		                    FlowFile transformed = session.create(flowFile);
 		                    CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -354,7 +362,7 @@ public class ShpReader extends AbstractProcessor {
 		                    });                
 		                    
 		                    
-		                    final long importNanos = System.nanoTime() - importStart;
+		                    final long importNanos = System.nanoTime() - timeStart;
 		                    final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 		                    
 		                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);

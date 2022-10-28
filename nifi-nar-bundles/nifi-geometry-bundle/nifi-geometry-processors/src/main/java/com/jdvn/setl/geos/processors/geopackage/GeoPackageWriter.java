@@ -179,7 +179,8 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 
 	            							geopkg.create(e);
 
-	            							List<Tile> tiles = new ArrayList();
+	            							@SuppressWarnings({ "rawtypes", "unchecked" })
+											List<Tile> tiles = new ArrayList();
 	            							tiles.add(new Tile(0,0,0,new byte[]{3,4,6}));
 	            							tiles.add(new Tile(1,0,0,new byte[]{15,76,3}));
 	            							tiles.add(new Tile(1,0,1,new byte[]{4,5,2}));

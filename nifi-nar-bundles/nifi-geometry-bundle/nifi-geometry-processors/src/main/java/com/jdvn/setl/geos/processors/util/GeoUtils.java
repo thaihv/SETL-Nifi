@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -115,11 +114,9 @@ public class GeoUtils {
 
 	}
 
-	private static Set<FeatureId> getFeatureIds(SimpleFeatureCollection features, int from, int to) {
+	public static List<FeatureId> getFeatureIds(SimpleFeatureCollection features) {
 		List<FeatureId> featureIds = new ArrayList<FeatureId>();
-		int maxCount = features.size();
-		if ((to < 0) || (from > maxCount) || (from > to))
-			return null;
+
 		SimpleFeatureIterator it = features.features();
 		try {
 			while (it.hasNext()) {
@@ -130,10 +127,7 @@ public class GeoUtils {
 		} finally {
 			it.close();
 		}
-		if (to > maxCount)
-			to = maxCount;
-		Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-		return selectedIds;
+		return featureIds;
 	}
 	public static RecordSchema createRecordSchema(SimpleFeatureSource featureSource) {
 		SimpleFeatureType schema = featureSource.getSchema();
@@ -231,12 +225,10 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
-	public static ArrayList<Record> getRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, final int from, final int to ) {
+	public static ArrayList<Record> getRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
-			SimpleFeatureCollection features = featureSource.getFeatures();
 			FilterFactory ff = CommonFactoryFinder.getFilterFactory(null);
-			Set<FeatureId> featureIds = getFeatureIds(features, from, to);
 			Id fids = ff.id(featureIds);
 			
 			SimpleFeatureCollection selectedfeatures;

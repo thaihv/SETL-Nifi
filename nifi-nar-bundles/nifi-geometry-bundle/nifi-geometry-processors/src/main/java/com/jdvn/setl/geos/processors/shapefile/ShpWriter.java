@@ -160,6 +160,13 @@ public class ShpWriter extends AbstractProcessor {
             .addValidator(PERMISSIONS_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
+    public static final PropertyDescriptor MERGE_PARTS = new PropertyDescriptor.Builder()
+            .name("Merge Flowfiles")
+            .description("Indicates whether or not merge flow files that have same Identifier into a shape file")
+            .allowableValues("true", "false")
+            .defaultValue("true")
+            .required(true)
+            .build();    
     public static final PropertyDescriptor CHANGE_OWNER = new PropertyDescriptor.Builder()
             .name("Owner")
             .description("Sets the owner on the output file to the value of this attribute.  You may also use expression language such as "
@@ -212,6 +219,7 @@ public class ShpWriter extends AbstractProcessor {
         supDescriptors.add(CHARSET);
         supDescriptors.add(CRS_WKT);
         supDescriptors.add(CREATE_DIRS);
+        supDescriptors.add(MERGE_PARTS);
         supDescriptors.add(MAX_DESTINATION_FILES);
         supDescriptors.add(CHANGE_LAST_MODIFIED_TIME);
         supDescriptors.add(CHANGE_PERMISSIONS);
@@ -243,45 +251,56 @@ public class ShpWriter extends AbstractProcessor {
         if (FilenameUtils.getExtension(filename).contains("shp") == false)
         	filename = filename + ".shp";
         
-        final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
+        String geoname = flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key());        
+        if (geoname != null)
+        	geoname = geoname.substring(geoname.lastIndexOf(":") + 1) + ".shp";        
+        
+        final boolean merged = context.getProperty(MERGE_PARTS).asBoolean();
+        final File srcFile = merged ? new File(context.getProperty(DIRECTORY) + "/" + filename) : new File(context.getProperty(DIRECTORY) + "/" + filename + "_" + geoname);
         final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
         final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
-		try {
-			session.read(flowFile, new InputStreamCallback() {
-				@Override
-				public void process(final InputStream in) {
-					try {
-						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
-						CoordinateReferenceSystem crs_target = crs_source;
-						if (!srs_wkt.equals("0")) {
-							try {
-								crs_target = CRS.parseWKT(srs_wkt);
-							} catch (FactoryException e) {
-								logger.error("Unable to create the CRS from {}, We will use CRS from flowfile. Verify your CRS Well-Known Text!", new Object[]{srs_wkt});
-								crs_target = crs_source;
-							}
-						}				
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("shpfile", reader, crs_source, crs_target);
-						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
-							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
-						else {
-							logger.info("Unable to create the shape file {}", new Object[]{srcFile.toURI().toString()});
-						}
-					} catch (IOException | FactoryException e) {
-						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
-						session.transfer(flowFile, REL_FAILURE);
-						return;
-					}
-				}
-			});
+        if (!merged) {
+    		try {
+    			session.read(flowFile, new InputStreamCallback() {
+    				@Override
+    				public void process(final InputStream in) {
+    					try {
+    						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
+    						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+    						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
+    						CoordinateReferenceSystem crs_target = crs_source;
+    						if (!srs_wkt.equals("0")) {
+    							try {
+    								crs_target = CRS.parseWKT(srs_wkt);
+    							} catch (FactoryException e) {
+    								logger.error("Unable to create the CRS from {}, We will use CRS from flowfile. Verify your CRS Well-Known Text!", new Object[]{srs_wkt});
+    								crs_target = crs_source;
+    							}
+    						}				
+    						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("shpfile", reader, crs_source, crs_target);
+    						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
+    							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
+    						else {
+    							logger.info("Unable to create the shape file {}", new Object[]{srcFile.toURI().toString()});
+    						}
+    					} catch (IOException | FactoryException e) {
+    						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
+    						session.transfer(flowFile, REL_FAILURE);
+    						return;
+    					}
+    				}
+    			});
 
-		} catch (Exception e) {
-			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
-			session.transfer(flowFile, REL_FAILURE);
-			return;
-		}
+    		} catch (Exception e) {
+    			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
+    			session.transfer(flowFile, REL_FAILURE);
+    			return;
+    		}        	
+        }
+        else {
+        	
+        }
+
         final long importNanos = System.nanoTime() - importStart;
         final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 		session.getProvenanceReporter().receive(flowFile, srcFile.toURI().toString(), importMillis);
