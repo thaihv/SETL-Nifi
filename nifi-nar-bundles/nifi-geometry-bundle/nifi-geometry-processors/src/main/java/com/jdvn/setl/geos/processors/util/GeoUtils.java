@@ -424,7 +424,7 @@ public class GeoUtils {
 				WKTReader reader = new WKTReader(geometryFactory);
 				// Add geometry
 				Geometry geo = reader.read(record.getAsString(geomFieldName));
-				if (crs_target != null) {
+				if (crs_target != null && crs_target != crs_source) {
 			        MathTransform transform = CRS.findMathTransform(crs_source, crs_target);
 			        geo = JTS.transform(geo, transform);									
 				}
