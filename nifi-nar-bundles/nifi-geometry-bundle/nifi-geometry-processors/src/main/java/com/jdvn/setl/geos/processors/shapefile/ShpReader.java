@@ -336,6 +336,8 @@ public class ShpReader extends AbstractProcessor {
 					final RecordSchema rSchema = GeoUtils.createRecordSchema(featureSource);
 					while (from < maxRecord) {
 						to = from + maxRowsPerFlowFile;
+						if (to > maxRecord)
+							to = maxRecord;
 						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, rSchema, from, to);
 		                if (records.size() > 0) {
 		                    FlowFile transformed = session.create(flowFile);

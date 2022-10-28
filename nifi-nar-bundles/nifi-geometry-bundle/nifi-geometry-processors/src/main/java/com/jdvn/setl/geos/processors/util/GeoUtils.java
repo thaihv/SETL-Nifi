@@ -117,7 +117,8 @@ public class GeoUtils {
 
 	private static Set<FeatureId> getFeatureIds(SimpleFeatureCollection features, int from, int to) {
 		List<FeatureId> featureIds = new ArrayList<FeatureId>();
-		if ((to < 0) || (from > features.size()) || (from > to))
+		int maxCount = features.size();
+		if ((to < 0) || (from > maxCount) || (from > to))
 			return null;
 		SimpleFeatureIterator it = features.features();
 		try {
@@ -129,6 +130,8 @@ public class GeoUtils {
 		} finally {
 			it.close();
 		}
+		if (to > maxCount)
+			to = maxCount;
 		Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
 		return selectedIds;
 	}
@@ -246,7 +249,6 @@ public class GeoUtils {
 			
 			while (it.hasNext()) {
 				SimpleFeature feature = it.next();
-				System.out.println(feature.getID());
 				Map<String, Object> fieldMap = new HashMap<String, Object>();
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
