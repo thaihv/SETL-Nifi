@@ -321,105 +321,109 @@ public class ShpReader extends AbstractProcessor {
                     flowFile = session.putAllAttributes(flowFile, attributes);
                 }
 
-				if (maxRowsPerFlowFile > 0) {
+				Map<String, Object> mapAttrs = new HashMap<>();
+				mapAttrs.put("url", file.toURI().toURL());
+				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+				String typeName = dataStore.getTypeNames()[0];
+				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+				int maxRecord = featureSource.getFeatures().size();
+				if (maxRecord <= 0)
+					return;
+				
+				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					long timeStart = System.nanoTime();
-					Map<String, Object> mapAttrs = new HashMap<>();
-					mapAttrs.put("url", file.toURI().toURL());
-					DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-					String typeName = dataStore.getTypeNames()[0];
-					SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-					int maxRecord = featureSource.getFeatures().size();
-					if (maxRecord <= 0)
-						return;
-					
 					int from = 0;
 					int to = 0;
 					final String fragmentIdentifier = UUID.randomUUID().toString();
 					int fragmentIndex = 0;
-					final RecordSchema rSchema = GeoUtils.createRecordSchema(featureSource);
+					final RecordSchema recordSchema = GeoUtils.createRecordSchema(featureSource);
 					List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
-					
+
 					while (from < maxRecord) {
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
-						
+
 						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, rSchema, selectedIds);
-						
-		                if (records.size() > 0) {
-		                    FlowFile transformed = session.create(flowFile);
-		                    CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
-		                    RecordSchema recordSchema = records.get(0).getSchema();                
-		                    transformed = session.write(transformed, new OutputStreamCallback() {
-		                        @Override
-		                        public void process(final OutputStream out) throws IOException {
-		                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-		                			@SuppressWarnings("resource")  
-		                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
-		                			writer.write(new ListRecordSet(recordSchema, records));
-		                        }
-		                    });                
-		                    
-		                    
-		                    final long importNanos = System.nanoTime() - timeStart;
-		                    final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-		                    
-		                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-		                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
-		                    transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-		                    transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
-		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-		                    
-		                    transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
-		                    transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
+						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds);
+						if (records.size() > 0) {
+							FlowFile transformed = session.create(flowFile);
+							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
+							transformed = session.write(transformed, new OutputStreamCallback() {
+								@Override
+								public void process(final OutputStream out) throws IOException {
+									final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+									@SuppressWarnings("resource")
+									final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
+											CodecFactory.nullCodec());
+									writer.write(new ListRecordSet(recordSchema, records));
+								}
+							});
 
-		                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-		                    session.transfer(transformed, REL_SUCCESS);   
+							final long importNanos = System.nanoTime() - timeStart;
+							final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
 
-		                    logger.info("added {} to flow", new Object[]{transformed});                	
-		                }						
+							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
+									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+							transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
+									String.valueOf(records.size()));
+
+							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
+							transformed = session.putAttribute(transformed, FRAGMENT_INDEX,
+									String.valueOf(fragmentIndex));
+
+							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
+									"application/avro+geowkt");
+							session.transfer(transformed, REL_SUCCESS);
+
+							logger.info("added {} to flow", new Object[] { transformed });
+						}
 						from = to;
 						fragmentIndex++;
 					}
 					dataStore.dispose();
-					session.remove(flowFile);		
-				}
-				else {
-	                /* Get ShapeFile data and transfer to session in Avro Format*/
-	                final List<Record> records = GeoUtils.getRecordsFromShapeFile(file);
-	                if (records.size() > 0) {
-	                    FlowFile transformed = session.create(flowFile);
-	                    CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
-	                    RecordSchema recordSchema = records.get(0).getSchema();                
-	                    transformed = session.write(transformed, new OutputStreamCallback() {
-	                        @Override
-	                        public void process(final OutputStream out) throws IOException {
-	                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-	                			@SuppressWarnings("resource")  
-	                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
-	                			writer.write(new ListRecordSet(recordSchema, records));
-	                        }
-	                    });                
-	                    session.remove(flowFile);
-	                    
-	                    final long importNanos = System.nanoTime() - importStart;
-	                    final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-	                    
-	                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-	                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
-	                    transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-	                    transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-	                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-	                    session.transfer(transformed, REL_SUCCESS);   
+					session.remove(flowFile);
+				} else {
+					final List<Record> records = GeoUtils.getRecordsFromShapeFile(featureSource);
+					if (records.size() > 0) {
+						FlowFile transformed = session.create(flowFile);
+						CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
+						RecordSchema recordSchema = records.get(0).getSchema();
+						transformed = session.write(transformed, new OutputStreamCallback() {
+							@Override
+							public void process(final OutputStream out) throws IOException {
+								final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+								@SuppressWarnings("resource")
+								final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
+										CodecFactory.nullCodec());
+								writer.write(new ListRecordSet(recordSchema, records));
+							}
+						});
+						session.remove(flowFile);
 
-	                    logger.info("added {} to flow", new Object[]{transformed});                	
-	                }					
+						final long importNanos = System.nanoTime() - importStart;
+						final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+
+						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
+						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+						transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
+								String.valueOf(records.size()));
+						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
+								"application/avro+geowkt");
+						session.transfer(transformed, REL_SUCCESS);
+
+						logger.info("added {} to flow", new Object[] { transformed });
+						dataStore.dispose();
+					}
 				}
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
                     queueLock.lock();

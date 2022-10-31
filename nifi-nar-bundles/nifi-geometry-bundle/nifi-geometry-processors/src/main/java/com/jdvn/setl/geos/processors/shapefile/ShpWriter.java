@@ -252,18 +252,28 @@ public class ShpWriter extends AbstractProcessor {
         final long importStart = System.nanoTime();
         final ComponentLog logger = getLogger();
         
-        String filename = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
-        if (FilenameUtils.getExtension(filename).contains("shp") == false)
-        	filename = filename + ".shp";
+        String rootname = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
+        if (FilenameUtils.getExtension(rootname).contains("shp") == true)
+        	rootname = rootname.substring(0, rootname.length() - 4);
         
-        String geoname = flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key());        
-        if (geoname != null)
-        	geoname = geoname.substring(geoname.lastIndexOf(":") + 1) + ".shp";        
-        
+        String geoname = flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key());     
+        String part_name = ".shp";
+        if (geoname != null) {
+        	if (geoname.indexOf(":") != -1)
+        		rootname = geoname.substring(0, geoname.indexOf(":"));
+        	else 
+        		rootname = geoname;
+        	if (geoname.lastIndexOf(":") != -1)
+        		part_name  = "_" + geoname.substring(geoname.lastIndexOf(":") + 1) + ".shp";
+        }
+
         String fragmentIdentifier = flowFile.getAttributes().get(FRAGMENT_ID) == null ? "shapefile" : flowFile.getAttributes().get(FRAGMENT_ID);
+        
 
         final boolean merged = context.getProperty(MERGE_PARTS).asBoolean();
-        final File srcFile = merged ? new File(context.getProperty(DIRECTORY) + "/" + filename) : new File(context.getProperty(DIRECTORY) + "/" + filename + "_" + geoname);
+        String filename = merged ? rootname + ".shp" : rootname + part_name;
+        
+        final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
         final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
         final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
 		try {

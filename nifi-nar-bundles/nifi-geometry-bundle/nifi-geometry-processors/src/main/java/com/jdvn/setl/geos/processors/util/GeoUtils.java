@@ -190,14 +190,9 @@ public class GeoUtils {
 		RecordSchema recordSchema = new SimpleRecordSchema(fields);
 		return recordSchema;
 	}	
-	public static ArrayList<Record> getRecordsFromShapeFile(final File shpFile) {
-		Map<String, Object> mapAttrs = new HashMap<>();
+	public static ArrayList<Record> getRecordsFromShapeFile(final SimpleFeatureSource featureSource) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
-			mapAttrs.put("url", shpFile.toURI().toURL());
-			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-			String typeName = dataStore.getTypeNames()[0];
-			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
 			final RecordSchema recordSchema = createRecordSchema(featureSource);
 			SimpleFeatureCollection features = featureSource.getFeatures();
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
@@ -215,7 +210,6 @@ public class GeoUtils {
 				returnRs.add(r);
 			}
 			it.close();
-			dataStore.dispose();
 			return returnRs;
 
 		} catch (IOException e) {
