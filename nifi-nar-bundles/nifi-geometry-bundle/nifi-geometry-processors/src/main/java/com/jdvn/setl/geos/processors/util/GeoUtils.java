@@ -79,6 +79,7 @@ import com.jdvn.setl.geos.processors.gss.db.LayerMetadata;
 
 public class GeoUtils {
 
+	public static final String GEO_URL = "source.url";
 	public static final String SETL_UUID = "NIFIUID";
 	public static final String GSS_GEO_COLUMN = "SHAPE";
 	public static final String SHP_GEO_COLUMN = "the_geom";

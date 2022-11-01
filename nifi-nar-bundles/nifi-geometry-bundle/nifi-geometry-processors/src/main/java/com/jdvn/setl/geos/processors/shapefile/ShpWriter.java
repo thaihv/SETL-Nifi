@@ -58,6 +58,7 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.DefaultTransaction;
@@ -249,7 +250,7 @@ public class ShpWriter extends AbstractProcessor {
 		if (flowFile == null) {
 			return;
 		}
-        final long importStart = System.nanoTime();
+		final StopWatch stopWatch = new StopWatch(true);
         final ComponentLog logger = getLogger();
         
         String rootname = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
@@ -314,9 +315,7 @@ public class ShpWriter extends AbstractProcessor {
 			return;
 		} 
 
-        final long importNanos = System.nanoTime() - importStart;
-        final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-		session.getProvenanceReporter().receive(flowFile, srcFile.toURI().toString(), importMillis);
+		session.getProvenanceReporter().send(flowFile, srcFile.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		session.transfer(flowFile, REL_SUCCESS);
 	}
 	public boolean createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {

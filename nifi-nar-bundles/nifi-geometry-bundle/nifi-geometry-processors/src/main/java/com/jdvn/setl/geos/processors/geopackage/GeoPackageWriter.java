@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -49,6 +50,7 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.FlowFileFilters;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.util.StopWatch;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.geopkg.FeatureEntry;
@@ -146,6 +148,8 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            try {
 	                for (final FlowFile flowFile : flowFiles) {
 	                    try {
+	                    	final StopWatch stopWatch = new StopWatch(true);
+	                    	final String src_url = flowFile.getAttribute(GeoUtils.GEO_URL) != null ? flowFile.getAttribute(GeoUtils.GEO_URL) : "GeoPackage";
 	                    	getLogger().info("Get flowfile {} is ok!", flowFile);
 	            			session.read(flowFile, new InputStreamCallback() {
 	            				@Override
@@ -203,7 +207,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            				}
 	            			});                    	
 	                    	
-	                    	
+	            			session.getProvenanceReporter().send(flowFile, src_url, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 	                    	session.transfer(flowFile, REL_SUCCESS);
 	                    	
 	                    } catch (final Exception e) {

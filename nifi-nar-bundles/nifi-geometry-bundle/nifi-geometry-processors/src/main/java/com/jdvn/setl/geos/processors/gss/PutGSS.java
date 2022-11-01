@@ -275,6 +275,7 @@ public class PutGSS extends AbstractProcessor {
                     + "This property is ignored if the Statement Type is INSERT")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .required(false)
+            .defaultValue("NIFIUID")
             .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
             .dependsOn(STATEMENT_TYPE, UPDATE_TYPE, SQL_TYPE, USE_ATTR_TYPE, USE_RECORD_PATH)
             .build();

@@ -79,6 +79,9 @@ import com.jdvn.setl.geos.processors.util.GeoUtils;
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 public class GeoPackageReader extends AbstractProcessor {
 
+    public static final String RESULT_TABLENAME = "source.tablename";
+    public static final String RESULT_SCHEMANAME = "source.schemaname";
+    
 	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("Geopackage File to Fetch")
 			.description("The fully-qualified filename of the file to fetch from the file system")
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -161,20 +164,22 @@ public class GeoPackageReader extends AbstractProcessor {
                 			writer.write(new ListRecordSet(recordSchema, records));
                         }
                     });                
+                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
+                    transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+                    transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
 
-                    
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                      
                     final long importNanos = System.nanoTime() - importStart;
                     final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
                     
                     session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
-                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-                    session.transfer(transformed, REL_SUCCESS);   
-
                     logger.info("Features added {} to flow", new Object[]{transformed});
+                    
+                    session.transfer(transformed, REL_SUCCESS); 
                 } 
 			}
 			store.dispose();
@@ -183,13 +188,7 @@ public class GeoPackageReader extends AbstractProcessor {
 			GeoPackage geoPackage = new GeoPackage(file);
 			for (int i = 0; i < geoPackage.tiles().size(); i++) {
 				TileEntry t = geoPackage.tiles().get(i);
-				
-				
-				
-
 				ReferencedEnvelope envelope = t.getBounds();
-				
-				System.out.println(envelope.toString());
 				
 				final List<TileMatrix> tileMatricies = t.getTileMatricies();
 				int size = tileMatricies.toString().getBytes().length;
@@ -213,10 +212,6 @@ public class GeoPackageReader extends AbstractProcessor {
 					e.printStackTrace();
 				} 
 				
-//				for (int m = 0; m < tileMatricies.size() - 1; m++) {
-//					final TileMatrix matrix = tileMatricies.get(m);
-//					System.out.println(matrix);
-//				}
 
 				final List<Record> records = GeoUtils.getTilesRecordFromTileEntry(geoPackage, t);
 				if (records.isEmpty() == false) {
@@ -240,10 +235,6 @@ public class GeoPackageReader extends AbstractProcessor {
                         }
                     });                
 					
-	                final long importNanos = System.nanoTime() - importStart;
-	                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-	                
-	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
 	                
@@ -257,6 +248,8 @@ public class GeoPackageReader extends AbstractProcessor {
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+	                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+	                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());
 	                
 	                int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
 	                
@@ -264,9 +257,14 @@ public class GeoPackageReader extends AbstractProcessor {
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));
 	                
 	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
-	                session.transfer(transformed, REL_SUCCESS);   
-
+	                  
+	                final long importNanos = System.nanoTime() - importStart;
+	                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
+	                
+	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                logger.info("Tiles added {} to flow", new Object[]{transformed});
+	                
+	                session.transfer(transformed, REL_SUCCESS); 
 				}
 			}
 			geoPackage.close();

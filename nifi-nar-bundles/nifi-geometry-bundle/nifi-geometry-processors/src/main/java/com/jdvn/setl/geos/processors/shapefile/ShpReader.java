@@ -82,6 +82,7 @@ import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
+import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.simple.SimpleFeatureSource;
@@ -100,7 +101,6 @@ import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 public class ShpReader extends AbstractProcessor {
     public static final String GEO_COLUMN = "geo.column";
-    public static final String GEO_URL = "source.url";
     public static final String FRAGMENT_ID = FragmentAttributes.FRAGMENT_ID.key();
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
@@ -309,7 +309,7 @@ public class ShpReader extends AbstractProcessor {
                 final String absPathString = absPath.getParent().toString() + "/";
 
                 flowFile = session.create();
-                final long importStart = System.nanoTime();
+                final StopWatch stopWatch = new StopWatch(true);
                 flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
                 String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
                 
@@ -327,11 +327,14 @@ public class ShpReader extends AbstractProcessor {
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
 				int maxRecord = featureSource.getFeatures().size();
-				if (maxRecord <= 0)
+				if (maxRecord <= 0) {
+					session.remove(flowFile);
+					logger.info("No records has been founded!");
 					return;
+				}
+					
 				
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
-					long timeStart = System.nanoTime();
 					int from = 0;
 					int to = 0;
 					final String fragmentIdentifier = UUID.randomUUID().toString();
@@ -360,16 +363,12 @@ public class ShpReader extends AbstractProcessor {
 								}
 							});
 
-							final long importNanos = System.nanoTime() - timeStart;
-							final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-
-							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
 									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-							transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
+							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
 									String.valueOf(records.size()));
 
@@ -379,15 +378,18 @@ public class ShpReader extends AbstractProcessor {
 
 							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
 									"application/avro+geowkt");
-							session.transfer(transformed, REL_SUCCESS);
-
+							
+							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 							logger.info("added {} to flow", new Object[] { transformed });
+							session.transfer(transformed, REL_SUCCESS);
 						}
 						from = to;
 						fragmentIndex++;
+						
 					}
 					dataStore.dispose();
 					session.remove(flowFile);
+					
 				} else {
 					final List<Record> records = GeoUtils.getRecordsFromShapeFile(featureSource);
 					if (records.size() > 0) {
@@ -405,24 +407,20 @@ public class ShpReader extends AbstractProcessor {
 							}
 						});
 						session.remove(flowFile);
-
-						final long importNanos = System.nanoTime() - importStart;
-						final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-
-						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-						transformed = session.putAttribute(transformed, GEO_URL, file.toURI().toString());
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
 								String.valueOf(records.size()));
 						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
 								"application/avro+geowkt");
-						session.transfer(transformed, REL_SUCCESS);
-
+						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						logger.info("added {} to flow", new Object[] { transformed });
 						dataStore.dispose();
+						
+						session.transfer(transformed, REL_SUCCESS);
 					}
 				}
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
