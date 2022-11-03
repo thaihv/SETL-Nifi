@@ -51,7 +51,11 @@ import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.FlowFileFilters;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
+import org.geotools.data.DefaultTransaction;
+import org.geotools.data.Transaction;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureIterator;
+import org.geotools.data.simple.SimpleFeatureWriter;
 import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.geopkg.FeatureEntry;
 import org.geotools.geopkg.GeoPackage;
@@ -60,6 +64,7 @@ import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileMatrix;
 import org.geotools.referencing.CRS;
 import org.geotools.referencing.crs.DefaultGeographicCRS;
+import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
@@ -87,7 +92,13 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
-
+    public static final PropertyDescriptor MERGE_PARTS = new PropertyDescriptor.Builder()
+            .name("Merge Flowfiles")
+            .description("Indicates whether or not merge flow files that have same Identifier into a feature entry in Geopackage")
+            .allowableValues("true", "false")
+            .defaultValue("true")
+            .required(true)
+            .build();
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
             .description("Files that have been successfully written to the output directory are transferred to this relationship")
@@ -112,6 +123,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
         final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
         supDescriptors.add(GEOPACKAGE_FILE_NAME);
         supDescriptors.add(SRID);
+        supDescriptors.add(MERGE_PARTS);
         properties = Collections.unmodifiableList(supDescriptors);
     }
 
@@ -129,6 +141,7 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
     	
 		File targetFile = new File(context.getProperty(GEOPACKAGE_FILE_NAME).evaluateAttributeExpressions().getValue());
 		String epsg = context.getProperty(SRID).evaluateAttributeExpressions().getValue();
+		final boolean merged = context.getProperty(MERGE_PARTS).asBoolean();
 		
 		try {
 			final GeoPackage geopkg = new GeoPackage(targetFile);
@@ -149,40 +162,89 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	                for (final FlowFile flowFile : flowFiles) {
 	                    try {
 	                    	final StopWatch stopWatch = new StopWatch(true);
-	                    	final String src_url = flowFile.getAttribute(GeoUtils.GEO_URL) != null ? flowFile.getAttribute(GeoUtils.GEO_URL) : "GeoPackage";
+	                    	final String src_url = flowFile.getAttribute(GeoUtils.GEO_URL) != null ? flowFile.getAttribute(GeoUtils.GEO_URL) : "GeoPackage";	                        
 	                    	getLogger().info("Get flowfile {} is ok!", flowFile);
 	            			session.read(flowFile, new InputStreamCallback() {
 	            				@Override
 	            				public void process(final InputStream in) {
 	            					try {
 	            						String geoType = flowFile.getAttribute(GeoAttributes.GEO_TYPE.key());
-	            						String geoName = flowFile.getAttribute(GeoAttributes.GEO_NAME.key());
+	        	                		String geoname = flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key());
+	        	                		String rootname = geoname;
+	        	                		String part_name = "";
+	        	                        if (geoname != null) {
+	        	                        	if (geoname.indexOf(":") != -1)
+	        	                        		rootname = geoname.substring(0, geoname.indexOf(":"));
+	        	                        	else 
+	        	                        		rootname = geoname;
+	        	                        	if (geoname.lastIndexOf(":") != -1)
+	        	                        		part_name  = "_" + geoname.substring(geoname.lastIndexOf(":") + 1);
+	        	                        }
+	        	                        String entryname = merged ? rootname : rootname + part_name;
+	        	                        
 	            						if (geoType.contains("Features")){
-		            						FeatureEntry entry = new FeatureEntry();
-		            						final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-		            						CoordinateReferenceSystem crs_source = CRS.parseWKT(srs);
-		            						Integer srid = CRS.lookupEpsgCode(crs_source, true);
-		            						if (srid != null)
-		            							entry.setSrid(srid);
-		            						else
-		            							entry.setSrid(Integer.valueOf(epsg));
-		            						entry.setDescription(geoName);
-		            						
+	            							FeatureEntry entry;
+	            							final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+	            							CoordinateReferenceSystem crs_source = CRS.parseWKT(srs);
 		            						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(geoName, reader, crs_source, null);
-		            						geopkg.add(entry, collection);
-		            						geopkg.createSpatialIndex(entry);
+		            						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(entryname, reader, crs_source, null);
+	            							if (geopkg.feature(entryname) == null) {
+	            								entry = new FeatureEntry();
+			            						Integer srid = CRS.lookupEpsgCode(crs_source, true);
+			            						if (srid != null)
+			            							entry.setSrid(srid);
+			            						else
+			            							entry.setSrid(Integer.valueOf(epsg));
+			            						entry.setDescription(entryname);
+			            						geopkg.add(entry, collection);
+			            						geopkg.createSpatialIndex(entry);
+	            							}else {
+	            								entry = geopkg.feature(entryname);
+		            					        Transaction tx = new DefaultTransaction();		            					
+		            					        try {
+		            					            try (SimpleFeatureWriter w = geopkg.writer(entry, true, null, tx);
+		            					                    SimpleFeatureIterator it = collection.features()) {
+		            					                while (it.hasNext()) {
+		            					                    SimpleFeature f = it.next();
+		            					                    SimpleFeature g = w.next();
+		            					                    g.setAttributes(f.getAttributes());
+		            					                    for (org.opengis.feature.type.PropertyDescriptor pd : collection.getSchema().getDescriptors()) {
+		            					                        /* geopkg spec requires booleans to be stored as SQLite integers */
+		            					                        String name = pd.getName().getLocalPart();
+		            					                        if (pd.getType().getBinding() == Boolean.class) {
+		            					                            int bool = 0;
+		            					                            if (f.getAttribute(name) != null) {
+		            					                                bool = (Boolean) (f.getAttribute(name)) ? 1 : 0;
+		            					                            }
+		            					                            g.setAttribute(name, bool);
+		            					                        }
+		            					                    }
+		            					                    w.write();
+		            					                }
+		            					            }
+		            					            tx.commit();
+		            					        } catch (Exception ex) {
+		            					            tx.rollback();
+		            					            throw new IOException(ex);
+		            					        } finally {
+		            					            tx.close();
+		            					        }
+	            							}	            								
+
 	            						}
 	            						else if (geoType.contains("Tiles")) {
-	            							
-	            							TileEntry e = new TileEntry();
-	            							e.setTableName(geoName);
-	            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,DefaultGeographicCRS.WGS84));
-	            							e.getTileMatricies().add(new TileMatrix(0, 1, 1, 256, 256, 0.1, 0.1));
-	            							e.getTileMatricies().add(new TileMatrix(1, 2, 2, 256, 256, 0.1, 0.1));
+	            							TileEntry e;
+	            							if (geopkg.tile(entryname) == null) {
+		            							e = new TileEntry();
+		            							e.setTableName(entryname);
+		            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,DefaultGeographicCRS.WGS84));
+		            							e.getTileMatricies().add(new TileMatrix(0, 1, 1, 256, 256, 0.1, 0.1));
+		            							e.getTileMatricies().add(new TileMatrix(1, 2, 2, 256, 256, 0.1, 0.1));
 
-	            							geopkg.create(e);
-
+		            							geopkg.create(e);	            								
+	            							}
+	            							else
+	            								e = geopkg.tile(entryname);
 	            							@SuppressWarnings({ "rawtypes", "unchecked" })
 											List<Tile> tiles = new ArrayList();
 	            							tiles.add(new Tile(0,0,0,new byte[]{3,4,6}));

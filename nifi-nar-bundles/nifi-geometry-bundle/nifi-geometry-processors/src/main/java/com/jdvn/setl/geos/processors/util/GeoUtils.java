@@ -4,6 +4,8 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -21,6 +23,7 @@ import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import javax.sql.DataSource;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -50,6 +53,7 @@ import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileReader;
+import org.geotools.geopkg.geom.GeoPkgGeomReader;
 import org.geotools.referencing.CRS;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Geometry;
@@ -83,6 +87,15 @@ public class GeoUtils {
 	public static final String SETL_UUID = "NIFIUID";
 	public static final String GSS_GEO_COLUMN = "SHAPE";
 	public static final String SHP_GEO_COLUMN = "the_geom";
+	
+    public static final String GEOPACKAGE_CONTENTS = "gpkg_contents";
+    public static final String GEOMETRY_COLUMNS = "gpkg_geometry_columns";
+    public static final String SPATIAL_REF_SYS = "gpkg_spatial_ref_sys";
+    public static final String DATA_COLUMNS = "gpkg_data_columns";
+    protected static final int GENERIC_GEOGRAPHIC_SRID = 0;
+    protected static final int GENERIC_PROJECTED_SRID = -1;
+    static final String DATE_FORMAT_STRING = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
+    
 	private static final Logger logger = LoggerFactory.getLogger(GeoUtils.class);
 
 	private static SimpleFeatureType generateFeatureType(final String typeName, final CoordinateReferenceSystem crs,
@@ -499,70 +512,12 @@ public class GeoUtils {
 		}
 		return minMax;
 	}
-	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(DataStore store, String tableName) {
+	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(final SimpleFeatureSource featureSource, final String tableName, final RecordSchema recordSchema) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
-			SimpleFeatureSource featureSource = store.getFeatureSource(tableName);
-			SimpleFeatureType schema = featureSource.getSchema();
-			final List<RecordField> fields = new ArrayList<>();
-			boolean hasIDField = false;
-			for (int i = 0; i < schema.getAttributeCount(); i++) {
-				String fieldName = schema.getDescriptor(i).getName().getLocalPart();
-				if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
-					hasIDField = true;
-				String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
-				DataType dataType;
-				switch (fieldType) {
-				case "Long":
-					dataType = RecordFieldType.LONG.getDataType();
-					break;
-				case "String":
-					dataType = RecordFieldType.STRING.getDataType();
-					break;
-				case "Double":
-					dataType = RecordFieldType.DOUBLE.getDataType();
-					break;
-				case "Boolean":
-					dataType = RecordFieldType.BOOLEAN.getDataType();
-					break;
-				case "Byte":
-					dataType = RecordFieldType.BYTE.getDataType();
-					break;
-				case "Character":
-					dataType = RecordFieldType.CHAR.getDataType();
-					break;
-				case "Integer":
-					dataType = RecordFieldType.INT.getDataType();
-					break;
-				case "Float":
-					dataType = RecordFieldType.FLOAT.getDataType();
-					break;
-				case "Number":
-					dataType = RecordFieldType.BIGINT.getDataType();
-					break;
-				case "Date":
-					dataType = RecordFieldType.DATE.getDataType();
-					break;
-				case "Time":
-					dataType = RecordFieldType.TIME.getDataType();
-					break;
-				case "Timestamp":
-					dataType = RecordFieldType.TIMESTAMP.getDataType();
-					break;
-				case "Short":
-					dataType = RecordFieldType.SHORT.getDataType();
-					break;
-				default:
-					dataType = RecordFieldType.STRING.getDataType();
-				}
-				fields.add(new RecordField(fieldName, dataType));
-			}
-			if (!hasIDField)
-				fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));
+			SimpleFeatureCollection	selectedfeatures = featureSource.getFeatures();
+			SimpleFeatureIterator it = (SimpleFeatureIterator) selectedfeatures.features();
 			
-			SimpleFeatureCollection features = featureSource.getFeatures();
-			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
-			final RecordSchema recordSchema = new SimpleRecordSchema(fields);
 			while (it.hasNext()) {
 				SimpleFeature feature = it.next();
 				Map<String, Object> fieldMap = new HashMap<String, Object>();
@@ -585,8 +540,62 @@ public class GeoUtils {
 
 		}
 		return returnRs;
+	}	
+	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(final File file, final String tableName, final String geofieldName, final RecordSchema recordSchema, final int recordFrom, final int recordTo ) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		
+		StringBuffer sql = new StringBuffer("SELECT rowid as ROWID, * FROM ");
+		sql.append(tableName);
+		sql.append(" WHERE rowid >= ").append(Integer.toString(recordFrom));
+		sql.append(" AND ").append(" rowid < ").append(Integer.toString(recordTo));		
+		GeoPackage geoPackage = null;
+		try {
+			geoPackage = new GeoPackage(file);
+			final DataSource connPool = geoPackage.getDataSource();
+			Connection cx = connPool.getConnection();
+			PreparedStatement ps = cx.prepareStatement(sql.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+            	while (rs.next()) {
+            		Map<String, Object> fieldMap = new HashMap<String, Object>();
+                    for (final RecordField field : recordSchema.getFields()) {
+                        final String fieldName = field.getFieldName();
+                        String key = fieldName;
+                        final Object value;
+                        if (fieldName.toUpperCase().equals(geofieldName.toUpperCase())) {
+                        	GeoPkgGeomReader reader = new GeoPkgGeomReader(rs.getBytes(fieldName));
+                        	Geometry g = reader.get();
+        					value = new org.locationtech.jts.io.WKTWriter().write(g);    
+                        }
+                        else {
+                        	value = rs.getObject(fieldName);
+                        }
+    					
+    					fieldMap.put(key, value);
+                    }
+    				if (rs.getObject(GeoUtils.SETL_UUID) == null)
+    					fieldMap.put(GeoUtils.SETL_UUID, rs.getString("ROWID"));
+    				Record r = new MapRecord(recordSchema, fieldMap);
+    				returnRs.add(r);                    
+                    
+            	}
+            	rs.close();
+            	return returnRs;
+            } catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			finally {
+				ps.close();
+				cx.close();
+			}
+		} catch (IOException | SQLException e) {
+			e.printStackTrace();
+		} finally {
+			if (geoPackage!= null)
+				geoPackage.close();
+		}
+		return returnRs;
 	}
-
 	public static CoordinateReferenceSystem getCRSFromGeoPackageFeatureTable(DataStore store, String tableName) {
 		CoordinateReferenceSystem cRS = null;
 		try {

@@ -332,8 +332,6 @@ public class ShpReader extends AbstractProcessor {
 					logger.info("No records has been founded!");
 					return;
 				}
-					
-				
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					int from = 0;
 					int to = 0;
