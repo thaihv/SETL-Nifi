@@ -300,7 +300,7 @@ public class ShpWriter extends AbstractProcessor {
 						else {
 							logger.info("Unable to create the shape file {}", new Object[]{srcFile.toURI().toString()});
 						}	
-
+						session.adjustCounter("Records performed", collection.size(), false);
 					} catch (IOException | FactoryException e) {
 						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
 						session.transfer(flowFile, REL_FAILURE);

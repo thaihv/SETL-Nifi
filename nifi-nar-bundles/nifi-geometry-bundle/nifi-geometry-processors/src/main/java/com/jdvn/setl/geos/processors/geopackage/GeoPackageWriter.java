@@ -229,7 +229,8 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 		            					        } finally {
 		            					            tx.close();
 		            					        }
-	            							}	            								
+	            							}
+	            							session.adjustCounter("Records performed", collection.size(), false);
 
 	            						}
 	            						else if (geoType.contains("Tiles")) {

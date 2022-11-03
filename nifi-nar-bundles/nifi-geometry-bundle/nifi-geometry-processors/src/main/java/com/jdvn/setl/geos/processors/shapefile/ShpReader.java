@@ -361,24 +361,22 @@ public class ShpReader extends AbstractProcessor {
 								}
 							});
 
-							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
 									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
-									String.valueOf(records.size()));
-
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
-							transformed = session.putAttribute(transformed, FRAGMENT_INDEX,
-									String.valueOf(fragmentIndex));
+							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
+							if (myCrs != null) {
+								transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+								transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+							}
 
-							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
-									"application/avro+geowkt");
-							
 							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 							logger.info("added {} to flow", new Object[] { transformed });
+							session.adjustCounter("Records performed", records.size(), false);
 							session.transfer(transformed, REL_SUCCESS);
 						}
 						from = to;
@@ -405,19 +403,19 @@ public class ShpReader extends AbstractProcessor {
 							}
 						});
 						session.remove(flowFile);
-						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
-								String.valueOf(records.size()));
-						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
-								"application/avro+geowkt");
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+						if (myCrs != null) {
+							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+						}
 						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						logger.info("added {} to flow", new Object[] { transformed });
 						dataStore.dispose();
-						
+						session.adjustCounter("Records performed", records.size(), false);
 						session.transfer(transformed, REL_SUCCESS);
 					}
 				}

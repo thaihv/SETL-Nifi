@@ -208,7 +208,7 @@ public class GeoPackageReader extends AbstractProcessor {
 
 		                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		                    logger.info("Features added {} to flow", new Object[]{transformed});
-		                    
+		                    session.adjustCounter("Records performed", records.size(), false);
 		                    session.transfer(transformed, REL_SUCCESS); 
 		                }
 						from = to;
@@ -241,7 +241,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                      
 	                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 	                    logger.info("Features added {} to flow", new Object[]{transformed});
-	                    
+	                    session.adjustCounter("Records performed", records.size(), false);
 	                    session.transfer(transformed, REL_SUCCESS); 
 	                }					
 				}
