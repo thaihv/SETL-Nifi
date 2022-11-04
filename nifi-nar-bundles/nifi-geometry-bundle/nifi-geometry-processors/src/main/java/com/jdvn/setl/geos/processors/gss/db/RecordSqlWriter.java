@@ -95,7 +95,7 @@ public class RecordSqlWriter implements SqlWriter {
     public void updateCounters(ProcessSession session) {
         final WriteResult result = writeResultRef.get();
         if (result != null) {
-            session.adjustCounter("Records Written", result.getRecordCount(), false);
+            session.adjustCounter("Records Read", result.getRecordCount(), false);
         }
     }
 

@@ -182,7 +182,7 @@ public class GeoPackageReader extends AbstractProcessor {
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
-		                final List<Record> records = GeoUtils.getRecordsFromGeoPackageFeatureTable(file,name,geofieldName,recordSchema,from,to);
+		                final List<Record> records = GeoUtils.getNifiRecordSegmentsFromGeoPackageFeatureTable(file,name,geofieldName,recordSchema,from,to);
 		                if (records.isEmpty() == false) {
 		                    FlowFile transformed = session.create(flowFile);
 		    				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);             
@@ -208,7 +208,7 @@ public class GeoPackageReader extends AbstractProcessor {
 
 		                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		                    logger.info("Features added {} to flow", new Object[]{transformed});
-		                    session.adjustCounter("Records performed", records.size(), false);
+		                    session.adjustCounter("Records Read", records.size(), false);
 		                    session.transfer(transformed, REL_SUCCESS); 
 		                }
 						from = to;
@@ -216,7 +216,7 @@ public class GeoPackageReader extends AbstractProcessor {
 					}
 				}
 				else {
-	                final List<Record> records = GeoUtils.getRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
+	                final List<Record> records = GeoUtils.getNifiRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
 	                if (records.isEmpty() == false) {
 	                    FlowFile transformed = session.create(flowFile);
 	    				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);             
@@ -241,7 +241,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                      
 	                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 	                    logger.info("Features added {} to flow", new Object[]{transformed});
-	                    session.adjustCounter("Records performed", records.size(), false);
+	                    session.adjustCounter("Records Read", records.size(), false);
 	                    session.transfer(transformed, REL_SUCCESS); 
 	                }					
 				}
@@ -274,7 +274,7 @@ public class GeoPackageReader extends AbstractProcessor {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				} 
-				final List<Record> records = GeoUtils.getTilesRecordFromTileEntry(geoPackage, t);
+				final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
 				if (records.isEmpty() == false) {
 	                final long importStart = System.nanoTime();
 	                // Create flowfile
@@ -296,6 +296,7 @@ public class GeoPackageReader extends AbstractProcessor {
                         }
                     });                
 					
+                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
 	                
@@ -324,7 +325,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                
 	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
 	                logger.info("Tiles added {} to flow", new Object[]{transformed});
-	                
+	                session.adjustCounter("Records Read", records.size(), false);
 	                session.transfer(transformed, REL_SUCCESS); 
 				}
 			}

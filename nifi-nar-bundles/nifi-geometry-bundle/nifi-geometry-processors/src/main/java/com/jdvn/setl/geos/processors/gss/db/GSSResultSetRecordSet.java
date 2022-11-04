@@ -196,15 +196,7 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
         return value;
     }
     
-	public static boolean hasColumn(ResultSetMetaData rsmd, String columnName) throws SQLException {
-	    int columns = rsmd.getColumnCount();
-	    for (int x = 1; x <= columns; x++) {
-	        if (columnName.toUpperCase().equals(rsmd.getColumnName(x))) {
-	            return true;
-	        }
-	    }
-	    return false;
-	}	    
+	    
     private RecordSchema createSchema(final ResultSet rs, final RecordSchema readerSchema, final boolean useLogicalTypes) throws SQLException {
         final IGSSResultSetMetaData metadata = (IGSSResultSetMetaData) rs.getMetaData();
         final int numCols = metadata.getColumnCount();
@@ -237,7 +229,7 @@ public class GSSResultSetRecordSet implements RecordSet, Closeable {
         }
 
         // Add an extra column FID to detect sources for GSS
-        if (metadata.hasGeometryColumn() && !hasColumn(metadata, GeoUtils.SETL_UUID) ) {
+        if (metadata.hasGeometryColumn() && !GeoUtils.hasColumn(metadata, GeoUtils.SETL_UUID) ) {
             final RecordField geo_IDfield = new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType(), true);
             fields.add(geo_IDfield);
             rsColumnNames.add(GeoUtils.SETL_UUID);

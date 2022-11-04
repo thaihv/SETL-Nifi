@@ -63,7 +63,6 @@ import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileMatrix;
 import org.geotools.referencing.CRS;
-import org.geotools.referencing.crs.DefaultGeographicCRS;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -230,15 +229,19 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 		            					            tx.close();
 		            					        }
 	            							}
-	            							session.adjustCounter("Records performed", collection.size(), false);
+	            							session.adjustCounter("Records Written", collection.size(), false);
 
 	            						}
 	            						else if (geoType.contains("Tiles")) {
 	            							TileEntry e;
+	            							final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+	            							CoordinateReferenceSystem crs_source = CRS.parseWKT(srs);
+		            						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
+		            						List<Tile> tiles = GeoUtils.getTilesFromNifiRecords(entryname, reader, crs_source);
 	            							if (geopkg.tile(entryname) == null) {
 		            							e = new TileEntry();
 		            							e.setTableName(entryname);
-		            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,DefaultGeographicCRS.WGS84));
+		            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,crs_source));
 		            							e.getTileMatricies().add(new TileMatrix(0, 1, 1, 256, 256, 0.1, 0.1));
 		            							e.getTileMatricies().add(new TileMatrix(1, 2, 2, 256, 256, 0.1, 0.1));
 
@@ -246,19 +249,11 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            							}
 	            							else
 	            								e = geopkg.tile(entryname);
-	            							@SuppressWarnings({ "rawtypes", "unchecked" })
-											List<Tile> tiles = new ArrayList();
-	            							tiles.add(new Tile(0,0,0,new byte[]{3,4,6}));
-	            							tiles.add(new Tile(1,0,0,new byte[]{15,76,3}));
-	            							tiles.add(new Tile(1,0,1,new byte[]{4,5,2}));
-	            							tiles.add(new Tile(1,1,0,new byte[]{67,8,23}));
-	            							tiles.add(new Tile(1,1,1,new byte[]{4,6,8}));
-
 	            							for (Tile t : tiles) {
 	            							    geopkg.add(e, t);
 	            							}
-	            							
 	            							getLogger().info("The flowfile {} is Tiles!", flowFile);
+	            							session.adjustCounter("Records Written", tiles.size(), false);
 	            						}
 
 

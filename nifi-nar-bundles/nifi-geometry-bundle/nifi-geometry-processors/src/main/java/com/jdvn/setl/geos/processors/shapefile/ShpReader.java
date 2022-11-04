@@ -346,7 +346,7 @@ public class ShpReader extends AbstractProcessor {
 							to = maxRecord;
 
 						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds);
+						List<Record> records = GeoUtils.getNifiRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds);
 						if (records.size() > 0) {
 							FlowFile transformed = session.create(flowFile);
 							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -376,7 +376,7 @@ public class ShpReader extends AbstractProcessor {
 
 							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 							logger.info("added {} to flow", new Object[] { transformed });
-							session.adjustCounter("Records performed", records.size(), false);
+							session.adjustCounter("Records Read", records.size(), false);
 							session.transfer(transformed, REL_SUCCESS);
 						}
 						from = to;
@@ -387,7 +387,7 @@ public class ShpReader extends AbstractProcessor {
 					session.remove(flowFile);
 					
 				} else {
-					final List<Record> records = GeoUtils.getRecordsFromShapeFile(featureSource);
+					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource);
 					if (records.size() > 0) {
 						FlowFile transformed = session.create(flowFile);
 						CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -415,7 +415,7 @@ public class ShpReader extends AbstractProcessor {
 						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						logger.info("added {} to flow", new Object[] { transformed });
 						dataStore.dispose();
-						session.adjustCounter("Records performed", records.size(), false);
+						session.adjustCounter("Records Read", records.size(), false);
 						session.transfer(transformed, REL_SUCCESS);
 					}
 				}

@@ -2,11 +2,14 @@ package com.jdvn.setl.geos.processors.util;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Time;
@@ -204,7 +207,7 @@ public class GeoUtils {
 		RecordSchema recordSchema = new SimpleRecordSchema(fields);
 		return recordSchema;
 	}	
-	public static ArrayList<Record> getRecordsFromShapeFile(final SimpleFeatureSource featureSource) {
+	public static ArrayList<Record> getNifiRecordsFromShapeFile(final SimpleFeatureSource featureSource) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			final RecordSchema recordSchema = createRecordSchema(featureSource);
@@ -233,7 +236,7 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
-	public static ArrayList<Record> getRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds ) {
+	public static ArrayList<Record> getNifiRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			FilterFactory ff = CommonFactoryFinder.getFilterFactory(null);
@@ -370,8 +373,7 @@ public class GeoUtils {
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName,
-			RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
+	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecords(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
 		List<SimpleFeature> features = new ArrayList<>();
 		String geomFieldName = SHP_GEO_COLUMN;
 		Record record;
@@ -454,7 +456,7 @@ public class GeoUtils {
 		return null;
 	}
 
-	public static ArrayList<Record> getTilesRecordFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
+	public static ArrayList<Record> getNifiRecordsFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 
 		final List<Field> tileFields = new ArrayList<>();
@@ -486,6 +488,32 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static List<Tile> getTilesFromNifiRecords(final String entryName, final RecordReader avroReader, CoordinateReferenceSystem crs_source) {
+		List<Tile> tiles = new ArrayList();
+		Record record;
+		try {
+			while ((record = avroReader.nextRecord()) != null) {
+				int zoom    = record.getAsInt("zoom");
+				int column  = record.getAsInt("column");
+				int row     = record.getAsInt("row");
+				
+			    ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
+			    ObjectOutputStream oos = new ObjectOutputStream(bytesOut);
+			    oos.writeObject(record.getValue("data"));
+			    oos.flush();
+			    byte[] bytes = bytesOut.toByteArray();
+			    bytesOut.close();
+			    oos.close();
+				tiles.add(new Tile(zoom,column,row,bytes));			
+			}
+		} catch (IOException | MalformedRecordException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		return tiles;
+	}	
 	public static int[] getMinMaxTilesZoomTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
 
 		int minMax[] = { 1, 20};
@@ -512,7 +540,16 @@ public class GeoUtils {
 		}
 		return minMax;
 	}
-	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(final SimpleFeatureSource featureSource, final String tableName, final RecordSchema recordSchema) {
+	public static boolean hasColumn(ResultSetMetaData rsmd, String columnName) throws SQLException {
+	    int columns = rsmd.getColumnCount();
+	    for (int x = 1; x <= columns; x++) {
+	        if (columnName.toUpperCase().equals(rsmd.getColumnName(x))) {
+	            return true;
+	        }
+	    }
+	    return false;
+	}	
+	public static ArrayList<Record> getNifiRecordsFromGeoPackageFeatureTable(final SimpleFeatureSource featureSource, final String tableName, final RecordSchema recordSchema) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			SimpleFeatureCollection	selectedfeatures = featureSource.getFeatures();
@@ -541,7 +578,7 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}	
-	public static ArrayList<Record> getRecordsFromGeoPackageFeatureTable(final File file, final String tableName, final String geofieldName, final RecordSchema recordSchema, final int recordFrom, final int recordTo ) {
+	public static ArrayList<Record> getNifiRecordSegmentsFromGeoPackageFeatureTable(final File file, final String tableName, final String geofieldName, final RecordSchema recordSchema, final int recordFrom, final int recordTo ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		
 		StringBuffer sql = new StringBuffer("SELECT rowid as ROWID, * FROM ");
@@ -566,13 +603,14 @@ public class GeoUtils {
                         	Geometry g = reader.get();
         					value = new org.locationtech.jts.io.WKTWriter().write(g);    
                         }
-                        else {
+                        else 
+                        	if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID) && !GeoUtils.hasColumn(rs.getMetaData(), GeoUtils.SETL_UUID)){
+                        		break;
+                        }else
                         	value = rs.getObject(fieldName);
-                        }
-    					
     					fieldMap.put(key, value);
                     }
-    				if (rs.getObject(GeoUtils.SETL_UUID) == null)
+    				if (!GeoUtils.hasColumn(rs.getMetaData(), GeoUtils.SETL_UUID))
     					fieldMap.put(GeoUtils.SETL_UUID, rs.getString("ROWID"));
     				Record r = new MapRecord(recordSchema, fieldMap);
     				returnRs.add(r);                    
