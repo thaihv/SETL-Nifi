@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -28,9 +29,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.zip.DataFormatException;
-import java.util.zip.Deflater;
-import java.util.zip.Inflater;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
@@ -75,6 +73,7 @@ import org.geotools.geopkg.TileMatrix;
 import org.geotools.geopkg.TileReader;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 @Tags({ "geopackage", "tiles", "raster", "vector","feature", "geospatial" })
@@ -87,7 +86,7 @@ public class GeoPackageReader extends AbstractProcessor {
     public static final String RESULT_TABLENAME = "source.tablename";
     public static final String RESULT_SCHEMANAME = "source.schemaname";
     public static final String FRAGMENT_ID = FragmentAttributes.FRAGMENT_ID.key();
-    public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();    
+    public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key(); 
 	static final PropertyDescriptor FILENAME = new PropertyDescriptor.Builder().name("Geopackage File to Fetch")
 			.description("The fully-qualified filename of the file to fetch from the file system")
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
@@ -254,26 +253,14 @@ public class GeoPackageReader extends AbstractProcessor {
 				TileEntry t = geoPackage.tiles().get(i);
 				ReferencedEnvelope envelope = t.getBounds();
 				final List<TileMatrix> tileMatricies = t.getTileMatricies();
-				int size = tileMatricies.toString().getBytes().length;
-				Deflater def = new Deflater();
-				def.setInput(tileMatricies.toString().getBytes());
-				def.finish();
-				byte compTileMatrix[] = new byte[size]; 
-				def.deflate(compTileMatrix);
-				def.end();
-				System.out.println(compTileMatrix.toString());
 				
-				Inflater inf = new Inflater();
-				inf.setInput(compTileMatrix);
-				byte orgString[] = new byte[size]; 
-				try {
-					inf.inflate(orgString, 0, size);
-					System.out.println(new String(orgString));
-					inf.end();
-				} catch (DataFormatException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				} 
+				ObjectMapper objectMapper = new ObjectMapper();
+				String jsonTileMatricies = objectMapper.writeValueAsString(tileMatricies);
+				int tileMatrixBuffLen = jsonTileMatricies.getBytes().length;
+				byte[] compTileMatrix = GeoUtils.zipTileMatrixToBytes(jsonTileMatricies);
+				byte[] encoded = Base64.getEncoder().encode(compTileMatrix);
+				
+
 				final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
 				if (records.isEmpty() == false) {
 	                final long importStart = System.nanoTime();
@@ -300,13 +287,13 @@ public class GeoPackageReader extends AbstractProcessor {
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
 	                
-	                //String envelop = envelope.toString().substring(envelope.toString().indexOf("["));
-	                String envelop = "[[" + envelope.getMinX() + "," + envelope.getMinY() + "]" + ", [" + envelope.getMaxX() + "," + envelope.getMaxY() + "]]"; 
+	                String szEnvelop = envelope.toString().substring(envelope.toString().indexOf("["));
 	                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
 	                
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelop);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), compTileMatrix.toString());
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
+	                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));

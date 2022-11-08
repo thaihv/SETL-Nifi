@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -235,16 +236,26 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            						else if (geoType.contains("Tiles")) {
 	            							TileEntry e;
 	            							final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+	            							final String len = flowFile.getAttributes().get(GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN);
+	            							final String encodedTileMatrices = flowFile.getAttributes().get(GeoAttributes.GEO_TILE_MATRIX.key());
+	            							final String envelop = flowFile.getAttributes().get(GeoAttributes.GEO_ENVELOPE.key());
+	            							double x1 = Double.parseDouble(envelop.substring(1, envelop.indexOf(":")));
+	            							double x2 = Double.parseDouble(envelop.substring(envelop.indexOf(":") + 1, envelop.indexOf(",")));
+	            							double y1 = Double.parseDouble(envelop.substring(envelop.indexOf(",") + 1, envelop.lastIndexOf(":")));
+	            							double y2 = Double.parseDouble(envelop.substring(envelop.lastIndexOf(":") + 1, envelop.lastIndexOf("]")));
+	            							
+	            							byte[] decodedListTileMatrices = Base64.getDecoder().decode(encodedTileMatrices);
+	            							
+	            							List<TileMatrix> listTileMatices= GeoUtils.unzipTileMatrixFromBytes(decodedListTileMatrices, Integer.valueOf(len));
 	            							CoordinateReferenceSystem crs_source = CRS.parseWKT(srs);
 		            						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 		            						List<Tile> tiles = GeoUtils.getTilesFromNifiRecords(entryname, reader, crs_source);
 	            							if (geopkg.tile(entryname) == null) {
 		            							e = new TileEntry();
 		            							e.setTableName(entryname);
-		            							e.setBounds(new ReferencedEnvelope(-180,180,-90,90,crs_source));
-		            							e.getTileMatricies().add(new TileMatrix(0, 1, 1, 256, 256, 0.1, 0.1));
-		            							e.getTileMatricies().add(new TileMatrix(1, 2, 2, 256, 256, 0.1, 0.1));
-
+		            							e.setBounds(new ReferencedEnvelope(x1,x2,y1,y2,crs_source));
+		            							for (int i = 0; i < listTileMatices.size(); i++)
+		            								e.getTileMatricies().add(listTileMatices.get(i));
 		            							geopkg.create(e);	            								
 	            							}
 	            							else

@@ -2,10 +2,9 @@ package com.jdvn.setl.geos.processors.util;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.nio.ByteBuffer;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -21,6 +20,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.DataFormatException;
+import java.util.zip.Deflater;
+import java.util.zip.Inflater;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -55,6 +57,7 @@ import org.geotools.geometry.jts.JTSFactoryFinder;
 import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.Tile;
 import org.geotools.geopkg.TileEntry;
+import org.geotools.geopkg.TileMatrix;
 import org.geotools.geopkg.TileReader;
 import org.geotools.geopkg.geom.GeoPkgGeomReader;
 import org.geotools.referencing.CRS;
@@ -82,6 +85,8 @@ import org.opengis.referencing.operation.TransformException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jdvn.setl.geos.processors.gss.db.LayerMetadata;
 
 public class GeoUtils {
@@ -90,7 +95,7 @@ public class GeoUtils {
 	public static final String SETL_UUID = "NIFIUID";
 	public static final String GSS_GEO_COLUMN = "SHAPE";
 	public static final String SHP_GEO_COLUMN = "the_geom";
-	
+    public static final String GEO_TTLE_MATRIX_BYTES_LEN = "geo.raster.matrixbytes";
     public static final String GEOPACKAGE_CONTENTS = "gpkg_contents";
     public static final String GEOMETRY_COLUMNS = "gpkg_geometry_columns";
     public static final String SPATIAL_REF_SYS = "gpkg_spatial_ref_sys";
@@ -494,18 +499,11 @@ public class GeoUtils {
 		Record record;
 		try {
 			while ((record = avroReader.nextRecord()) != null) {
-				int zoom    = record.getAsInt("zoom");
-				int column  = record.getAsInt("column");
-				int row     = record.getAsInt("row");
-				
-			    ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-			    ObjectOutputStream oos = new ObjectOutputStream(bytesOut);
-			    oos.writeObject(record.getValue("data"));
-			    oos.flush();
-			    byte[] bytes = bytesOut.toByteArray();
-			    bytesOut.close();
-			    oos.close();
-				tiles.add(new Tile(zoom,column,row,bytes));			
+				int zoom      = record.getAsInt("zoom");
+				int column    = record.getAsInt("column");
+				int row       = record.getAsInt("row");
+				ByteBuffer bb = AvroTypeUtil.convertByteArray((Object[]) record.getValue("data"));
+				tiles.add(new Tile(zoom,column,row, bb.array()));
 			}
 		} catch (IOException | MalformedRecordException e) {
 			// TODO Auto-generated catch block
@@ -738,6 +736,43 @@ public class GeoUtils {
 			rs.close();
 			stmt.close();
 		}
+	}
+	public static byte[] zipTileMatrixToBytes(final String jsonTileMatricies){
+		
+		Deflater def = new Deflater();
+
+		int size = jsonTileMatricies.getBytes().length;
+		def.setInput(jsonTileMatricies.getBytes());
+		def.finish();
+		
+		byte[] zipBytes = new byte[size]; 
+		
+		def.deflate(zipBytes);
+		def.end();
+
+		return zipBytes;
+
+	}	
+	public static List<TileMatrix> unzipTileMatrixFromBytes(final byte[] jsonzipTileMatricies, int length){
+		List<TileMatrix> items = new ArrayList<TileMatrix>();
+		ObjectMapper objectMapper = new ObjectMapper();
+		Inflater inf = new Inflater();
+		inf.setInput(jsonzipTileMatricies);
+		byte outputBuffer[] = new byte[length]; 
+		try {
+
+			inf.inflate(outputBuffer);
+			String listOfObjects = new String(outputBuffer);
+
+			inf.end();
+			items = objectMapper.readValue(listOfObjects, objectMapper.getTypeFactory().constructParametricType(List.class, TileMatrix.class));
+			
+		} catch (DataFormatException | JsonProcessingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} 	
+		System.out.println(items.toString());
+		return items;
 	}
 	public static String getImageFormat(byte[] data) throws IOException {
 		ByteArrayInputStream bis = new ByteArrayInputStream(data);
