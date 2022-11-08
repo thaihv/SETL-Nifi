@@ -309,7 +309,7 @@ public class ShpReader extends AbstractProcessor {
                 final String absPathString = absPath.getParent().toString() + "/";
 
                 flowFile = session.create();
-                final StopWatch stopWatch = new StopWatch(true);
+                
                 flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
                 String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
                 
@@ -337,10 +337,11 @@ public class ShpReader extends AbstractProcessor {
 					int to = 0;
 					final String fragmentIdentifier = UUID.randomUUID().toString();
 					int fragmentIndex = 0;
-					final RecordSchema recordSchema = GeoUtils.createRecordSchema(featureSource);
+					final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
 					List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
 
 					while (from < maxRecord) {
+						final StopWatch stopWatch = new StopWatch(true);
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
@@ -387,6 +388,7 @@ public class ShpReader extends AbstractProcessor {
 					session.remove(flowFile);
 					
 				} else {
+					final StopWatch stopWatch = new StopWatch(true);
 					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource);
 					if (records.size() > 0) {
 						FlowFile transformed = session.create(flowFile);

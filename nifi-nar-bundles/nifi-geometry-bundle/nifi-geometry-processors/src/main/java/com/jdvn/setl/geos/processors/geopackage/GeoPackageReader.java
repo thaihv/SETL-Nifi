@@ -147,7 +147,7 @@ public class GeoPackageReader extends AbstractProcessor {
 		final File file = new File(filename);
 		final Path filePath = file.toPath();
 		final ComponentLog logger = getLogger();
-		final StopWatch stopWatch = new StopWatch(true);
+		
 		FlowFile flowFile = null;
 		
         flowFile = session.create();
@@ -171,13 +171,14 @@ public class GeoPackageReader extends AbstractProcessor {
 				if (maxRecord <= 0) {
 					return;
 				}
-				final RecordSchema recordSchema = GeoUtils.createRecordSchema(featureSource);
+				final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					final String fragmentIdentifier = UUID.randomUUID().toString();
 					int fragmentIndex = 0;
 					int from = 1;
 					int to = 0;
 					while (from < maxRecord) {
+						final StopWatch stopWatch = new StopWatch(true);
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
@@ -215,6 +216,7 @@ public class GeoPackageReader extends AbstractProcessor {
 					}
 				}
 				else {
+					final StopWatch stopWatch = new StopWatch(true);
 	                final List<Record> records = GeoUtils.getNifiRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
 	                if (records.isEmpty() == false) {
 	                    FlowFile transformed = session.create(flowFile);
@@ -259,62 +261,112 @@ public class GeoPackageReader extends AbstractProcessor {
 				int tileMatrixBuffLen = jsonTileMatricies.getBytes().length;
 				byte[] compTileMatrix = GeoUtils.zipTileMatrixToBytes(jsonTileMatricies);
 				byte[] encoded = Base64.getEncoder().encode(compTileMatrix);
-				
 
-				final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
-				if (records.isEmpty() == false) {
-	                final long importStart = System.nanoTime();
-	                // Create flowfile
-	                FlowFile transformed = session.create(flowFile);
-	                
-	                //Get geo attributes
-	                CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageTilesTable(file,geoPackage.tiles().get(i));
-	                TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
-	                String imgType = GeoUtils.getImageFormat(r.next().getData());
-
-                    RecordSchema recordSchema = records.get(0).getSchema();                
-                    transformed = session.write(transformed, new OutputStreamCallback() {
-                        @Override
-                        public void process(final OutputStream out) throws IOException {
-                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-                			@SuppressWarnings("resource")  
-                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
-                			writer.write(new ListRecordSet(recordSchema, records));
-                        }
-                    });                
-					
-                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
-	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
-	                
-	                String szEnvelop = envelope.toString().substring(envelope.toString().indexOf("["));
-	                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
-	                
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
-	                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-	                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-	                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());
-	                
-	                int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
-	                
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
-	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));
-	                
-	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
-	                  
-	                final long importNanos = System.nanoTime() - importStart;
-	                final long importMillis = TimeUnit.MILLISECONDS.convert(importNanos, TimeUnit.NANOSECONDS);
-	                
-	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), importMillis);
-	                logger.info("Tiles added {} to flow", new Object[]{transformed});
-	                session.adjustCounter("Records Read", records.size(), false);
-	                session.transfer(transformed, REL_SUCCESS); 
+                //Get geo attributes
+                CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageTilesTable(file,geoPackage.tiles().get(i));
+                TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
+                String imgType = GeoUtils.getImageFormat(r.next().getData());
+                int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
+                String szEnvelop = envelope.toString().substring(envelope.toString().indexOf("["));
+                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
+                
+                final RecordSchema recordSchema = GeoUtils.createTileRecordSchema(t);
+                
+				int maxRecord = GeoUtils.getTileRecordCount(geoPackage, t);
+				if (maxRecord <= 0) {
+					return;
 				}
+				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
+					final String fragmentIdentifier = UUID.randomUUID().toString();
+					int fragmentIndex = 0;
+					int from = 1;
+					int to = 0;
+					while (from < maxRecord) {
+						final StopWatch stopWatch = new StopWatch(true);
+						to = from + maxRowsPerFlowFile;
+						if (to > maxRecord)
+							to = maxRecord;
+		                final List<Record> records = GeoUtils.getNifiRecordSegmentsFromTileEntry(geoPackage,t,from,to);
+		                if (records.isEmpty() == false) {
+			                // Create flowfile
+			                FlowFile transformed = session.create(flowFile);			                           
+		                    transformed = session.write(transformed, new OutputStreamCallback() {
+		                        @Override
+		                        public void process(final OutputStream out) throws IOException {
+		                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+		                			@SuppressWarnings("resource")  
+		                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
+		                			writer.write(new ListRecordSet(recordSchema, records));
+		                        }
+		                    });                
+							
+		                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
+			                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");             
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
+			                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+			                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+			                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));			                
+			                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
+							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
+							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName() + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+			         
+			                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+			                logger.info("Tiles added {} to flow", new Object[]{transformed});
+			                session.adjustCounter("Records Read", records.size(), false);
+			                session.transfer(transformed, REL_SUCCESS); 
+		                }
+						from = to;
+						fragmentIndex++;
+					}
+				}
+				else {
+					final StopWatch stopWatch = new StopWatch(true);
+					final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
+					if (records.isEmpty() == false) {
+
+		                // Create flowfile
+		                FlowFile transformed = session.create(flowFile);		                               
+	                    transformed = session.write(transformed, new OutputStreamCallback() {
+	                        @Override
+	                        public void process(final OutputStream out) throws IOException {
+	                			final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+	                			@SuppressWarnings("resource")  
+	                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
+	                			writer.write(new ListRecordSet(recordSchema, records));
+	                        }
+	                    });                
+						
+	                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
+		                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
+		                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+		                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+		                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());		                		                
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));		                
+		                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
+		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
+		                  
+		                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+		                logger.info("Tiles added {} to flow", new Object[]{transformed});
+		                session.adjustCounter("Records Read", records.size(), false);
+		                session.transfer(transformed, REL_SUCCESS); 
+					}					
+				}
+
 			}
 			geoPackage.close();
 			

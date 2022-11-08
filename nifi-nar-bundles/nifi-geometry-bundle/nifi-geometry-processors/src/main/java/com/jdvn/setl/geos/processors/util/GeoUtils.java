@@ -99,6 +99,11 @@ public class GeoUtils {
     public static final String GEOPACKAGE_CONTENTS = "gpkg_contents";
     public static final String GEOMETRY_COLUMNS = "gpkg_geometry_columns";
     public static final String SPATIAL_REF_SYS = "gpkg_spatial_ref_sys";
+    public static final String GPKG_TILE_ZOOM = "zoom_level";    
+    public static final String GPKG_TILE_COLUMN = "tile_column";
+    public static final String GPKG_TILE_ROW = "tile_row";
+    public static final String GPKG_TILE_DATA = "tile_data";
+    
     public static final String DATA_COLUMNS = "gpkg_data_columns";
     protected static final int GENERIC_GEOGRAPHIC_SRID = 0;
     protected static final int GENERIC_PROJECTED_SRID = -1;
@@ -151,7 +156,7 @@ public class GeoUtils {
 		}
 		return featureIds;
 	}
-	public static RecordSchema createRecordSchema(SimpleFeatureSource featureSource) {
+	public static RecordSchema createFeatureRecordSchema(SimpleFeatureSource featureSource) {
 		SimpleFeatureType schema = featureSource.getSchema();
 		final List<RecordField> fields = new ArrayList<>();
 		boolean hasIDField = false;
@@ -215,7 +220,7 @@ public class GeoUtils {
 	public static ArrayList<Record> getNifiRecordsFromShapeFile(final SimpleFeatureSource featureSource) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
-			final RecordSchema recordSchema = createRecordSchema(featureSource);
+			final RecordSchema recordSchema = createFeatureRecordSchema(featureSource);
 			SimpleFeatureCollection features = featureSource.getFeatures();
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
 			while (it.hasNext()) {
@@ -461,48 +466,105 @@ public class GeoUtils {
 		return null;
 	}
 
-	public static ArrayList<Record> getNifiRecordsFromTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
-		final ArrayList<Record> returnRs = new ArrayList<Record>();
-
+	public static RecordSchema createTileRecordSchema(final TileEntry tileEntry) {
+		
 		final List<Field> tileFields = new ArrayList<>();
-		tileFields.add(new Field("zoom", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("column", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("row", Schema.create(Type.INT), null, (Object) null));
-		tileFields.add(new Field("data", Schema.create(Type.BYTES), null, (Object) null));
+		tileFields.add(new Field(GPKG_TILE_ZOOM, Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field(GPKG_TILE_COLUMN, Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field(GPKG_TILE_ROW, Schema.create(Type.INT), null, (Object) null));
+		tileFields.add(new Field(GPKG_TILE_DATA, Schema.create(Type.BYTES), null, (Object) null));
 		final Schema schema = Schema.createRecord(tileEntry.getTableName(), null, null, false);
-
 		schema.setFields(tileFields);
-
+		
+		return AvroTypeUtil.createSchema(schema);
+	}	
+	public static ArrayList<Record> getNifiRecordsFromTileEntry(final GeoPackage geoPackage, final TileEntry tileEntry) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		
+		RecordSchema schema = createTileRecordSchema(tileEntry);
 		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
 			while (r.hasNext()) {
 				Tile tile = r.next();
 
 				Map<String, Object> fieldMap = new HashMap<String, Object>();
-				fieldMap.put("zoom", tile.getZoom());
-				fieldMap.put("column", tile.getColumn());
-				fieldMap.put("row", tile.getRow());
-				fieldMap.put("data", tile.getData());
+				fieldMap.put(GPKG_TILE_ZOOM, tile.getZoom());
+				fieldMap.put(GPKG_TILE_COLUMN, tile.getColumn());
+				fieldMap.put(GPKG_TILE_ROW, tile.getRow());
+				fieldMap.put(GPKG_TILE_DATA, tile.getData());
 
-				Record tileRecord = new MapRecord(AvroTypeUtil.createSchema(schema), fieldMap);
+				Record tileRecord = new MapRecord(schema, fieldMap);
 				returnRs.add(tileRecord);
 			}
 			r.close();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 		return returnRs;
 	}
+	public static int getTileRecordCount(final GeoPackage geoPackage, final TileEntry tileEntry) {
+
+		int count = 0;
+		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+			
+			while (r.hasNext()) {
+				Tile tile = r.next();
+				if (tile != null)
+					count++;
+			}
+			r.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return count;
+	}	
+	public static ArrayList<Record> getNifiRecordSegmentsFromTileEntry(final GeoPackage geoPackage, final TileEntry tileEntry, final int recordFrom, final int recordTo ) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		RecordSchema recordSchema = createTileRecordSchema(tileEntry);
+		
+		StringBuffer sql = new StringBuffer("SELECT rowid as ROWID, * FROM ");
+		sql.append(tileEntry.getTableName());
+		sql.append(" WHERE rowid >= ").append(Integer.toString(recordFrom));
+		sql.append(" AND ").append(" rowid < ").append(Integer.toString(recordTo));		
+		try {
+			final DataSource connPool = geoPackage.getDataSource();
+			Connection cx = connPool.getConnection();
+			PreparedStatement ps = cx.prepareStatement(sql.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+            	while (rs.next()) {
+            		Map<String, Object> fieldMap = new HashMap<String, Object>();
+                    for (final RecordField field : recordSchema.getFields()) {
+                        final String fieldName = field.getFieldName();
+                        String key = fieldName;
+                        final Object value = rs.getObject(fieldName);
+    					fieldMap.put(key, value);
+                    }
+    				Record r = new MapRecord(recordSchema, fieldMap);
+    				returnRs.add(r);                    
+            	}
+            	rs.close();
+            	return returnRs;
+            } catch (Exception e) {
+				e.printStackTrace();
+			}
+			finally {
+				ps.close();
+				cx.close();
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		return returnRs;
+	}	
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static List<Tile> getTilesFromNifiRecords(final String entryName, final RecordReader avroReader, CoordinateReferenceSystem crs_source) {
 		List<Tile> tiles = new ArrayList();
 		Record record;
 		try {
 			while ((record = avroReader.nextRecord()) != null) {
-				int zoom      = record.getAsInt("zoom");
-				int column    = record.getAsInt("column");
-				int row       = record.getAsInt("row");
-				ByteBuffer bb = AvroTypeUtil.convertByteArray((Object[]) record.getValue("data"));
+				int zoom      = record.getAsInt(GPKG_TILE_ZOOM);
+				int column    = record.getAsInt(GPKG_TILE_COLUMN);
+				int row       = record.getAsInt(GPKG_TILE_ROW);
+				ByteBuffer bb = AvroTypeUtil.convertByteArray((Object[]) record.getValue(GPKG_TILE_DATA));
 				tiles.add(new Tile(zoom,column,row, bb.array()));
 			}
 		} catch (IOException | MalformedRecordException e) {
@@ -770,8 +832,7 @@ public class GeoUtils {
 		} catch (DataFormatException | JsonProcessingException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		} 	
-		System.out.println(items.toString());
+		}
 		return items;
 	}
 	public static String getImageFormat(byte[] data) throws IOException {
