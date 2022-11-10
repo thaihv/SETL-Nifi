@@ -53,10 +53,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
     protected Set<Relationship> relationships;
 
     // Properties
-    
     public static final AllowableValue ON_USE = new AllowableValue("Use Exists", "Use Exists", "Keep using the tables and triggers created from previously SETL jobs");
-    public static final AllowableValue RE_CREATE_ALL = new AllowableValue("Re-Create-All", "Re-Create-All", "Drop and create new all event tables and triggers to start SETL process from now on");
-    public static final AllowableValue RE_CREATE_TABLES = new AllowableValue("Renew-Table", "Renew-Table", "Drop and create new only event tables");
+    public static final AllowableValue RE_CREATED_ALL = new AllowableValue("Re-Created", "Re-Created", "Drop and create new all event tables and triggers to start SETL process");
+    public static final AllowableValue RE_NEW_EVENTS = new AllowableValue("Renew-Table", "Renew-Table", "Erase all data from event tables");
     
     public static final PropertyDescriptor GSS_SERVICE = new PropertyDescriptor.Builder()
             .name("Database Connection Pooling Service")
@@ -108,7 +107,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
             .displayName("Generate SETL event trackers")
             .description("Create tables and triggers to track changes from the source table. The information from this event trackers is useful to update to the target on PutGSS processor")
             .required(true)
-            .allowableValues(ON_USE, RE_CREATE_TABLES, RE_CREATE_ALL)
+            .allowableValues(ON_USE, RE_NEW_EVENTS, RE_CREATED_ALL)
             .defaultValue(ON_USE.getValue())
             .build();
     
@@ -203,7 +202,22 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			e.printStackTrace();
 		}
 	}
+	void deleteAllFromSETLEventTable(Connection connection, String tableName) throws SQLException {
+		try {
+			Statement stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
 
+			sqlBuilder.append("DELETE FROM ");
+			sqlBuilder.append(tableName);
+
+			stmt.execute(sqlBuilder.toString());
+			getLogger().info("All data in event tracker table for " + tableName + " is deleted.!");
+			stmt.close();					
+		} catch (SQLException e) {
+			getLogger().warn("Sorry, The table for event trackers can not deleted for some reason!");
+			e.printStackTrace();
+		}
+	}
 	UUID createGUIDfromFkey(Connection connection, String tableName, int FID) {
 		try {
 			DatabaseMetaData meta = connection.getMetaData();
@@ -421,10 +435,13 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 				if (!bExist) {
 					createSETLEventTable(con, setl_table);
 				} else {
-					if (use_evt_trackers.equals("Re-Create-All") || use_evt_trackers.equals("Renew-Table")) {
+					if (use_evt_trackers.equals("Re-Created")) {
 						dropSETLEventTable(con, setl_table);
 						createSETLEventTable(con, setl_table);
+					}else if (use_evt_trackers.equals("Renew-Table")) {
+						deleteAllFromSETLEventTable(con, setl_table);
 					}
+						
 					
 				}
 
@@ -432,7 +449,7 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 				if (!bExist) {
 					createSETLTriggers(con, tableName, setl_table);
 				} else {
-					if (use_evt_trackers.equals("Re-Create-All")) {
+					if (use_evt_trackers.equals("Re-Created")) {
 						dropSETLTrigger(con, setl_table);
 						String gTrigger = EVENT_PREFIX + getGeometryTableNameFromGSS(con, tableName);
 						dropSETLTrigger(con, gTrigger);
