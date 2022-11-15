@@ -359,6 +359,7 @@ public class ShpReader extends AbstractProcessor {
 									final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
 											CodecFactory.nullCodec());
 									writer.write(new ListRecordSet(recordSchema, records));
+									writer.flush();
 								}
 							});
 
@@ -402,6 +403,7 @@ public class ShpReader extends AbstractProcessor {
 								final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
 										CodecFactory.nullCodec());
 								writer.write(new ListRecordSet(recordSchema, records));
+								writer.flush();
 							}
 						});
 						session.remove(flowFile);

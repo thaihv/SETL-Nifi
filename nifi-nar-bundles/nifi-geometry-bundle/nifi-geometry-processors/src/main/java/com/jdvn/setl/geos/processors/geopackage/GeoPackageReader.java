@@ -193,6 +193,7 @@ public class GeoPackageReader extends AbstractProcessor {
 		                			@SuppressWarnings("resource")  
 		                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
 		                			writer.write(new ListRecordSet(recordSchema, records));
+		                			writer.flush();
 		                        }
 		                    });                
 		                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
@@ -228,6 +229,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                			@SuppressWarnings("resource")  
 	                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
 	                			writer.write(new ListRecordSet(recordSchema, records));
+	                			writer.flush();
 	                        }
 	                    });
 	                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
@@ -297,6 +299,7 @@ public class GeoPackageReader extends AbstractProcessor {
 		                			@SuppressWarnings("resource")  
 		                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
 		                			writer.write(new ListRecordSet(recordSchema, records));
+		                			writer.flush();
 		                        }
 		                    });                
 							
@@ -341,6 +344,7 @@ public class GeoPackageReader extends AbstractProcessor {
 	                			@SuppressWarnings("resource")  
 	                			final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.nullCodec());            				
 	                			writer.write(new ListRecordSet(recordSchema, records));
+	                			writer.flush();
 	                        }
 	                    });                
 						
