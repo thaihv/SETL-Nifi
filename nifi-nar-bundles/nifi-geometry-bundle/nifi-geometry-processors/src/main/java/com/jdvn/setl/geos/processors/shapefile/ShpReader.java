@@ -357,7 +357,7 @@ public class ShpReader extends AbstractProcessor {
 									final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
 									@SuppressWarnings("resource")
 									final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
-											CodecFactory.nullCodec());
+											CodecFactory.bzip2Codec());
 									writer.write(new ListRecordSet(recordSchema, records));
 									writer.flush();
 								}
@@ -401,7 +401,7 @@ public class ShpReader extends AbstractProcessor {
 								final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
 								@SuppressWarnings("resource")
 								final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
-										CodecFactory.nullCodec());
+										CodecFactory.bzip2Codec());
 								writer.write(new ListRecordSet(recordSchema, records));
 								writer.flush();
 							}

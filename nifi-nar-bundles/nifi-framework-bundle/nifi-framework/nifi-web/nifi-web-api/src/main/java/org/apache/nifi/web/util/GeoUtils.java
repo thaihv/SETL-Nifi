@@ -136,11 +136,11 @@ public class GeoUtils {
 				datumReader)) {
 			while (dataFileReader.hasNext()) {
 				final GenericData.Record record = dataFileReader.next();
-				Long zoom = Long.parseLong(record.get("zoom").toString());
-				Long column = Long.parseLong(record.get("column").toString());
-				Long row = Long.parseLong(record.get("row").toString());
+				Long zoom = Long.parseLong(record.get("zoom_level").toString());
+				Long column = Long.parseLong(record.get("tile_column").toString());
+				Long row = Long.parseLong(record.get("tile_row").toString());
 				if ((zoom == z.getLong()) && (column == x.getLong()) && (row == y.getLong())) {
-					bais = new ByteArrayInputStream(getBytes((ByteBuffer) record.get("data")));
+					bais = new ByteArrayInputStream(getBytes((ByteBuffer) record.get("tile_data")));
 					break;
 				}
 			}
