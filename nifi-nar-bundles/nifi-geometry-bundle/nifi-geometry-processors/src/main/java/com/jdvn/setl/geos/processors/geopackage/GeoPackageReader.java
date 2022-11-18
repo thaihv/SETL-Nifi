@@ -168,9 +168,6 @@ public class GeoPackageReader extends AbstractProcessor {
 				String geofieldName = selectedfeatures.getSchema().getGeometryDescriptor().getLocalName();
 				
 				int maxRecord = featureSource.getFeatures().size();
-				if (maxRecord <= 0) {
-					return;
-				}
 				final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					final String fragmentIdentifier = UUID.randomUUID().toString();
@@ -219,9 +216,9 @@ public class GeoPackageReader extends AbstractProcessor {
 				else {
 					final StopWatch stopWatch = new StopWatch(true);
 	                final List<Record> records = GeoUtils.getNifiRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
+                    FlowFile transformed = session.create(flowFile);
+    				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);  
 	                if (records.isEmpty() == false) {
-	                    FlowFile transformed = session.create(flowFile);
-	    				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);             
 	                    transformed = session.write(transformed, new OutputStreamCallback() {
 	                        @Override
 	                        public void process(final OutputStream out) throws IOException {
@@ -232,21 +229,21 @@ public class GeoPackageReader extends AbstractProcessor {
 	                			writer.flush();
 	                        }
 	                    });
-	                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
-	                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
-	                    transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-	                    transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
+	                }	
+                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
+                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
+                    transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+                    transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
 
-	                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-	                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
-	                      
-	                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-	                    logger.info("Features added {} to flow", new Object[]{transformed});
-	                    session.adjustCounter("Records Read", records.size(), false);
-	                    session.transfer(transformed, REL_SUCCESS); 
-	                }					
+                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+                      
+                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+                    logger.info("Features added {} to flow", new Object[]{transformed});
+                    session.adjustCounter("Records Read", records.size(), false);
+                    session.transfer(transformed, REL_SUCCESS); 				
 				}
  
 			}
@@ -275,9 +272,6 @@ public class GeoPackageReader extends AbstractProcessor {
                 final RecordSchema recordSchema = GeoUtils.createTileRecordSchema(t);
                 
 				int maxRecord = GeoUtils.getTileRecordCount(geoPackage, t);
-				if (maxRecord <= 0) {
-					return;
-				}
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					final String fragmentIdentifier = UUID.randomUUID().toString();
 					int fragmentIndex = 0;
@@ -333,10 +327,9 @@ public class GeoPackageReader extends AbstractProcessor {
 				else {
 					final StopWatch stopWatch = new StopWatch(true);
 					final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
+	                // Create flowfile
+	                FlowFile transformed = session.create(flowFile);	
 					if (records.isEmpty() == false) {
-
-		                // Create flowfile
-		                FlowFile transformed = session.create(flowFile);		                               
 	                    transformed = session.write(transformed, new OutputStreamCallback() {
 	                        @Override
 	                        public void process(final OutputStream out) throws IOException {
@@ -346,29 +339,28 @@ public class GeoPackageReader extends AbstractProcessor {
 	                			writer.write(new ListRecordSet(recordSchema, records));
 	                			writer.flush();
 	                        }
-	                    });                
-						
-	                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
-		                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
-		                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-		                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-		                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());		                		                
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));		                
-		                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
-		                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
-		                  
-		                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-		                logger.info("Tiles added {} to flow", new Object[]{transformed});
-		                session.adjustCounter("Records Read", records.size(), false);
-		                session.transfer(transformed, REL_SUCCESS); 
+	                    }); 
 					}					
+                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
+	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
+	                transformed = session.putAttribute(transformed, GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN, String.valueOf(tileMatrixBuffLen));
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RASTER_TYPE.key(), imgType);
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+	                transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+	                transformed = session.putAttribute(transformed, RESULT_TABLENAME, t.getTableName());		                		                
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MIN.key(), String.valueOf(minMax[0]));
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ZOOM_MAX.key(), String.valueOf(minMax[1]));		                
+	                transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geotiles");
+	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), t.getTableName());
+	                  
+	                session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+	                logger.info("Tiles added {} to flow", new Object[]{transformed});
+	                session.adjustCounter("Records Read", records.size(), false);
+	                session.transfer(transformed, REL_SUCCESS); 										
 				}
 
 			}

@@ -85,6 +85,7 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
+import org.geotools.data.shapefile.ShapefileDataStore;
 import org.geotools.data.simple.SimpleFeatureSource;
 import org.opengis.filter.identity.FeatureId;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -295,10 +296,12 @@ public class ShpReader extends AbstractProcessor {
 
         final ListIterator<File> itr = files.listIterator();
         FlowFile flowFile = null;
+        File currentfile = null;
         try {
             final Path directoryPath = directory.toPath();
             while (itr.hasNext()) {
                 final File file = itr.next();
+                currentfile = file;
                 final Path filePath = file.toPath();
                 final Path relativePath = directoryPath.relativize(filePath.getParent());
                 String relativePathString = relativePath.toString() + "/";
@@ -327,11 +330,6 @@ public class ShpReader extends AbstractProcessor {
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
 				int maxRecord = featureSource.getFeatures().size();
-				if (maxRecord <= 0) {
-					session.remove(flowFile);
-					logger.info("No records has been founded!");
-					return;
-				}
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					int from = 0;
 					int to = 0;
@@ -368,6 +366,7 @@ public class ShpReader extends AbstractProcessor {
 									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+							transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, ((ShapefileDataStore)dataStore).getCharset().name());							
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
 							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
@@ -391,9 +390,9 @@ public class ShpReader extends AbstractProcessor {
 				} else {
 					final StopWatch stopWatch = new StopWatch(true);
 					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource);
+					FlowFile transformed = session.create(flowFile);
+					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
 					if (records.size() > 0) {
-						FlowFile transformed = session.create(flowFile);
-						CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
 						RecordSchema recordSchema = records.get(0).getSchema();
 						transformed = session.write(transformed, new OutputStreamCallback() {
 							@Override
@@ -406,22 +405,23 @@ public class ShpReader extends AbstractProcessor {
 								writer.flush();
 							}
 						});
-						session.remove(flowFile);
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
-						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-						if (myCrs != null) {
-							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
-						}
-						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-						logger.info("added {} to flow", new Object[] { transformed });
-						dataStore.dispose();
-						session.adjustCounter("Records Read", records.size(), false);
-						session.transfer(transformed, REL_SUCCESS);
 					}
+					session.remove(flowFile);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+					transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, ((ShapefileDataStore)dataStore).getCharset().name());
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+					if (myCrs != null) {
+						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+					}
+					session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+					logger.info("added {} to flow", new Object[] { transformed });
+					dataStore.dispose();
+					session.adjustCounter("Records Read", records.size(), false);
+					session.transfer(transformed, REL_SUCCESS);					
 				}
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
                     queueLock.lock();
@@ -437,7 +437,7 @@ public class ShpReader extends AbstractProcessor {
                 }
             }
         } catch (final Exception e) {
-            logger.error("Failed to retrieve files due to {}", e);
+            logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
 
             // anything that we've not already processed needs to be put back on the queue
             if (flowFile != null) {

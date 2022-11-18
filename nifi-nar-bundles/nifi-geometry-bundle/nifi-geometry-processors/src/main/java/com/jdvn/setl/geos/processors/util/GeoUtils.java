@@ -99,6 +99,7 @@ public class GeoUtils {
     public static final String GEOPACKAGE_CONTENTS = "gpkg_contents";
     public static final String GEOMETRY_COLUMNS = "gpkg_geometry_columns";
     public static final String SPATIAL_REF_SYS = "gpkg_spatial_ref_sys";
+    public static final String GEO_CHAR_SET = "geo.charset";
     public static final String GPKG_TILE_ZOOM = "zoom_level";    
     public static final String GPKG_TILE_COLUMN = "tile_column";
     public static final String GPKG_TILE_ROW = "tile_row";
