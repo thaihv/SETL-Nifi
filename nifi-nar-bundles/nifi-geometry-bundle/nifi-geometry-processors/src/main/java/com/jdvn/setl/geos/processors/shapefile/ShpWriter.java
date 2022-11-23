@@ -130,7 +130,7 @@ public class ShpWriter extends AbstractProcessor {
             .name("Character Set")
             .description("The name of charset for attributes in target shapfiles")
             .required(true)
-            .defaultValue("ISO-8859-1")
+            .defaultValue("UTF-8")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();

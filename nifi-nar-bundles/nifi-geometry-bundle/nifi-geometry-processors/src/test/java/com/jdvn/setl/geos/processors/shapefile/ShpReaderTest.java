@@ -21,20 +21,31 @@ import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
+import org.apache.nifi.avro.AvroReaderWithEmbeddedSchema;
+import org.apache.nifi.avro.AvroRecordReader;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.GeoAttributes;
+import org.apache.nifi.serialization.MalformedRecordException;
+import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.util.MockFlowFile;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
+import org.geotools.data.DataStore;
+import org.geotools.data.DataStoreFinder;
+import org.geotools.data.shapefile.ShapefileDataStore;
+import org.geotools.data.simple.SimpleFeatureSource;
 import org.geotools.referencing.CRS;
 import org.junit.Before;
 import org.junit.Test;
@@ -44,7 +55,6 @@ import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.operation.TransformException;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
-
 
 public class ShpReaderTest {
 
@@ -66,12 +76,11 @@ public class ShpReaderTest {
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
         runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
         runner.setProperty(ShpReader.FILE_FILTER, ".*\\.shp");
-        //runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_BULD.shp");
         
         runner.run();
 
-        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 3);  // Batch Size = 10 default
-        runner.assertTransferCount(ShpReader.REL_SUCCESS, 3);
+        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 4);  // Batch Size = 10 default
+        runner.assertTransferCount(ShpReader.REL_SUCCESS, 4);
         final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
 
         final String path = successFiles.get(0).getAttribute("path");
@@ -82,17 +91,10 @@ public class ShpReaderTest {
 
     }
     @Test
-    public void testGeoSpatialDataFlow() throws IOException {
+    public void testGeoSpatialDataFlow() throws IOException, FactoryException {
         final File directory = new File("src/test/resources/admzone");
-        final File inFile = new File("src/test/resources/admzone/CRIMINAL_TRACE.shp");
-        final Path inPath = inFile.toPath();
-        final File destFile = new File(directory, inFile.getName());
-        final Path targetPath = destFile.toPath();
-        Files.copy(inPath, targetPath);
-
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
         runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
-        //runner.setProperty(ShpReader.FILE_FILTER, ".*\\.shp");
         runner.setProperty(ShpReader.FILE_FILTER, "CRIMINAL_TRACE.shp");
         
         runner.run();
@@ -100,31 +102,24 @@ public class ShpReaderTest {
         runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);  // Batch Size = 10 default
         runner.assertTransferCount(ShpReader.REL_SUCCESS, 1);
         final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
-        System.out.println(successFiles.get(0).getContent());
-
         final String crs = successFiles.get(0).getAttribute(GeoAttributes.CRS.key());
-        System.out.println("Geo Data CRS: " + crs);
+        final CoordinateReferenceSystem crs_source = CRS.parseWKT(crs);
+        assertEquals("VN:VN_2000_UTM_Zone_48N", crs_source.getName().toString());
+		AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(successFiles.get(0).getContentStream());
+		Record record;
+		try {
+			while ((record = reader.nextRecord()) != null) {
+				String geomFieldName = GeoUtils.getGeometryFieldName(record);
+				String geovalue = record.getAsString(geomFieldName);
+				assertEquals("MULTIPOINT ((311254.1662353067 2335875.925256511))", geovalue);  // first record
+				break;
+			}
+		} catch (MalformedRecordException e) {
+			e.printStackTrace();
+		}
+        
 	
     }    
-    @Test
-    public void testAShapeFilePickedUp() throws IOException {
-        final File directory = new File("src/test/resources/koreanmap");
-
-        final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
-        runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
-        runner.setProperty(ShpReader.FILE_FILTER, "LV14_SPBD_BULD.shp");
-        runner.run();
-
-        runner.assertAllFlowFilesTransferred(ShpReader.REL_SUCCESS, 1);
-        final List<MockFlowFile> successFiles = runner.getFlowFilesForRelationship(ShpReader.REL_SUCCESS);
-
-        final String path = successFiles.get(0).getAttribute("path");
-        assertEquals("/", path);
-        final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
-        System.out.println(absolutePath);
-        final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
-        System.out.println(mimeType);
-    }
     @Test
     public void testAttributes() throws IOException {
         final File directory = new File("src/test/resources/admzone");
@@ -161,7 +156,7 @@ public class ShpReaderTest {
     }
     @Test
     public void testDefaultProperties() throws IOException {
-        final File directory = new File("C:\\Download\\setl_in");
+        final File directory = new File("src/test/resources/admzone");
 
         final TestRunner runner = TestRunners.newTestRunner(new ShpReader());
         runner.setProperty(ShpReader.DIRECTORY, directory.getAbsolutePath());
@@ -174,9 +169,9 @@ public class ShpReaderTest {
         final String path = successFiles.get(0).getAttribute("path");
         assertEquals("/", path);
         final String absolutePath = successFiles.get(0).getAttribute(CoreAttributes.FILENAME.key());
-        System.out.println(absolutePath);
+        assertEquals("HaNoi_communes.shp", absolutePath);
         final String mimeType = successFiles.get(0).getAttribute(CoreAttributes.MIME_TYPE.key());
-        System.out.println(mimeType);
+        assertEquals("application/avro+geowkt", mimeType);
     }   
     @Test
     public void testProjectedKoreanCoordinatesToDecimalDegree() throws FactoryException, TransformException {
@@ -195,8 +190,6 @@ public class ShpReaderTest {
         double expectedLongitude = 131.0999928;
         double expectedLatitude = 40.0099721;
 
-        System.out.println("EPSG : 5179 -->4326");
-        System.out.println(result);
         assertEquals(expectedLongitude, result.getY(), 0.00001);
         assertEquals(expectedLatitude, result.getX(), 0.00001);
     } 
@@ -216,10 +209,42 @@ public class ShpReaderTest {
         double expectedLongitude = 105.4595182204;
         double expectedLatitude =  21.23415875713;
 
-        System.out.println("EPSG : 3405 --> 4326");
-        System.out.println(result);
         assertEquals(expectedLongitude, result.getY(), 0.00001);
         assertEquals(expectedLatitude, result.getX(), 0.00001);
     }     
+    @Test
+    public void testEncodingConversion() throws IOException {
+        System.out.println("file.encoding=" + System.getProperty("file.encoding"));
+        
+        final File file_utf8 = new File("src/test/resources/admzone/TK_OSM_roads_WGS84.shp");
+		Map<String, Object> mapAttrs = new HashMap<>();
+		mapAttrs.put("url", file_utf8.toURI().toURL());
+		DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+		String typeName = dataStore.getTypeNames()[0];
+		SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+		
+		featureSource.getFeatures().size(); // Why need call some functions like this to get right charset ?
+		
+		Charset charset = ((ShapefileDataStore)dataStore).getCharset(); 
+		List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource, charset);
+		String value1 = records.get(0).getAsString("RD_Type");
+		String value2 = records.get(0).getAsString("Add_");
+		assertEquals("Đường đô thị", value1);
+		assertEquals("Hòa Thuận, An Mỹ, An Xuân, An Sơn", value2);     
+		
+        
+        final File file_EUC_KR = new File("src/test/resources/koreanmap/LV14_SPSB_STATN.shp");
+        Map<String, Object> mapAttrs_1 = new HashMap<>();
+        mapAttrs_1.put("url", file_EUC_KR.toURI().toURL());
+        DataStore dataStore_1 = DataStoreFinder.getDataStore(mapAttrs_1);
+		String typeName_1 = dataStore_1.getTypeNames()[0];
+		SimpleFeatureSource featureSource_1 = dataStore_1.getFeatureSource(typeName_1);
+		
+		featureSource_1.getFeatures().size();
+		Charset charset_1 = ((ShapefileDataStore)dataStore_1).getCharset();
+		List<Record> records_1 = GeoUtils.getNifiRecordsFromShapeFile(featureSource_1, charset_1);
+		assertEquals("신분당선", records_1.get(0).getAsString("KOR_SBR_NM"));
+		assertEquals("강남역", records_1.get(0).getAsString("KOR_SUB_NM")); 
 
+    }   
 }

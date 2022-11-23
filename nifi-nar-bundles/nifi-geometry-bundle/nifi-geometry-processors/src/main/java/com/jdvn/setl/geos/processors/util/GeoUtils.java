@@ -5,6 +5,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -218,7 +219,7 @@ public class GeoUtils {
 		RecordSchema recordSchema = new SimpleRecordSchema(fields);
 		return recordSchema;
 	}	
-	public static ArrayList<Record> getNifiRecordsFromShapeFile(final SimpleFeatureSource featureSource) {
+	public static ArrayList<Record> getNifiRecordsFromShapeFile(final SimpleFeatureSource featureSource, Charset charset) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			final RecordSchema recordSchema = createFeatureRecordSchema(featureSource);
@@ -230,7 +231,26 @@ public class GeoUtils {
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
 					Object value = feature.getAttribute(i);
-					fieldMap.put(key, value);						
+					if (value instanceof String && !charset.name().toLowerCase().equals("utf-8")) {
+						String str = (String) value;
+
+						
+//						System.out.println("Original: " + str);
+//						// Check encoded sizes
+//						byte[] utf8Bytes = str.getBytes("ISO-8859-1");
+//						System.out.println(new String(utf8Bytes)); 
+//						System.out.println(new String(utf8Bytes, "ISO-8859-1"));
+//						
+//						String Unicode = new String(str.getBytes(charset.name()));
+//						System.out.println("Unicode : " + Unicode);
+//						String back = new String(str.getBytes(charset.name()),charset.name());
+//						System.out.println("Backward: " + back);
+						
+						
+						fieldMap.put(key, new String(str.getBytes(charset.name()),Charset.forName("x-windows-949"))); // ISO-2022-KR ; 
+					}
+					else
+						fieldMap.put(key, value);						
 				}
 				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
 					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
@@ -247,7 +267,7 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
-	public static ArrayList<Record> getNifiRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds ) {
+	public static ArrayList<Record> getNifiRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds, Charset charset ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			FilterFactory ff = CommonFactoryFinder.getFilterFactory(null);
@@ -267,7 +287,12 @@ public class GeoUtils {
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
 					Object value = feature.getAttribute(i);
-					fieldMap.put(key, value);						
+					if (value instanceof String && !charset.name().toLowerCase().equals("utf-8")) {
+						String str = (String) value;
+						fieldMap.put(key, new String(str.getBytes(charset.name())));
+					}
+					else
+						fieldMap.put(key, value);						
 				}
 				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
 					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());

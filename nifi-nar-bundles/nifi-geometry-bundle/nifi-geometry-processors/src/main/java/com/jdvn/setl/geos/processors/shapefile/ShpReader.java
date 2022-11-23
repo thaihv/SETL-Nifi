@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -141,6 +142,13 @@ public class ShpReader extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
+            .build();  
+    public static final PropertyDescriptor DELETE_EMPTY_FLOWFILE = new PropertyDescriptor.Builder()
+            .name("Delete Zero-Record FlowFiles")
+            .description("If true, the FlowFile with zero records is deleted.")
+            .required(true)
+            .allowableValues("true", "false")
+            .defaultValue("true")
             .build();    
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
@@ -215,6 +223,7 @@ public class ShpReader extends AbstractProcessor {
         properties.add(BATCH_SIZE);
         properties.add(MAX_ROWS_PER_FLOW_FILE);
         properties.add(KEEP_SOURCE_FILE);
+        properties.add(DELETE_EMPTY_FLOWFILE);        
         properties.add(RECURSE);
         properties.add(POLLING_INTERVAL);
         properties.add(IGNORE_HIDDEN_FILES);
@@ -246,6 +255,8 @@ public class ShpReader extends AbstractProcessor {
 
         final File directory = new File(context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue());
         final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
+        final boolean deleteZeroFlowFile = context.getProperty(DELETE_EMPTY_FLOWFILE).asBoolean();
+        
         final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
         final ComponentLog logger = getLogger();
 
@@ -329,7 +340,8 @@ public class ShpReader extends AbstractProcessor {
 				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-				int maxRecord = featureSource.getFeatures().size();
+				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?
+				Charset charset_in = ((ShapefileDataStore)dataStore).getCharset();
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					int from = 0;
 					int to = 0;
@@ -343,9 +355,8 @@ public class ShpReader extends AbstractProcessor {
 						to = from + maxRowsPerFlowFile;
 						if (to > maxRecord)
 							to = maxRecord;
-
 						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getNifiRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds);
+						List<Record> records = GeoUtils.getNifiRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds, charset_in);
 						if (records.size() > 0) {
 							FlowFile transformed = session.create(flowFile);
 							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -366,7 +377,7 @@ public class ShpReader extends AbstractProcessor {
 									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, ((ShapefileDataStore)dataStore).getCharset().name());							
+							transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());							
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
 							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
@@ -389,7 +400,7 @@ public class ShpReader extends AbstractProcessor {
 					
 				} else {
 					final StopWatch stopWatch = new StopWatch(true);
-					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource);
+					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource, charset_in);
 					FlowFile transformed = session.create(flowFile);
 					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
 					if (records.size() > 0) {
@@ -406,22 +417,31 @@ public class ShpReader extends AbstractProcessor {
 							}
 						});
 					}
-					session.remove(flowFile);
-					transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-					transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
-					transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-					transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-					transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, ((ShapefileDataStore)dataStore).getCharset().name());
-					transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-					if (myCrs != null) {
-						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+					if (records.size() == 0 && deleteZeroFlowFile == true) {
+						session.remove(flowFile);
+						logger.info("deleted {} from flow", new Object[] { transformed });
+						dataStore.dispose();
+						session.remove(transformed);
 					}
-					session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-					logger.info("added {} to flow", new Object[] { transformed });
-					dataStore.dispose();
-					session.adjustCounter("Records Read", records.size(), false);
-					session.transfer(transformed, REL_SUCCESS);					
+					else {	
+						session.remove(flowFile);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+						if (myCrs != null) {
+							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+						}
+						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+						logger.info("added {} to flow", new Object[] { transformed });
+						dataStore.dispose();
+						session.adjustCounter("Records Read", records.size(), false);
+						session.transfer(transformed, REL_SUCCESS);						
+					}
+					
 				}
                 if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
                     queueLock.lock();
