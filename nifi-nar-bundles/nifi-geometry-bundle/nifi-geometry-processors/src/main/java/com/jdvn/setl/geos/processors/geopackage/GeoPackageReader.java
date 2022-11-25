@@ -213,7 +213,7 @@ public class GeoPackageReader extends AbstractProcessor {
 						fragmentIndex++;
 					}
 				}
-				else {
+				else if (maxRecord > 0) {
 					final StopWatch stopWatch = new StopWatch(true);
 	                final List<Record> records = GeoUtils.getNifiRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
                     FlowFile transformed = session.create(flowFile);
@@ -324,7 +324,7 @@ public class GeoPackageReader extends AbstractProcessor {
 						fragmentIndex++;
 					}
 				}
-				else {
+				else if (maxRecord > 0){
 					final StopWatch stopWatch = new StopWatch(true);
 					final List<Record> records = GeoUtils.getNifiRecordsFromTileEntry(geoPackage, t);
 	                // Create flowfile

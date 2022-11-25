@@ -27,6 +27,8 @@ import java.nio.file.Path;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -211,10 +213,13 @@ public class ShpReaderTest {
 
         assertEquals(expectedLongitude, result.getY(), 0.00001);
         assertEquals(expectedLatitude, result.getX(), 0.00001);
-    }     
+    }   
+    
     @Test
     public void testEncodingConversion() throws IOException {
-        System.out.println("file.encoding=" + System.getProperty("file.encoding"));
+    	
+    	String system_encoding = System.getProperty("file.encoding");
+        System.out.println("file.encoding=" + system_encoding);
         
         final File file_utf8 = new File("src/test/resources/admzone/TK_OSM_roads_WGS84.shp");
 		Map<String, Object> mapAttrs = new HashMap<>();
@@ -229,10 +234,29 @@ public class ShpReaderTest {
 		List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource, charset);
 		String value1 = records.get(0).getAsString("RD_Type");
 		String value2 = records.get(0).getAsString("Add_");
-		assertEquals("Đường đô thị", value1);
-		assertEquals("Hòa Thuận, An Mỹ, An Xuân, An Sơn", value2);     
+
+		Charset expextedCharset = Charset.forName(system_encoding); //UTF-8
 		
-        
+		byte[] outbytes = value1.getBytes(charset.name());
+		System.out.println("Display UTF-8: " + new String(value1.getBytes(charset.name()),expextedCharset));
+		System.out.println("String: " + value1);
+		outbytes = value1.getBytes(charset.name());
+		System.out.println("UTF-8 From raw bytes: " + new String(outbytes,expextedCharset));
+		
+		System.out.println("String to bytes: " + Arrays.toString(outbytes));
+		String encoded = Base64.getEncoder().encodeToString(outbytes);
+		System.out.println("Bytes to string: " + encoded);
+		byte[] decoded = Base64.getDecoder().decode(encoded);
+		System.out.println("String to decoded bytes: " + Arrays.toString(decoded));
+		System.out.println("UTF-8 From reversed bytes: " + new String(decoded,expextedCharset));
+		
+		String utf_8_1 = new String(value1.getBytes(charset.name()),expextedCharset);
+		String utf_8_2 = new String(value2.getBytes(charset.name()),expextedCharset);
+		assertEquals("Đường đô thị", utf_8_1);
+		assertEquals("Hòa Thuận, An Mỹ, An Xuân, An Sơn", utf_8_2);     
+
+		System.out.println("<------------------------Test EUC-KR------------------------>");
+		
         final File file_EUC_KR = new File("src/test/resources/koreanmap/LV14_SPSB_STATN.shp");
         Map<String, Object> mapAttrs_1 = new HashMap<>();
         mapAttrs_1.put("url", file_EUC_KR.toURI().toURL());
@@ -243,8 +267,28 @@ public class ShpReaderTest {
 		featureSource_1.getFeatures().size();
 		Charset charset_1 = ((ShapefileDataStore)dataStore_1).getCharset();
 		List<Record> records_1 = GeoUtils.getNifiRecordsFromShapeFile(featureSource_1, charset_1);
-		assertEquals("신분당선", records_1.get(0).getAsString("KOR_SBR_NM"));
-		assertEquals("강남역", records_1.get(0).getAsString("KOR_SUB_NM")); 
+		value1 = records_1.get(0).getAsString("KOR_SBR_NM");
+		value2= records_1.get(0).getAsString("KOR_SUB_NM");
+				
+	
+		expextedCharset = Charset.forName("euc-kr");
+		System.out.println("Display EUC_KR: " + new String(value1.getBytes(charset_1.name()),expextedCharset));
+		System.out.println("String: " + value1);
+		outbytes = value1.getBytes(charset_1.name());
+		System.out.println("EUC_KR From raw bytes: " + new String(outbytes,expextedCharset));
+		
+		System.out.println("String to bytes: " + Arrays.toString(outbytes));
+		encoded = Base64.getEncoder().encodeToString(outbytes);
+		System.out.println("Bytes to string: " + encoded);
+		decoded = Base64.getDecoder().decode(encoded);
+		System.out.println("String to decoded bytes: " + Arrays.toString(decoded));
+		System.out.println("EUC_KR From reversed bytes: " + new String(decoded,expextedCharset));
+
+		
+		String euc_kr_1 = new String(value1.getBytes(charset_1.name()),expextedCharset);
+		String euc_kr_2 = new String(value2.getBytes(charset_1.name()),expextedCharset);
+		assertEquals("신분당선", euc_kr_1);
+		assertEquals("강남역", euc_kr_2); 
 
     }   
 }

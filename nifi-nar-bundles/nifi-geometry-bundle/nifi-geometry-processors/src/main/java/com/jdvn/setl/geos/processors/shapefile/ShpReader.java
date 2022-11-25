@@ -150,6 +150,14 @@ public class ShpReader extends AbstractProcessor {
             .allowableValues("true", "false")
             .defaultValue("true")
             .build();    
+    public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
+            .name("Character Set")
+            .description("The character set of shapfiles to fetch")
+            .required(true)
+            .defaultValue("UTF-8")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .build();    
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
             .description("The maximum number of files to pull in each iteration")
@@ -223,7 +231,8 @@ public class ShpReader extends AbstractProcessor {
         properties.add(BATCH_SIZE);
         properties.add(MAX_ROWS_PER_FLOW_FILE);
         properties.add(KEEP_SOURCE_FILE);
-        properties.add(DELETE_EMPTY_FLOWFILE);        
+        properties.add(DELETE_EMPTY_FLOWFILE);  
+        properties.add(CHARSET);        
         properties.add(RECURSE);
         properties.add(POLLING_INTERVAL);
         properties.add(IGNORE_HIDDEN_FILES);
@@ -256,6 +265,7 @@ public class ShpReader extends AbstractProcessor {
         final File directory = new File(context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue());
         final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
         final boolean deleteZeroFlowFile = context.getProperty(DELETE_EMPTY_FLOWFILE).asBoolean();
+        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions().getValue();
         
         final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
         final ComponentLog logger = getLogger();
@@ -340,7 +350,9 @@ public class ShpReader extends AbstractProcessor {
 				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?
+				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?				
+				if (charset != null)
+					((ShapefileDataStore)dataStore).setCharset(Charset.forName(charset));
 				Charset charset_in = ((ShapefileDataStore)dataStore).getCharset();
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					int from = 0;

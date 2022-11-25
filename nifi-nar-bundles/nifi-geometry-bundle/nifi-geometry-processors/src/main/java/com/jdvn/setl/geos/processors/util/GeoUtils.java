@@ -100,7 +100,7 @@ public class GeoUtils {
     public static final String GEOPACKAGE_CONTENTS = "gpkg_contents";
     public static final String GEOMETRY_COLUMNS = "gpkg_geometry_columns";
     public static final String SPATIAL_REF_SYS = "gpkg_spatial_ref_sys";
-    public static final String GEO_CHAR_SET = "geo.charset";
+    public static final String GEO_CHAR_SET = "geo.source.charset";
     public static final String GPKG_TILE_ZOOM = "zoom_level";    
     public static final String GPKG_TILE_COLUMN = "tile_column";
     public static final String GPKG_TILE_ROW = "tile_row";
@@ -231,26 +231,7 @@ public class GeoUtils {
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
 					Object value = feature.getAttribute(i);
-					if (value instanceof String && !charset.name().toLowerCase().equals("utf-8")) {
-						String str = (String) value;
-
-						
-//						System.out.println("Original: " + str);
-//						// Check encoded sizes
-//						byte[] utf8Bytes = str.getBytes("ISO-8859-1");
-//						System.out.println(new String(utf8Bytes)); 
-//						System.out.println(new String(utf8Bytes, "ISO-8859-1"));
-//						
-//						String Unicode = new String(str.getBytes(charset.name()));
-//						System.out.println("Unicode : " + Unicode);
-//						String back = new String(str.getBytes(charset.name()),charset.name());
-//						System.out.println("Backward: " + back);
-						
-						
-						fieldMap.put(key, new String(str.getBytes(charset.name()),Charset.forName("x-windows-949"))); // ISO-2022-KR ; 
-					}
-					else
-						fieldMap.put(key, value);						
+					fieldMap.put(key, value);						
 				}
 				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
 					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
@@ -287,12 +268,7 @@ public class GeoUtils {
 				for (int i = 0; i < feature.getAttributeCount(); i++) {
 					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
 					Object value = feature.getAttribute(i);
-					if (value instanceof String && !charset.name().toLowerCase().equals("utf-8")) {
-						String str = (String) value;
-						fieldMap.put(key, new String(str.getBytes(charset.name())));
-					}
-					else
-						fieldMap.put(key, value);						
+					fieldMap.put(key, value);						
 				}
 				if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
 					fieldMap.put(GeoUtils.SETL_UUID, feature.getID());

@@ -128,7 +128,7 @@ public class ShpWriter extends AbstractProcessor {
             .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
-            .description("The name of charset for attributes in target shapfiles")
+            .description("The character set of shapfiles to store")
             .required(true)
             .defaultValue("UTF-8")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
