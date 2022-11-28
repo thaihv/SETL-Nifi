@@ -153,9 +153,8 @@ public class ShpReader extends AbstractProcessor {
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
             .description("The character set of shapfiles to fetch")
-            .required(true)
-            .defaultValue("UTF-8")
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .required(false)
+            .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();    
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()

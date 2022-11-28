@@ -129,9 +129,8 @@ public class ShpWriter extends AbstractProcessor {
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
             .description("The character set of shapfiles to store")
-            .required(true)
-            .defaultValue("UTF-8")
-            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .required(false)
+            .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
     public static final PropertyDescriptor CRS_WKT = new PropertyDescriptor.Builder()
@@ -275,7 +274,9 @@ public class ShpWriter extends AbstractProcessor {
         String filename = merged ? rootname + ".shp" : rootname + part_name;
         
         final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
-        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
+        String charset_in = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
+        String charset_flow = flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET);
+        final String charset = charset_in == null ? charset_flow : charset_in;
         final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
 		try {
 			session.read(flowFile, new InputStreamCallback() {
