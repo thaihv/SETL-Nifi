@@ -188,18 +188,28 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		if (!setupComplete.get()) {
 			super.setup(context);
 		}
-		getInserts(context, sessionFactory);
-		getUpdates(context, sessionFactory);
-		getDeletes(context, sessionFactory);
+		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+		final IGSSConnection con = gssService.getConnection();
+		
+		LayerMetadata md = null;
+		try {
+			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
+		} catch (SQLException e1) {
+			e1.printStackTrace();
+		}
+		getInserts(context, sessionFactory, con);
+		getUpdates(context, sessionFactory, con, md);
+		getDeletes(context, sessionFactory, con);
+		
+		gssService.returnConnection(con);
 	}
-	private void getInserts(final ProcessContext context, final ProcessSessionFactory sessionFactory) {
+	private void getInserts(final ProcessContext context, final ProcessSessionFactory sessionFactory, final IGSSConnection con) {
 
 		ProcessSession session = sessionFactory.createSession();
 		final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
 
 		final ComponentLog logger = getLogger();
-
-		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
 		final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
@@ -258,9 +268,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
-		final IGSSConnection con = gssService.getConnection();
-		try (final IGSSStatement st = con.createStatement()) {
-
+		try {
+			IGSSStatement st = con.createStatement();
 			if (fetchSize != null && fetchSize > 0) {
 				try {
 					st.setFetchSize(fetchSize);
@@ -291,7 +300,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			try (final IGSSResultSet resultSet = st.executeQuery(selectQuery)) {
+			try {
+				IGSSResultSet resultSet = st.executeQuery(selectQuery);
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
@@ -364,6 +374,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 								featureType = "Point";
 							}
 							attributesToAdd.put(GEO_FEATURE_TYPE, featureType);
+							
 						}
 
 						if (maxRowsPerFlowFile > 0) {
@@ -443,12 +454,14 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
+				
+				resultSet.close();
+				
 			} catch (final Exception e) {
-				logger.error("Way, we have an error when execute SQL select query {} due to {}",
-						new Object[] { selectQuery, e });
+				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			}
 			session.transfer(resultSetFlowFiles, REL_SUCCESS);
-			gssService.returnConnection(con);
+			st.close();
 		} catch (final ProcessException | SQLException e) {
 			logger.error("Unable to execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			if (!resultSetFlowFiles.isEmpty()) {
@@ -457,18 +470,17 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			context.yield();
 		} finally {
 			try {
-				// Update the state
 				session.setState(statePropertyMap, Scope.CLUSTER);
 			} catch (IOException ioe) {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			gssService.returnConnection(con);
 			session.commitAsync();
 		}
 	}
 	private List<String> getAttributeColumns(Connection connection, String layerName) {
 		List<String> columns = new ArrayList<>();
+		
 		try {
 			Statement stmt = connection.createStatement();
 			IGSSResultSetMetaData md = ((IBaseStatement) stmt).querySchema(layerName);
@@ -481,20 +493,23 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				}else
 					columns.add(fieldName + " AS " + GeoUtils.SETL_UUID);
 			}		
+			stmt.close();
 		} catch (SQLException e) {
 
 			e.printStackTrace();
+		} finally{
+			
 		}
 		return columns;		
 	}
-	private void getUpdates(final ProcessContext context, final ProcessSessionFactory sessionFactory) {
+	private void getUpdates(final ProcessContext context, final ProcessSessionFactory sessionFactory, final IGSSConnection con, LayerMetadata md) {
 
 		ProcessSession session = sessionFactory.createSession();
 		final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
 
 		final ComponentLog logger = getLogger();
 
-		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+		//GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
 		final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
@@ -518,25 +533,20 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		
 		final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
-		final IGSSConnection con = gssService.getConnection();
-		
 		String srs_target = null;
-		LayerMetadata md = null;
-		try {
-			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
+		String geo_table = null;
+		if (md != null) {
 			srs_target = md.mCrs;
-		} catch (SQLException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
+			geo_table = "G"+ Integer.toString(md.mThemeId);
 		}
 		
 		List<String> atrColumns = getAttributeColumns(con,tableName);
-		String geo_table = getGeometryTableNameFromGSS(con,tableName);
 		final String selectQuery = getQueryUpdate(dbAdapter, tableName, atrColumns, geo_table, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();		
-		try (final IGSSStatement st = con.createStatement()) {
+		try {
 
+			IGSSStatement st = con.createStatement();
 			if (fetchSize != null && fetchSize > 0) {
 				try {
 					st.setFetchSize(fetchSize);
@@ -561,7 +571,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			try (final IGSSResultSet resultSet = st.executeQuery(selectQuery)) {
+			try {
+				IGSSResultSet resultSet = st.executeQuery(selectQuery);
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
@@ -705,12 +716,15 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
+				resultSet.close();
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}",
 						new Object[] { selectQuery, e });
 			}
+			
+			st.close();
 			session.transfer(resultSetFlowFiles, REL_SUCCESS);
-			gssService.returnConnection(con);
+			
 		} catch (final ProcessException | SQLException e) {
 			logger.error("Unable to execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			if (!resultSetFlowFiles.isEmpty()) {
@@ -725,18 +739,16 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			gssService.returnConnection(con);
 			session.commitAsync();
 		}
 	}
-	private void getDeletes(final ProcessContext context, final ProcessSessionFactory sessionFactory) {
+	private void getDeletes(final ProcessContext context, final ProcessSessionFactory sessionFactory, final IGSSConnection con) {
 
 		ProcessSession session = sessionFactory.createSession();
 		final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
 
 		final ComponentLog logger = getLogger();
 
-		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
 		final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
@@ -762,9 +774,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQueryDelete(dbAdapter, tableName, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
-		final IGSSConnection con = gssService.getConnection();
-		try (final IGSSStatement st = con.createStatement()) {
+		try {
 
+			IGSSStatement st = con.createStatement();
 			if (fetchSize != null && fetchSize > 0) {
 				try {
 					st.setFetchSize(fetchSize);
@@ -791,7 +803,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			try (final IGSSResultSet resultSet = st.executeQuery(selectQuery)) {
+			try {
+				IGSSResultSet resultSet = st.executeQuery(selectQuery);
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
@@ -899,12 +912,13 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
+				resultSet.close();
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}",
 						new Object[] { selectQuery, e });
 			}
 			session.transfer(resultSetFlowFiles, REL_SUCCESS);
-			gssService.returnConnection(con);
+			st.close();
 		} catch (final ProcessException | SQLException e) {
 			logger.error("Unable to execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			if (!resultSetFlowFiles.isEmpty()) {
@@ -919,7 +933,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			gssService.returnConnection(con);
 			session.commitAsync();
 		}
 	}	

@@ -18,9 +18,6 @@ package com.jdvn.setl.geos.gss;
 
 import static org.junit.Assert.assertTrue;
 
-import java.sql.DatabaseMetaData;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -34,8 +31,13 @@ import org.junit.Test;
 
 import com.cci.gss.jdbc.driver.IBaseStatement;
 import com.cci.gss.jdbc.driver.IGSSConnection;
-import com.cci.gss.jdbc.driver.IGSSResultSet;
+import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
+import com.vividsolutions.jts.geom.Geometry;
+import com.vividsolutions.jts.io.ParseException;
+import com.vividsolutions.jts.io.WKBWriter;
+import com.vividsolutions.jts.io.WKTReader;
+
 
 public class TestGSSStore {
 	private static final String SERVICE_ID = GSSStore.class.getName();
@@ -49,10 +51,10 @@ public class TestGSSStore {
         final GSSStore service = new GSSStore();
 
         runner.addControllerService(SERVICE_ID, service);
-        final String url = "jdbc:gss://14.160.24.128:8844";
+        final String url = "jdbc:gss://localhost:8844";
         runner.setProperty(service, GSSStore.DATABASE_URL, url);
-        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
-        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
         runner.enableControllerService(service);
         
         IGSSConnection conn = service.getConnection();
@@ -69,10 +71,10 @@ public class TestGSSStore {
         final GSSStore service = new GSSStore();
 
         runner.addControllerService(SERVICE_ID, service);
-        final String url = "jdbc:gss://14.160.24.128:8844";
+        final String url = "jdbc:gss://localhost:8844";
         runner.setProperty(service, GSSStore.DATABASE_URL, url);
-        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
-        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
         runner.enableControllerService(service);
         runner.assertValid(service);
     }    
@@ -83,16 +85,16 @@ public class TestGSSStore {
         final GSSStore service = new GSSStore();
 
         runner.addControllerService(SERVICE_ID, service);
-        final String url = "jdbc:gss://14.160.24.128:8844";
+        final String url = "jdbc:gss://localhost:8844";
         runner.setProperty(service, GSSStore.DATABASE_URL, url);
-        runner.setProperty(service, GSSStore.DB_USER, "LO_VN2");
-        runner.setProperty(service, GSSStore.DB_PASSWORD, "LO_VN2");
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
         runner.enableControllerService(service);
         
         IGSSConnection conn = service.getConnection();
 		List<String> columns = new ArrayList<>();
 		try {
-			String layerName = "GEO_SRC";
+			String layerName = "VNM_ADM3_TG";
 			Statement stmt = conn.createStatement();
 			IGSSResultSetMetaData md = ((IBaseStatement) stmt).querySchema(layerName);
 			
@@ -110,4 +112,52 @@ public class TestGSSStore {
 		System.out.println(columns);
         conn.close();
     } 
+    
+    @Test
+    public void updateData() throws InitializationException, SQLException {
+        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
+        final GSSStore service = new GSSStore();
+
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://localhost:8844";
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
+        runner.enableControllerService(service);
+        
+        IGSSConnection conn = service.getConnection();
+		try {
+
+			StringBuilder sqlBuilder = new StringBuilder();
+			sqlBuilder.append("UPDATE VNM_ADM3_TG SET ID_0 = ?, ISO = ?, SHAPE = GEOMFROMWKB(?) WHERE NIFIUID = ?");
+			final IGSSPreparedStatement stmt = (IGSSPreparedStatement) conn.prepareStatement(sqlBuilder.toString());
+			
+			Integer id = 444;
+			String iso = null;			
+			stmt.setObject(1, id);
+			stmt.setObject(2, iso);
+			
+			String wkt = "POLYGON ((106.86052045551557 10.227998791883463, 106.79715137532173 10.17255084671385, 106.7462297930231 10.165761302407367, 106.70096616431321 10.255156969109397, 106.75528251876509 10.30268377925478, 106.86052045551557 10.227998791883463))";
+			WKTReader reader = new WKTReader();
+			Geometry g = null;
+			try {
+				g = reader.read(wkt);
+			} catch (ParseException e) {
+				e.printStackTrace();
+			}
+			byte[] wkb = new WKBWriter().write(g);
+			stmt.setBytes(3, wkb);
+			
+			
+			String nifiid = "4ea25482-7ebe-3fd7-9253-7191cdd4797e";
+			stmt.setObject(4, nifiid);
+			
+			stmt.executeUpdate();
+			
+		} catch (SQLException e) {
+
+			e.printStackTrace();
+		}
+        conn.close();
+    }     
 }

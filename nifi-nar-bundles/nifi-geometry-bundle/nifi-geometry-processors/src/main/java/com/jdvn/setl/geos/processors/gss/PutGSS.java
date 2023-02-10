@@ -527,7 +527,7 @@ public class PutGSS extends AbstractProcessor {
         	return;
         } 
         final String TX_NAME = RandomStringUtils.randomAlphanumeric(12); //"transaction";
-        final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
+        GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
         gssService.enableTransaction(true, TX_NAME);
         final Connection connection = gssService.getConnection(TX_NAME);
 
