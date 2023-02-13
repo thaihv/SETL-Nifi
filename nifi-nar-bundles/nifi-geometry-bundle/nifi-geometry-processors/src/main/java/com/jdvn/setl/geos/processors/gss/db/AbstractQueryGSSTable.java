@@ -182,7 +182,82 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         // Reset the column type map in case properties change
         setupComplete.set(false);
     }
+	private LayerMetadata getLayerMetadata(String username, String name, Statement stmt) throws SQLException {
+		StringBuffer sb = new StringBuffer();
+		sb.append("SELECT * FROM GSS.THEMES WHERE THEME_NAME='").append(name.toUpperCase());
+		sb.append("' AND OWNER='").append(username.toUpperCase()).append("'");
+		
+		return getLayerMetadata(sb, stmt);
+	}	
+	private LayerMetadata getLayerMetadata(StringBuffer querySb, Statement stmt) throws SQLException {
+		LayerMetadata md = null;
+		ResultSet rs = null;
+		try {
+			rs = stmt.executeQuery(querySb.toString());
+			if (!rs.next()) {
+				return null;
+			}
+			
+			md = new LayerMetadata();
+			md.mThemeTableSchema = rs.getString("OWNER");
+			md.mThemeTableName = rs.getString("THEME_NAME");
+			md.mThemeId = rs.getInt("THEME_ID");
+			md.mViewLink = rs.getInt("VLINK");
+			md.mBitEncodeValue = rs.getInt("BIT_ENCODE_VALUE");
+			
+			if (md.mViewLink > 0) {
+				rs.close();
+				querySb.setLength(0);
+				
+				querySb.append("SELECT MINX, MINY, MAXX, MAXY, GRID_SIZE ");
+				querySb.append("FROM GSS.THEMES ");
+				querySb.append("WHERE THEME_ID=").append(md.mViewLink);
+				rs = stmt.executeQuery(querySb.toString());
+				if (!rs.next()) {
+					return null;
+				}
+			}
+			
+			md.mMinX = rs.getDouble("MINX");
+			md.mMinY = rs.getDouble("MINY");
+			md.mMaxX = rs.getDouble("MAXX");
+			md.mMaxY = rs.getDouble("MAXY");
+			md.mGridSize = rs.getDouble("GRID_SIZE");
+			
+			rs.close();
+			
+			querySb.setLength(0);
+			querySb.append("SELECT B.F_GEOMETRY_COLUMN, B.G_TABLE_SCHEMA, B.G_TABLE_NAME,");
+			querySb.append(" B.GEOMETRY_TYPE, B.STORAGE_TYPE, C.SRID, C.SRTEXT ");
+			querySb.append("FROM GSS.GEOMETRY_COLUMNS B, GSS.SPATIAL_REF_SYS C ");
+			querySb.append("WHERE B.F_TABLE_NAME='").append(md.mThemeTableName).append("'");
+			querySb.append(" AND B.SRID=C.SRID");
+			
+			rs = stmt.executeQuery(querySb.toString());
+			if (!rs.next()) {
+				return null;
+			}
+			
+			md.mGeometryColumn = rs.getString(1);
+			md.mGeometryTableSchema = rs.getString(2);
+			md.mGeometryTableName = rs.getString(3);
+			md.mGeometryType = rs.getInt(4);
+			md.mStorageType = rs.getInt(5);
+			md.mSrId = rs.getInt(6);
+			md.mCrs = rs.getString(7);
 
+			
+			rs.close();
+			
+			return md;
+		}
+		finally {
+			if (rs != null && !rs.isClosed())
+				rs.close();
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();
+		}
+	}
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
 		if (!setupComplete.get()) {
@@ -194,7 +269,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		
 		LayerMetadata md = null;
 		try {
-			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
+			md = getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
 		} catch (SQLException e1) {
 			e1.printStackTrace();
 		}
