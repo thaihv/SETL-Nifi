@@ -472,12 +472,20 @@ public class PutGSS extends AbstractProcessor {
 			ResultSet resultSet = stmt.executeQuery(sqlBuilder.toString()); 
 			while (resultSet.next()) {
 				int n = resultSet.getInt("B");
-				if (n > 0) 
+				if (n > 0) {
+					resultSet.close();
+					stmt.close();
 					return true;
+				}
+					
 			}
-
+			resultSet.close();
+			stmt.close();
+			
 		} catch (SQLException e) {
 			e.printStackTrace();
+		} finally {
+			
 		}
 		return false;
 		
@@ -537,7 +545,8 @@ public class PutGSS extends AbstractProcessor {
             gssService.commit(TX_NAME);
 
             session.transfer(flowFile, REL_SUCCESS);
-            session.getProvenanceReporter().send(flowFile, getJdbcUrl(connection));
+            String transitUri = connection.getMetaData().getURL() != null ? connection.getMetaData().getURL() : "GSSService";
+            session.getProvenanceReporter().send(flowFile, transitUri);
             
         } catch (final Exception e) {
             // When an Exception is thrown, we want to route to 'retry' if we expect that attempting the same request again

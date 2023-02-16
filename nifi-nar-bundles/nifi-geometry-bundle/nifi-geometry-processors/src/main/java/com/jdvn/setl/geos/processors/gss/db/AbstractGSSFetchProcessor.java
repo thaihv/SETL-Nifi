@@ -177,9 +177,11 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		while (resultSet.next()) {
 			String currTableName = resultSet.getString("TABLE_NAME");
 			if (tableName.toUpperCase().equals(currTableName.toUpperCase())) {
+				resultSet.close();
 				return true;
 			}
 		}
+		resultSet.close();
 		return false;
 	}
 
@@ -255,9 +257,11 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		while (resultSet.next()) {
 			String currTriggerName = resultSet.getString("TABLE_NAME");
 			if (triggerName.toUpperCase().equals(currTriggerName.toUpperCase())) {
+				resultSet.close();
 				return true;
 			}
 		}
+		resultSet.close();
 		return false;
 	}
 

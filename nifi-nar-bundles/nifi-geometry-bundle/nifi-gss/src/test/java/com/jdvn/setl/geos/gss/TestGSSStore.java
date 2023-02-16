@@ -32,7 +32,9 @@ import org.junit.Test;
 import com.cci.gss.jdbc.driver.IBaseStatement;
 import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
+import com.cci.gss.jdbc.driver.IGSSResultSet;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
+import com.cci.gss.jdbc.driver.IGSSStatement;
 import com.vividsolutions.jts.geom.Geometry;
 import com.vividsolutions.jts.io.ParseException;
 import com.vividsolutions.jts.io.WKBWriter;
@@ -94,7 +96,7 @@ public class TestGSSStore {
         IGSSConnection conn = service.getConnection();
 		List<String> columns = new ArrayList<>();
 		try {
-			String layerName = "VNM_ADM3_TG";
+			String layerName = "VNM_ADM_TG";
 			Statement stmt = conn.createStatement();
 			IGSSResultSetMetaData md = ((IBaseStatement) stmt).querySchema(layerName);
 			
@@ -129,7 +131,7 @@ public class TestGSSStore {
 		try {
 
 			StringBuilder sqlBuilder = new StringBuilder();
-			sqlBuilder.append("UPDATE VNM_ADM3_TG SET ID_0 = ?, ISO = ?, SHAPE = GEOMFROMWKB(?) WHERE NIFIUID = ?");
+			sqlBuilder.append("UPDATE VNM_ADM_TG SET ID_0 = ?, ISO = ?, SHAPE = GEOMFROMWKB(?) WHERE NIFIUID = ?");
 			final IGSSPreparedStatement stmt = (IGSSPreparedStatement) conn.prepareStatement(sqlBuilder.toString());
 			
 			Integer id = 444;
@@ -159,5 +161,55 @@ public class TestGSSStore {
 			e.printStackTrace();
 		}
         conn.close();
-    }     
+    }  
+    
+    @Test
+    public void queryTrackChanges() throws InitializationException, SQLException {
+        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
+        final GSSStore service = new GSSStore();
+
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://localhost:8844";
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
+        runner.enableControllerService(service);
+        
+        IGSSConnection conn = service.getConnection();
+		try {
+
+			StringBuilder sqlDeletes = new StringBuilder();
+			sqlDeletes.append("SELECT DISTINCT FKEY AS NIFIUID, to_char(CHANGED,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM nifi_VNM_ADM_2 WHERE EVENT='d' AND Changed > to_timestamp('2023-02-15 09.16.14.140','YYYY-MM-DD HH24.MI.SS.FF3')");
+		
+			IGSSStatement st = conn.createStatement();
+			
+//			IGSSResultSet rs = st.executeQuery(sqlDeletes.toString());
+//			while (rs.next()) {
+//				  System.out.println(rs.getInt("NIFIUID"));
+//				  System.out.println(rs.getString("Changed"));
+//				}
+//
+//			rs.close();
+
+			StringBuilder sqlUpdates = new StringBuilder();
+			sqlUpdates.append("SELECT S.*, to_char(V.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed \r\n" + 
+					"FROM (SELECT A.ID_0, A.ISO, A.NAME_0, A.ID_1, A.NAME_1, A.ID_2, A.NAME_2, A.ID_3, A.NAME_3, A.TYPE_3, A.ENGTYPE_3, A.NL_NAME_3, A.VARNAME_3, A.SHAPE AS NIFIUID, G.GEOMETRY as SHAPE "
+					+ "FROM VNM_ADM_1 A, G4 G WHERE A.SHAPE=G.GID AND A.SHAPE IN (SELECT DISTINCT FKEY FROM nifi_VNM_ADM_1 "
+					+ "WHERE Changed > to_timestamp('2023-02-15 09.13.15.093','YYYY-MM-DD HH24.MI.SS.FF3'))) S, nifi_VNM_ADM_1 V "
+					+ "WHERE S.NIFIUID = V.FKEY");
+			IGSSResultSet rs = st.executeQuery(sqlUpdates.toString());
+			while (rs.next()) {
+				  System.out.println(rs.getInt("NIFIUID"));
+				  System.out.println(rs.getString("Changed"));
+				}
+
+			rs.close();			
+			st.close();
+			
+		} catch (SQLException e) {
+
+			e.printStackTrace();
+		}
+        conn.close();
+    }    
 }
