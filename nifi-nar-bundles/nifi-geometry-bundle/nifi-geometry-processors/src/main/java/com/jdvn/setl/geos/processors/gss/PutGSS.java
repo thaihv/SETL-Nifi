@@ -14,7 +14,6 @@ import java.nio.charset.StandardCharsets;
 import java.sql.BatchUpdateException;
 import java.sql.Clob;
 import java.sql.Connection;
-import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -956,19 +955,6 @@ public class PutGSS extends AbstractProcessor {
         }
 
         return dataRecords;
-    }
-
-    private String getJdbcUrl(final Connection connection) {
-        try {
-            DatabaseMetaData databaseMetaData = connection.getMetaData();
-            if (databaseMetaData != null) {
-                return databaseMetaData.getURL();
-            }
-        } catch (final Exception e) {
-            getLogger().warn("Could not determine JDBC URL based on the Driver Connection.", e);
-        }
-
-        return "GSSService";
     }
 
     private String getStatementType(final ProcessContext context, final FlowFile flowFile) {

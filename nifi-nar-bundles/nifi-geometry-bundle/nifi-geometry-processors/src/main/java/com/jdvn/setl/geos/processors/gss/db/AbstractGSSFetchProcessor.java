@@ -186,8 +186,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 	}
 
 	void createSETLEventTable(Connection connection, String tableName) throws SQLException {
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
+			
 			final StringBuilder sqlBuilder = new StringBuilder();
 
 			sqlBuilder.append("CREATE TABLE ");
@@ -202,11 +203,14 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		} catch (SQLException e) {
 			getLogger().warn("Sorry, The table for event trackers can not created for some reason!");
 			e.printStackTrace();
+		} finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 	}
 	void deleteAllFromSETLEventTable(Connection connection, String tableName) throws SQLException {
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
 			final StringBuilder sqlBuilder = new StringBuilder();
 
 			sqlBuilder.append("DELETE FROM ");
@@ -218,6 +222,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		} catch (SQLException e) {
 			getLogger().warn("Sorry, The table for event trackers can not deleted for some reason!");
 			e.printStackTrace();
+		} finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 	}
 	UUID createGUIDfromFkey(Connection connection, String tableName, int FID) {
@@ -235,8 +242,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		
 	}
 	void dropSETLEventTable(Connection connection, String tableName) throws SQLException {
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
+			
 			final StringBuilder sqlBuilder = new StringBuilder();
 
 			sqlBuilder.append("DROP TABLE ");
@@ -247,6 +255,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 
 		} catch (SQLException e) {
 			e.printStackTrace();
+		}finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 	}
 
@@ -265,9 +276,10 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		return false;
 	}
 
-	String getGeometryTableNameFromGSS(Connection connection, String layerName) {
+	String getGeometryTableNameFromGSS(Connection connection, String layerName) throws SQLException {
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
+			
 			DatabaseMetaData meta = connection.getMetaData();
 			String owner = meta.getUserName().toUpperCase();
 			
@@ -292,15 +304,18 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		} catch (SQLException e) {
 			getLogger().warn("Sorry, we can not get geometry info!");
 			e.printStackTrace();
+		}finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 		
 		return null;
 		
 	}
 	void createSETLTriggers(Connection connection, String layerName, String eventTableName) throws SQLException {
-		
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
+			
 			final StringBuilder sqlBuilder = new StringBuilder();
 			
 			// Create trigger for event of changes of DELETE and UPDATE attribute data
@@ -387,11 +402,15 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 		} catch (SQLException e) {
 			getLogger().warn("Sorry, triggers for event trackers can not created for some reason!");
 			e.printStackTrace();
+		}finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 	}
 	void dropSETLTrigger(Connection connection, String triggerName) throws SQLException {
+		Statement stmt = connection.createStatement();
 		try {
-			Statement stmt = connection.createStatement();
+			
 			final StringBuilder sqlBuilder = new StringBuilder();
 
 			sqlBuilder.append("DROP TRIGGER ");
@@ -401,6 +420,9 @@ public abstract class AbstractGSSFetchProcessor extends AbstractSessionFactoryPr
 			stmt.close();
 		} catch (SQLException e) {
 			e.printStackTrace();
+		}finally {
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();			
 		}
 	}
 	public String getEventTableFromLayer(final String layerName) {
