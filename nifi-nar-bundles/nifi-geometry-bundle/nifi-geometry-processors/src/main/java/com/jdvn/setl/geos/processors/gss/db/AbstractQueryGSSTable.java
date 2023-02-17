@@ -182,82 +182,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
         // Reset the column type map in case properties change
         setupComplete.set(false);
     }
-	private LayerMetadata getLayerMetadata(String username, String name, Statement stmt) throws SQLException {
-		StringBuffer sb = new StringBuffer();
-		sb.append("SELECT * FROM GSS.THEMES WHERE THEME_NAME='").append(name.toUpperCase());
-		sb.append("' AND OWNER='").append(username.toUpperCase()).append("'");
-		
-		return getLayerMetadata(sb, stmt);
-	}	
-	private LayerMetadata getLayerMetadata(StringBuffer querySb, Statement stmt) throws SQLException {
-		LayerMetadata md = null;
-		ResultSet rs = null;
-		try {
-			rs = stmt.executeQuery(querySb.toString());
-			if (!rs.next()) {
-				return null;
-			}
-			
-			md = new LayerMetadata();
-			md.mThemeTableSchema = rs.getString("OWNER");
-			md.mThemeTableName = rs.getString("THEME_NAME");
-			md.mThemeId = rs.getInt("THEME_ID");
-			md.mViewLink = rs.getInt("VLINK");
-			md.mBitEncodeValue = rs.getInt("BIT_ENCODE_VALUE");
-			
-			if (md.mViewLink > 0) {
-				rs.close();
-				querySb.setLength(0);
-				
-				querySb.append("SELECT MINX, MINY, MAXX, MAXY, GRID_SIZE ");
-				querySb.append("FROM GSS.THEMES ");
-				querySb.append("WHERE THEME_ID=").append(md.mViewLink);
-				rs = stmt.executeQuery(querySb.toString());
-				if (!rs.next()) {
-					return null;
-				}
-			}
-			
-			md.mMinX = rs.getDouble("MINX");
-			md.mMinY = rs.getDouble("MINY");
-			md.mMaxX = rs.getDouble("MAXX");
-			md.mMaxY = rs.getDouble("MAXY");
-			md.mGridSize = rs.getDouble("GRID_SIZE");
-			
-			rs.close();
-			
-			querySb.setLength(0);
-			querySb.append("SELECT B.F_GEOMETRY_COLUMN, B.G_TABLE_SCHEMA, B.G_TABLE_NAME,");
-			querySb.append(" B.GEOMETRY_TYPE, B.STORAGE_TYPE, C.SRID, C.SRTEXT ");
-			querySb.append("FROM GSS.GEOMETRY_COLUMNS B, GSS.SPATIAL_REF_SYS C ");
-			querySb.append("WHERE B.F_TABLE_NAME='").append(md.mThemeTableName).append("'");
-			querySb.append(" AND B.SRID=C.SRID");
-			
-			rs = stmt.executeQuery(querySb.toString());
-			if (!rs.next()) {
-				return null;
-			}
-			
-			md.mGeometryColumn = rs.getString(1);
-			md.mGeometryTableSchema = rs.getString(2);
-			md.mGeometryTableName = rs.getString(3);
-			md.mGeometryType = rs.getInt(4);
-			md.mStorageType = rs.getInt(5);
-			md.mSrId = rs.getInt(6);
-			md.mCrs = rs.getString(7);
-
-			
-			rs.close();
-			
-			return md;
-		}
-		finally {
-			if (rs != null && !rs.isClosed())
-				rs.close();
-			if (stmt != null && !stmt.isClosed())
-				stmt.close();
-		}
-	}
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
 		if (!setupComplete.get()) {
@@ -268,10 +192,14 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final IGSSConnection con = gssService.getConnection();
 		
 		LayerMetadata md = null;
+		Statement stmt = null;
 		try {
-			md = getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement());
+			stmt = con.createStatement();
+			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, stmt);
 		} catch (SQLException e1) {
 			e1.printStackTrace();
+		} finally{
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
 		}
 		getInserts(context, sessionFactory, con);
 		getUpdates(context, sessionFactory, con, md);
@@ -290,7 +218,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
 		final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
 		final String customWhereClause = context.getProperty(WHERE_CLAUSE).evaluateAttributeExpressions().getValue();
-		final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions()
 				.asInteger();
 		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions()
@@ -299,9 +226,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet()
 				? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger()
 				: 0;
-		final Integer transIsolationLevel = context.getProperty(TRANS_ISOLATION_LEVEL).isSet()
-				? context.getProperty(TRANS_ISOLATION_LEVEL).asInteger()
-				: null;
 
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
 
@@ -343,22 +267,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
+		IGSSStatement st = null;
 		try {
-			IGSSStatement st = con.createStatement();
-			if (fetchSize != null && fetchSize > 0) {
-				try {
-					st.setFetchSize(fetchSize);
-				} catch (SQLException se) {
-					// Not all drivers support this, just log the error (at debug level) and move on
-					logger.debug("Cannot set fetch size to {} due to {}",
-							new Object[] { fetchSize, se.getLocalizedMessage() }, se);
-				}
-			}
-
-			if (transIsolationLevel != null) {
-				con.setTransactionIsolation(transIsolationLevel);
-			}
-
+			st = con.createStatement();
+			
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
 			try {
@@ -368,15 +280,15 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					schemaName = databaseMetaData.getUserName();
 				}
 			} catch (SQLException se) {
-				// Ignore and use default JDBC URL. This shouldn't happen unless the driver
-				// doesn't implement getMetaData() properly
+
 			}
 
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
+			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
 			try {
-				IGSSResultSet resultSet = st.executeQuery(selectQuery);
+				
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
@@ -529,14 +441,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
-				
-				resultSet.close();
-				st.close();
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				if (st != null && !st.isClosed())
-					st.close();
+				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 			
@@ -554,14 +462,15 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
+			try { if (st != null) st.close(); } catch (Exception e) {};	
 			session.commitAsync();
 		}
 	}
-	private List<String> getAttributeColumns(Connection connection, String layerName) {
+	private List<String> getAttributeColumns(Connection connection, String layerName){
 		List<String> columns = new ArrayList<>();
-		
+		Statement stmt = null;
 		try {
-			Statement stmt = connection.createStatement();
+			stmt = connection.createStatement();
 			IGSSResultSetMetaData md = ((IBaseStatement) stmt).querySchema(layerName);
 			
 			int n = md.getColumnCount();
@@ -571,13 +480,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					columns.add(fieldName);	
 				}else
 					columns.add(fieldName + " AS " + GeoUtils.SETL_UUID);
-			}		
-			stmt.close();
+			}
 		} catch (SQLException e) {
-
 			e.printStackTrace();
 		} finally{
-			
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
 		}
 		return columns;		
 	}
@@ -590,11 +497,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		final ComponentLog logger = getLogger();
 
-		// GSSService gssService =
-		// context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
-		final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions()
 				.asInteger();
 		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions()
@@ -628,19 +532,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQueryUpdate(dbAdapter, tableName, atrColumns, geo_table, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
+		IGSSStatement st = null;
 		try {
 
-			IGSSStatement st = con.createStatement();
-			if (fetchSize != null && fetchSize > 0) {
-				try {
-					st.setFetchSize(fetchSize);
-				} catch (SQLException se) {
-					// Not all drivers support this, just log the error (at debug level) and move on
-					logger.debug("Cannot set fetch size to {} due to {}",
-							new Object[] { fetchSize, se.getLocalizedMessage() }, se);
-				}
-			}
-
+			st = con.createStatement();
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
 			try {
@@ -655,8 +550,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
+			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
 			try {
-				IGSSResultSet resultSet = st.executeQuery(selectQuery);
+				
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName,
@@ -801,14 +697,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
-				resultSet.close();
-				st.close();
 			} catch (final Exception e) {
-				logger.error("Way, we have an error when execute SQL select query {} due to {}",
-						new Object[] { selectQuery, e });
+				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				if (st != null && !st.isClosed())
-					st.close();
+				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 
@@ -827,6 +719,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
+			try { if (st != null) st.close(); } catch (Exception e) {};
 			session.commitAsync();
 		}
 	}
@@ -839,7 +732,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
-		final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
 		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
@@ -862,19 +754,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQueryDelete(dbAdapter, tableName, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
+		IGSSStatement st = null;
 		try {
-
-			IGSSStatement st = con.createStatement();
-			if (fetchSize != null && fetchSize > 0) {
-				try {
-					st.setFetchSize(fetchSize);
-				} catch (SQLException se) {
-					// Not all drivers support this, just log the error (at debug level) and move on
-					logger.debug("Cannot set fetch size to {} due to {}",
-							new Object[] { fetchSize, se.getLocalizedMessage() }, se);
-				}
-			}
-
+			st = con.createStatement();
+			
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
 			try {
@@ -884,15 +767,13 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					schemaName = databaseMetaData.getUserName();
 				}
 			} catch (SQLException se) {
-				// Ignore and use default JDBC URL. This shouldn't happen unless the driver
-				// doesn't implement getMetaData() properly
 			}
 
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
+			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
 			try {
-				IGSSResultSet resultSet = st.executeQuery(selectQuery);
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
 				final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
@@ -1000,14 +881,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}
-				resultSet.close();
-				st.close();
 			} catch (final Exception e) {
-				logger.error("Way, we have an error when execute SQL select query {} due to {}",
-						new Object[] { selectQuery, e });
+				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				if (st != null && !st.isClosed())
-					st.close();
+				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 			
@@ -1025,6 +902,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
+			try { if (st != null) st.close(); } catch (Exception e) {};
 			session.commitAsync();
 		}
 	}	

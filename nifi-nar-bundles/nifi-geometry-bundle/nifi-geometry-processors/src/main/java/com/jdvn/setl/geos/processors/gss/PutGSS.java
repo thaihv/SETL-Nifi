@@ -456,9 +456,13 @@ public class PutGSS extends AbstractProcessor {
     }
     
     
-    private boolean checkColumnExisted(Connection connection, String tableName, String columnName) {
+    private boolean checkColumnExisted(Connection connection, String tableName, String columnName) throws SQLException {
+    	Statement stmt = null;
+    	ResultSet resultSet = null;
 		try {
-			Statement stmt = connection.createStatement();
+			
+			stmt = connection.createStatement();
+			
 			final StringBuilder sqlBuilder = new StringBuilder();		
 			
 			sqlBuilder.append("SELECT COUNT(*) as B FROM ALL_TAB_COLUMNS WHERE ");
@@ -468,23 +472,19 @@ public class PutGSS extends AbstractProcessor {
 			sqlBuilder.append("COLUMN_NAME=");
 			sqlBuilder.append("'").append(columnName).append("'");
 			
-			ResultSet resultSet = stmt.executeQuery(sqlBuilder.toString()); 
+			resultSet = stmt.executeQuery(sqlBuilder.toString()); 
 			while (resultSet.next()) {
 				int n = resultSet.getInt("B");
 				if (n > 0) {
-					resultSet.close();
-					stmt.close();
 					return true;
 				}
-					
 			}
-			resultSet.close();
-			stmt.close();
 			
 		} catch (SQLException e) {
 			e.printStackTrace();
 		} finally {
-			
+			try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};
 		}
 		return false;
 		
@@ -494,12 +494,12 @@ public class PutGSS extends AbstractProcessor {
 		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final Connection connection = gssService.getConnection();
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
-
+		Statement stmt = null;
 		try {
 			
 			boolean fidExisted = checkColumnExisted(connection, tableName, SETL_UUID);
 			if (!fidExisted) {
-				Statement stmt = connection.createStatement();
+				stmt = connection.createStatement();
 				final StringBuilder sqlBuilder = new StringBuilder();
 				sqlBuilder.append("ALTER LAYER ");
 				sqlBuilder.append(tableName);
@@ -510,14 +510,15 @@ public class PutGSS extends AbstractProcessor {
 
 				stmt.execute(sqlBuilder.toString());
 				getLogger().info("SETL_UUID column in " + tableName + " is created! ");
-				stmt.close();
-				gssService.returnConnection(connection);
+
 			}
 
 		} catch (SQLException e) {
-			gssService.returnConnection(connection);
 			getLogger().warn("Error SQL {}, we can not create UID column for the target table of SETL", e);
 			return false;
+		}finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
+			gssService.returnConnection(connection);
 		}
 		return true;
 	}
