@@ -188,21 +188,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			super.setup(context);
 		}
 		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
-		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
 		final IGSSConnection con = gssService.getConnection();
 		
-		LayerMetadata md = null;
-		Statement stmt = null;
-		try {
-			stmt = con.createStatement();
-			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, stmt);
-		} catch (SQLException e1) {
-			e1.printStackTrace();
-		} finally{
-			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
-		}
 		getInserts(context, sessionFactory, con);
-		getUpdates(context, sessionFactory, con, md);
+		getUpdates(context, sessionFactory, con);
 		getDeletes(context, sessionFactory, con);
 		
 		gssService.returnConnection(con);
@@ -280,7 +269,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					schemaName = databaseMetaData.getUserName();
 				}
 			} catch (SQLException se) {
-
+				// Ignore and use default JDBC URL. This shouldn't happen unless the driver
+				// doesn't implement getMetaData() properly
 			}
 
 			if (logger.isDebugEnabled()) {
@@ -490,7 +480,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 	}
 
 	private void getUpdates(final ProcessContext context, final ProcessSessionFactory sessionFactory,
-			final IGSSConnection con, LayerMetadata md) {
+			final IGSSConnection con) {
 
 		ProcessSession session = sessionFactory.createSession();
 		final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
@@ -521,8 +511,20 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
+		LayerMetadata md = null;
+		Statement stmt = null;
+		try {
+			stmt = con.createStatement();
+			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, stmt);
+		} catch (SQLException e1) {
+			e1.printStackTrace();
+		} finally{
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
+		}
+		
 		String srs_target = null;
 		String geo_table = null;
+		
 		if (md != null) {
 			srs_target = md.mCrs;
 			geo_table = "G" + Integer.toString(md.mThemeId);
