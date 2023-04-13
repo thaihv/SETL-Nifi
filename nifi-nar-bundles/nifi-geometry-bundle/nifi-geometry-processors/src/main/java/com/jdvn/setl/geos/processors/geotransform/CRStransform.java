@@ -193,15 +193,12 @@ public class CRStransform extends AbstractProcessor {
 							crs_target = CRS.decode(srs_target);
 						}
 
-						System.out.println("--------------------->");
+
 						SimpleFeatureCollection collection = GeoUtils.createNifiRecordsWithCRSTransformed("crs_transformed", reader, crs_source, crs_target);
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(collection);
-						System.out.println(recordSchema);
-						
+
 						FlowFile transformed = session.create(flowFile);
-						
-						
 						transformed = session.write(transformed, new OutputStreamCallback() {
 							@Override
 							public void process(final OutputStream out) throws IOException {
@@ -212,11 +209,6 @@ public class CRStransform extends AbstractProcessor {
 								writer.flush();
 							}
 						});
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-						//transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key()));
-						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, flowFile.getAttributes().get(GeoUtils.GEO_URL));
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 						if (crs_target != null) {
 							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), crs_target.toWKT());
 							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
@@ -225,8 +217,6 @@ public class CRStransform extends AbstractProcessor {
 						session.transfer(transformed, REL_SUCCESS);
 						session.adjustCounter("Records Written", records.size(), false);
 						
-
-
 					} catch (IOException | FactoryException e) {
 						logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
 						session.transfer(flowFile, REL_FAILURE);
@@ -237,7 +227,7 @@ public class CRStransform extends AbstractProcessor {
 			session.remove(flowFile);
 
 		} catch (Exception e) {
-			logger.error("Could not save {} because {}", new Object[] { flowFile, e });
+			logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
 			session.transfer(flowFile, REL_FAILURE);
 			return;
 		}
