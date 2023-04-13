@@ -1183,14 +1183,6 @@ public class PutGSS extends AbstractProcessor {
 				}
 			}
             sqlBuilder.append(" FROM dual");
-//            sqlBuilder.append(" WHERE NOT EXISTS ");
-//            sqlBuilder.append("(SELECT 1 FROM ");
-//            sqlBuilder.append(tableName);
-//            sqlBuilder.append(" WHERE ");
-//            sqlBuilder.append(SETL_UUID);
-//            sqlBuilder.append(" = ?");
-//            sqlBuilder.append(")");
-
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }

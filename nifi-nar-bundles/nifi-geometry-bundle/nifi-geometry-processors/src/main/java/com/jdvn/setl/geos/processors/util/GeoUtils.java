@@ -219,7 +219,75 @@ public class GeoUtils {
 		RecordSchema recordSchema = new SimpleRecordSchema(fields);
 		return recordSchema;
 	}	
-	public static ArrayList<Record> getNifiRecordsFromShapeFile(final SimpleFeatureSource featureSource, Charset charset) {
+	
+	public static RecordSchema createFeatureRecordSchema(SimpleFeatureCollection collection) {
+		SimpleFeatureType schema = null;
+		if (collection.features().hasNext())
+			schema = collection.features().next().getFeatureType();
+		else
+			return null;
+		
+		final List<RecordField> fields = new ArrayList<>();
+		boolean hasIDField = false;
+		for (int i = 0; i < schema.getAttributeCount(); i++) {
+			String fieldName = schema.getDescriptor(i).getName().getLocalPart();
+			if (fieldName.toUpperCase().equals(GeoUtils.SETL_UUID))
+				hasIDField = true;
+			String fieldType = schema.getDescriptor(i).getType().getBinding().getSimpleName();
+			DataType dataType;
+			switch (fieldType) {
+			case "Long":
+				dataType = RecordFieldType.LONG.getDataType();
+				break;
+			case "String":
+				dataType = RecordFieldType.STRING.getDataType();
+				break;
+			case "Double":
+				dataType = RecordFieldType.DOUBLE.getDataType();
+				break;
+			case "Boolean":
+				dataType = RecordFieldType.BOOLEAN.getDataType();
+				break;
+			case "Byte":
+				dataType = RecordFieldType.BYTE.getDataType();
+				break;
+			case "Character":
+				dataType = RecordFieldType.CHAR.getDataType();
+				break;
+			case "Integer":
+				dataType = RecordFieldType.INT.getDataType();
+				break;
+			case "Float":
+				dataType = RecordFieldType.FLOAT.getDataType();
+				break;
+			case "Number":
+				dataType = RecordFieldType.BIGINT.getDataType();
+				break;
+			case "Date":
+				dataType = RecordFieldType.DATE.getDataType();
+				break;
+			case "Time":
+				dataType = RecordFieldType.TIME.getDataType();
+				break;
+			case "Timestamp":
+				dataType = RecordFieldType.TIMESTAMP.getDataType();
+				break;
+			case "Short":
+				dataType = RecordFieldType.SHORT.getDataType();
+				break;
+			default:
+				dataType = RecordFieldType.STRING.getDataType();
+			}
+			fields.add(new RecordField(fieldName, dataType));
+		}
+		if (!hasIDField)
+			fields.add(new RecordField(GeoUtils.SETL_UUID, RecordFieldType.STRING.getDataType()));
+		
+		RecordSchema recordSchema = new SimpleRecordSchema(fields);
+		return recordSchema;
+	}
+	
+	public static ArrayList<Record> getNifiRecordsFromFeatureSource(final SimpleFeatureSource featureSource, Charset charset) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			final RecordSchema recordSchema = createFeatureRecordSchema(featureSource);
@@ -248,7 +316,27 @@ public class GeoUtils {
 		}
 		return returnRs;
 	}
-	public static ArrayList<Record> getNifiRecordSegmentsFromShapeFile(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds, Charset charset ) {
+	public static ArrayList<Record> getNifiRecordsFromFeatureCollection(final SimpleFeatureCollection features) {
+		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		final RecordSchema recordSchema = createFeatureRecordSchema(features);
+		SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
+		while (it.hasNext()) {
+			SimpleFeature feature = it.next();
+			Map<String, Object> fieldMap = new HashMap<String, Object>();
+			for (int i = 0; i < feature.getAttributeCount(); i++) {
+				String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
+				Object value = feature.getAttribute(i);
+				fieldMap.put(key, value);						
+			}
+			if (feature.getAttribute(GeoUtils.SETL_UUID) == null)
+				fieldMap.put(GeoUtils.SETL_UUID, feature.getID());
+			Record r = new MapRecord(recordSchema, fieldMap);
+			returnRs.add(r);
+		}
+		it.close();
+		return returnRs;
+	}	
+	public static ArrayList<Record> getNifiRecordSegmentsFromFeatureSource(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds, Charset charset ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			FilterFactory ff = CommonFactoryFinder.getFilterFactory(null);
@@ -467,7 +555,89 @@ public class GeoUtils {
 		}
 		return null;
 	}
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static SimpleFeatureCollection createNifiRecordsWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
+		List<SimpleFeature> features = new ArrayList<>();
+		String geomFieldName = SHP_GEO_COLUMN;
+		Record record;
+		try {
+			boolean bCreatedSchema = false;
+			SimpleFeatureBuilder featureBuilder = null;
+			SimpleFeatureType TYPE = null;
+			Class geometryClass = null;
+			while ((record = avroReader.nextRecord()) != null) {
+				if (!bCreatedSchema) {
+					geomFieldName = getGeometryFieldName(record);
+					String geovalue = record.getAsString(geomFieldName);
+					String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
+					switch (type) {
+					case "MULTILINESTRING":
+						geometryClass = MultiLineString.class;
+						break;
+					case "LINESTRING":
+						geometryClass = LineString.class;
+						break;
+					case "MULTIPOLYGON":
+						geometryClass = MultiLineString.class;
+						break;
+					case "POLYGON":
+						geometryClass = Polygon.class;
+						break;
+					case "MULTIPOINT":
+						geometryClass = MultiPoint.class;
+						break;
+					case "POINT":
+						geometryClass = Point.class;
+						break;
+					case "GEOMETRYCOLLECTION":
+						geometryClass = GeometryCollection.class;
+						break;
+					default:
+						geometryClass = MultiLineString.class;
+					}
 
+					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+					// shp file with geo column is "the_geom"
+					if (crs_target == null)
+						TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
+					else
+						TYPE = generateFeatureType(collectionName, crs_target, SHP_GEO_COLUMN, geometryClass, attributes);
+					featureBuilder = new SimpleFeatureBuilder(TYPE);
+					bCreatedSchema = true;
+				}
+				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+				WKTReader reader = new WKTReader(geometryFactory);
+				// Add geometry
+				Geometry geo = reader.read(record.getAsString(geomFieldName));
+				if (crs_target != null && crs_target != crs_source) {
+			        MathTransform transform = CRS.findMathTransform(crs_source, crs_target);
+			        geo = JTS.transform(geo, transform);									
+				}
+				// Add attributes
+				int size = record.getSchema().getFieldCount();
+				Object[] objs = new Object[size];
+				for (int i = 0; i < size; i++) {
+					String fName = record.getSchema().getFieldNames().get(i);
+					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
+						fName = SHP_GEO_COLUMN;
+					int index = featureBuilder.getFeatureType().indexOf(fName);
+					if (fName.contains(geomFieldName) || fName.contains(SHP_GEO_COLUMN))
+						objs[index] = geo;
+					else
+						objs[index] = record.getValue(fName);
+
+				}
+				featureBuilder.addAll(objs);
+				SimpleFeature feature = featureBuilder.buildFeature(null);
+				features.add(feature);
+			}
+
+			return new ListFeatureCollection(TYPE, features);
+		} catch (IOException | MalformedRecordException | ParseException | FactoryException | MismatchedDimensionException | TransformException e) {
+			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });
+		}
+		return null;
+	}
 	public static RecordSchema createTileRecordSchema(final TileEntry tileEntry) {
 		
 		final List<Field> tileFields = new ArrayList<>();

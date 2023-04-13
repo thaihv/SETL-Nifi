@@ -231,7 +231,7 @@ public class ShpReaderTest {
 		featureSource.getFeatures().size(); // Why need call some functions like this to get right charset ?
 		
 		Charset charset = ((ShapefileDataStore)dataStore).getCharset(); 
-		List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource, charset);
+		List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset);
 		String value1 = records.get(0).getAsString("RD_Type");
 		String value2 = records.get(0).getAsString("Add_");
 
@@ -266,7 +266,7 @@ public class ShpReaderTest {
 		
 		featureSource_1.getFeatures().size();
 		Charset charset_1 = ((ShapefileDataStore)dataStore_1).getCharset();
-		List<Record> records_1 = GeoUtils.getNifiRecordsFromShapeFile(featureSource_1, charset_1);
+		List<Record> records_1 = GeoUtils.getNifiRecordsFromFeatureSource(featureSource_1, charset_1);
 		value1 = records_1.get(0).getAsString("KOR_SBR_NM");
 		value2= records_1.get(0).getAsString("KOR_SUB_NM");
 				

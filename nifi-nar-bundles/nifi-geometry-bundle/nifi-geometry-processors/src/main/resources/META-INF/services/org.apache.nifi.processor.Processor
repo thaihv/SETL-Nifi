@@ -19,3 +19,4 @@ com.jdvn.setl.geos.processors.geopackage.GeoPackageWriter
 com.jdvn.setl.geos.processors.gss.FetchGSS
 com.jdvn.setl.geos.processors.gss.PutGSS
 com.jdvn.setl.geos.processors.gss.ListGSSTables
+com.jdvn.setl.geos.processors.geotransform.CRStransform

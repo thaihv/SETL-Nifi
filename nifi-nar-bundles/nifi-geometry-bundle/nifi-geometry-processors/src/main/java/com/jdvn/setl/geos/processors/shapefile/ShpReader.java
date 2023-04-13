@@ -367,7 +367,7 @@ public class ShpReader extends AbstractProcessor {
 						if (to > maxRecord)
 							to = maxRecord;
 						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getNifiRecordSegmentsFromShapeFile(featureSource, recordSchema, selectedIds, charset_in);
+						List<Record> records = GeoUtils.getNifiRecordSegmentsFromFeatureSource(featureSource, recordSchema, selectedIds, charset_in);
 						if (records.size() > 0) {
 							FlowFile transformed = session.create(flowFile);
 							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -411,7 +411,7 @@ public class ShpReader extends AbstractProcessor {
 					
 				} else {
 					final StopWatch stopWatch = new StopWatch(true);
-					final List<Record> records = GeoUtils.getNifiRecordsFromShapeFile(featureSource, charset_in);
+					final List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset_in);
 					FlowFile transformed = session.create(flowFile);
 					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
 					if (records.size() > 0) {
