@@ -193,7 +193,6 @@ public class CRStransform extends AbstractProcessor {
 							crs_target = CRS.decode(srs_target);
 						}
 
-
 						SimpleFeatureCollection collection = GeoUtils.createNifiRecordsWithCRSTransformed("crs_transformed", reader, crs_source, crs_target);
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(collection);
