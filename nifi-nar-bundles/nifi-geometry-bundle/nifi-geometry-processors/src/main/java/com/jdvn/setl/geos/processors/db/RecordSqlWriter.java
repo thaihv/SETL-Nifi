@@ -1,5 +1,5 @@
 
-package com.jdvn.setl.geos.processors.gss.db;
+package com.jdvn.setl.geos.processors.db;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -24,8 +24,8 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.RecordSet;
 
 import com.cci.gss.jdbc.driver.IGSSResultSet;
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.AvroConversionOptions;
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.ResultSetRowCallback;
+import com.jdvn.setl.geos.processors.db.JdbcCommon.AvroConversionOptions;
+import com.jdvn.setl.geos.processors.db.JdbcCommon.ResultSetRowCallback;
 import com.vividsolutions.jts.io.ParseException;
 
 public class RecordSqlWriter implements SqlWriter {

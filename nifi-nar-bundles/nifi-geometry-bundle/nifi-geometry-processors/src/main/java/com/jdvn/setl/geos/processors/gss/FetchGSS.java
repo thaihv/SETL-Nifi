@@ -29,10 +29,10 @@ import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
 
-import com.jdvn.setl.geos.processors.gss.db.AbstractQueryGSSTable;
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon;
-import com.jdvn.setl.geos.processors.gss.db.RecordSqlWriter;
-import com.jdvn.setl.geos.processors.gss.db.SqlWriter;
+import com.jdvn.setl.geos.processors.db.AbstractQueryGSSTable;
+import com.jdvn.setl.geos.processors.db.JdbcCommon;
+import com.jdvn.setl.geos.processors.db.RecordSqlWriter;
+import com.jdvn.setl.geos.processors.db.SqlWriter;
 
 
 

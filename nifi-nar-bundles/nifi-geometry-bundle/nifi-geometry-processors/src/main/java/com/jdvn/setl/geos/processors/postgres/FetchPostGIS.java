@@ -43,17 +43,16 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.serialization.RecordSetWriterFactory;
+import com.jdvn.setl.geos.processors.db.JdbcCommon;
 
-import com.jdvn.setl.geos.processors.gss.db.AbstractQueryPostGISTable;
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon;
-import com.jdvn.setl.geos.processors.gss.db.RecordPostGISWriter;
-import com.jdvn.setl.geos.processors.gss.db.SqlWriter;
+import com.jdvn.setl.geos.processors.db.AbstractQueryPostGISTable;
+import com.jdvn.setl.geos.processors.db.RecordPostGISWriter;
+import com.jdvn.setl.geos.processors.db.SqlWriter;
 
 
 @TriggerSerially
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
 @Tags({"sql", "select", "jdbc", "query", "database", "record"})
-
 @CapabilityDescription("Generates a SQL select query, or uses a provided statement, and executes it to fetch all rows whose values in the specified "
         + "Maximum Value column(s) are larger than the "
         + "previously-seen maxima. Query result will be converted to the format specified by the record writer. Expression Language is supported for several properties, but no incoming "

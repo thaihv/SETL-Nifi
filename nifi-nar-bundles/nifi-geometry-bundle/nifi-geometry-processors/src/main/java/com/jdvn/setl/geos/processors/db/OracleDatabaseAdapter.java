@@ -1,5 +1,5 @@
 
-package com.jdvn.setl.geos.processors.gss.db;
+package com.jdvn.setl.geos.processors.db;
 
 import org.apache.commons.lang3.StringUtils;
 

@@ -14,16 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.jdvn.setl.geos.processors.gss.db;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
+package com.jdvn.setl.geos.processors.db;
 
 import org.apache.avro.Schema;
 import org.apache.nifi.avro.AvroTypeUtil;
@@ -39,9 +30,19 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.serialization.record.RecordSet;
 import org.apache.nifi.serialization.record.ResultSetRecordSet;
+import com.jdvn.setl.geos.processors.db.JdbcCommon;
 
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.AvroConversionOptions;
-import com.jdvn.setl.geos.processors.gss.db.JdbcCommon.ResultSetRowCallback;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.jdvn.setl.geos.processors.db.JdbcCommon.AvroConversionOptions;
+import com.jdvn.setl.geos.processors.db.JdbcCommon.ResultSetRowCallback;
 
 public class RecordPostGISWriter implements SqlWriter {
 
@@ -158,5 +159,4 @@ public class RecordPostGISWriter implements SqlWriter {
             }
         }
     }
-
 }

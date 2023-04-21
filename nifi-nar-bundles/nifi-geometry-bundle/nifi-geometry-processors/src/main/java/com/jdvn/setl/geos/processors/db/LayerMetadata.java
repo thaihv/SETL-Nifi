@@ -1,4 +1,4 @@
-package com.jdvn.setl.geos.processors.gss.db;
+package com.jdvn.setl.geos.processors.db;
 
 import com.cci.gss.GSSConstants;
 

@@ -88,7 +88,7 @@ import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jdvn.setl.geos.processors.gss.db.LayerMetadata;
+import com.jdvn.setl.geos.processors.db.LayerMetadata;
 
 public class GeoUtils {
 

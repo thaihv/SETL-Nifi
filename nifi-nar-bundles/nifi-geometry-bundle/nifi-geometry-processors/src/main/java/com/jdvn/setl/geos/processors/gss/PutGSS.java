@@ -95,7 +95,7 @@ import com.cci.gss.jdbc.driver.IGSSStatement;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jdvn.setl.geos.gss.GSSService;
-import com.jdvn.setl.geos.processors.gss.db.DatabaseAdapter;
+import com.jdvn.setl.geos.processors.db.DatabaseAdapter;
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 

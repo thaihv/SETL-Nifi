@@ -1,4 +1,4 @@
-package com.jdvn.setl.geos.processors.gss.db;
+package com.jdvn.setl.geos.processors.db;
 import java.io.Closeable;
 import java.io.IOException;
 import java.math.BigDecimal;

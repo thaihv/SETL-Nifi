@@ -12,6 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-com.jdvn.setl.geos.processors.gss.db.GenericDatabaseAdapter
-com.jdvn.setl.geos.processors.gss.db.OracleDatabaseAdapter
-com.jdvn.setl.geos.processors.gss.db.PostgreSQLDatabaseAdapter
+com.jdvn.setl.geos.processors.db.GenericDatabaseAdapter
+com.jdvn.setl.geos.processors.db.OracleDatabaseAdapter
+com.jdvn.setl.geos.processors.db.PostgreSQLDatabaseAdapter

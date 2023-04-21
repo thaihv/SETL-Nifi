@@ -14,18 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.jdvn.setl.geos.processors.gss.db;
+package com.jdvn.setl.geos.processors.db;
 
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessSession;
+
+import static com.jdvn.setl.geos.processors.db.JdbcCommon.ResultSetRowCallback;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.sql.ResultSet;
 import java.util.Collections;
 import java.util.Map;
-
-import static com.jdvn.setl.geos.processors.gss.db.JdbcCommon.ResultSetRowCallback;
 
 
 /**
