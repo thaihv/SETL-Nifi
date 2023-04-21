@@ -52,7 +52,7 @@ import com.jdvn.setl.geos.processors.db.SqlWriter;
 
 @TriggerSerially
 @InputRequirement(Requirement.INPUT_FORBIDDEN)
-@Tags({"sql", "select", "jdbc", "query", "database", "record"})
+@Tags({"postgres", "select", "jdbc", "query", "database", "spatial data", "geometry", "record"})
 @CapabilityDescription("Generates a SQL select query, or uses a provided statement, and executes it to fetch all rows whose values in the specified "
         + "Maximum Value column(s) are larger than the "
         + "previously-seen maxima. Query result will be converted to the format specified by the record writer. Expression Language is supported for several properties, but no incoming "
