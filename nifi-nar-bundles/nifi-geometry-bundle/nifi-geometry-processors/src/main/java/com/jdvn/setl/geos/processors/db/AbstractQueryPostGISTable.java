@@ -8,11 +8,14 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.text.DateFormat;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +39,8 @@ import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.AttributeExpression;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
+import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
@@ -50,6 +55,10 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
     public static final String RESULT_TABLENAME = "tablename";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
+    public static final String RESULT_SCHEMANAME = "source.schemaname";
+    public static final String RESULT_URL = "source.url";
+
+    public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
             String.valueOf(Connection.TRANSACTION_READ_COMMITTED),
@@ -188,16 +197,21 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
     @OnStopped
     public void stop() {
-        // Reset the column type map in case properties change
         setupComplete.set(false);
     }
 
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
+		if (!setupComplete.get()) {
+			super.setup(context);
+		}
+		getInserts(context, sessionFactory);
+		getUpdates(context, sessionFactory);
+		getDeletes(context, sessionFactory);
+		
+    }
+    public void getInserts(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
         // Fetch the column/table info once
-        if (!setupComplete.get()) {
-            super.setup(context);
-        }
         ProcessSession session = sessionFactory.createSession();
         final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
 
@@ -209,6 +223,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
         final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
         final String maxValueColumnNames = context.getProperty(MAX_VALUE_COLUMN_NAMES).evaluateAttributeExpressions().getValue();
+        
+        final String geoColumn = context.getProperty(GEO_COLUMN_NAME).evaluateAttributeExpressions().getValue();
+        
         final String initialLoadStrategy = context.getProperty(INITIAL_LOAD_STRATEGY).getValue();
         final String customWhereClause = context.getProperty(WHERE_CLAUSE).evaluateAttributeExpressions().getValue();
         final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
@@ -353,6 +370,456 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+						attributesToAdd.put(RESULT_URL, jdbcURL);
+                        attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
+                        
+						//attributesToAdd.put(GeoAttributes.CRS.key(), "Later");
+						attributesToAdd.put(GEO_COLUMN, geoColumn);
+						
+						
+
+                        if(maxRowsPerFlowFile > 0) {
+                            attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
+                            attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
+                        }
+						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
+							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+						
+                        attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
+                        fileToProcess = session.putAllAttributes(fileToProcess, attributesToAdd);
+                        sqlWriter.updateCounters(session);
+
+                        logger.debug("{} contains {} records; transferring to 'success'",
+                                new Object[]{fileToProcess, nrOfRows.get()});
+
+                        session.getProvenanceReporter().receive(fileToProcess, jdbcURL, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+                        resultSetFlowFiles.add(fileToProcess);
+                        // If we've reached the batch size, send out the flow files
+                        if (outputBatchSize > 0 && resultSetFlowFiles.size() >= outputBatchSize) {
+                            session.transfer(resultSetFlowFiles, REL_SUCCESS);
+                            session.commitAsync();
+                            resultSetFlowFiles.clear();
+                        }
+                    } else {
+                        // If there were no rows returned, don't send the flowfile
+                        session.remove(fileToProcess);
+                        // If no rows and this was first FlowFile, yield
+                        if(fragmentIndex == 0){
+                            context.yield();
+                        }
+                        break;
+                    }
+
+                    fragmentIndex++;
+                    if (maxFragments > 0 && fragmentIndex >= maxFragments) {
+                        break;
+                    }
+
+                    // If we aren't splitting up the data into flow files or fragments, then the result set has been entirely fetched so don't loop back around
+                    if (maxFragments == 0 && maxRowsPerFlowFile == 0) {
+                        break;
+                    }
+
+                    // If we are splitting up the data into flow files, don't loop back around if we've gotten all results
+                    if(maxRowsPerFlowFile > 0 && nrOfRows.get() < maxRowsPerFlowFile) {
+                        break;
+                    }
+                }
+
+                // Apply state changes from the Max Value tracker
+                maxValCollector.applyStateChanges();
+
+                // Even though the maximum value and total count are known at this point, to maintain consistent behavior if Output Batch Size is set, do not store the attributes
+                if (outputBatchSize == 0) {
+                    for (int i = 0; i < resultSetFlowFiles.size(); i++) {
+                        // Add maximum values as attributes
+                        for (Map.Entry<String, String> entry : statePropertyMap.entrySet()) {
+                            // Get just the column name from the key
+                            String key = entry.getKey();
+                            String colName = key.substring(key.lastIndexOf(NAMESPACE_DELIMITER) + NAMESPACE_DELIMITER.length());
+                            resultSetFlowFiles.set(i, session.putAttribute(resultSetFlowFiles.get(i), "maxvalue." + colName, entry.getValue()));
+                        }
+
+                        //set count on all FlowFiles
+                        if (maxRowsPerFlowFile > 0) {
+                            resultSetFlowFiles.set(i,
+                                    session.putAttribute(resultSetFlowFiles.get(i), FRAGMENT_COUNT, Integer.toString(fragmentIndex)));
+                        }
+                    }
+                }
+            } catch (final SQLException e) {
+                throw e;
+            }
+
+            session.transfer(resultSetFlowFiles, REL_SUCCESS);
+
+        } catch (final ProcessException | SQLException e) {
+            logger.error("Unable to execute SQL select query {} due to {}", new Object[]{selectQuery, e});
+            if (!resultSetFlowFiles.isEmpty()) {
+                session.remove(resultSetFlowFiles);
+            }
+            context.yield();
+        } finally {
+            try {
+                // Update the state
+                session.setState(statePropertyMap, Scope.CLUSTER);
+            } catch (IOException ioe) {
+                getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded", new Object[]{this, ioe});
+            }
+
+            session.commitAsync();
+        }
+    }
+    
+	protected String getQueryUpdate(DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
+		
+		if (StringUtils.isEmpty(tableName)) {
+			throw new IllegalArgumentException("Table name must be specified");
+		}
+
+		final StringBuilder query;
+		String eventTable = getEventTableFromLayer(tableName);
+		
+		query = new StringBuilder("SELECT S.*, to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(tableName).append(" S, ").append(eventTable).append(" E ");
+		query.append("WHERE S.id = E.id");
+		
+		if (stateMap != null && !stateMap.isEmpty()) {
+			String maxValueKey = getStateKey(eventTable, CDC_UPDATE_DATETIME, dbAdapter);
+			String maxValue = stateMap.get(maxValueKey);
+			if (maxValue != null)
+				query.append(" AND to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') > ").append("'").append(maxValue).append("'");
+		}
+		return query.toString();
+
+	}  
+	protected String getQueryDelete(DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
+		
+		if (StringUtils.isEmpty(tableName)) {
+			throw new IllegalArgumentException("Table name must be specified");
+		}
+		final StringBuilder query;
+
+		String eventTable = getEventTableFromLayer(tableName);
+		query = new StringBuilder("SELECT id");
+		query.append(", to_char(Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(eventTable);
+		query.append(" WHERE Event='d'");
+		
+		if (stateMap != null && !stateMap.isEmpty()) {
+			String maxValueKey = getStateKey(eventTable, CDC_DELETE_DATETIME, dbAdapter);
+			String maxValue = stateMap.get(maxValueKey);
+			if (maxValue != null)
+				query.append(" AND to_char(Changed,'YYYY-MM-DD HH24.MI.SS.FF3') > ").append("'").append(maxValue).append("'");
+		}
+		return query.toString();
+
+	} 	
+    public void getUpdates(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
+        ProcessSession session = sessionFactory.createSession();
+        final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
+
+        final ComponentLog logger = getLogger();
+
+        final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
+        final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+        final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+        
+        final String geoColumn = context.getProperty(GEO_COLUMN_NAME).evaluateAttributeExpressions().getValue();
+        
+        final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
+        final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
+        final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
+        final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
+        final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
+        final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet()
+                ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger()
+                : 0;
+        final Integer transIsolationLevel = context.getProperty(TRANS_ISOLATION_LEVEL).isSet()
+                ? context.getProperty(TRANS_ISOLATION_LEVEL).asInteger()
+                : null;
+
+        SqlWriter sqlWriter = configureSqlWriter(session, context);
+
+        final StateMap stateMap;
+        try {
+            stateMap = session.getState(Scope.CLUSTER);
+        } catch (final IOException ioe) {
+            getLogger().error("Failed to retrieve observed maximum values from the State Manager. Will not perform "
+                    + "query until this is accomplished.", ioe);
+            context.yield();
+            return;
+        }
+
+        // Make a mutable copy of the current state property map. This will be updated by the result row callback, and eventually
+        // set as the current state map (after the session has been committed)
+        final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
+
+        final String selectQuery = getQueryUpdate(dbAdapter, tableName, statePropertyMap);
+
+        final StopWatch stopWatch = new StopWatch(true);
+        final String fragmentIdentifier = UUID.randomUUID().toString();
+
+        try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
+             final Statement st = con.createStatement()) {
+
+            if (fetchSize != null && fetchSize > 0) {
+                try {
+                    st.setFetchSize(fetchSize);
+                } catch (SQLException se) {
+                    // Not all drivers support this, just log the error (at debug level) and move on
+                    logger.debug("Cannot set fetch size to {} due to {}", new Object[]{fetchSize, se.getLocalizedMessage()}, se);
+                }
+            }
+
+            if (transIsolationLevel != null) {
+                con.setTransactionIsolation(transIsolationLevel);
+            }
+
+            String jdbcURL = "DBCPService";
+            try {
+                DatabaseMetaData databaseMetaData = con.getMetaData();
+                if (databaseMetaData != null) {
+                    jdbcURL = databaseMetaData.getURL();
+                }
+            } catch (SQLException se) {
+                // Ignore and use default JDBC URL. This shouldn't happen unless the driver doesn't implement getMetaData() properly
+            }
+
+            st.setQueryTimeout(queryTimeout); // timeout in seconds
+            if (logger.isDebugEnabled()) {
+                logger.debug("Executing query {}", new Object[] { selectQuery });
+            }
+            try (final ResultSet resultSet = st.executeQuery(selectQuery)) {
+                int fragmentIndex=0;
+                // Max values will be updated in the state property map by the callback
+                final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
+
+                while(true) {
+                    final AtomicLong nrOfRows = new AtomicLong(0L);
+
+                    FlowFile fileToProcess = session.create();
+                    try {
+                        fileToProcess = session.write(fileToProcess, out -> {
+                            try {
+                                nrOfRows.set(sqlWriter.writeResultSet(resultSet, out, getLogger(), maxValCollector));
+                            } catch (Exception e) {
+                                throw new ProcessException("Error during database query or conversion of records.", e);
+                            }
+                        });
+                    } catch (ProcessException e) {
+                        // Add flowfile to results before rethrowing so it will be removed from session in outer catch
+                        resultSetFlowFiles.add(fileToProcess);
+                        throw e;
+                    }
+
+                    if (nrOfRows.get() > 0) {
+                        // set attributes
+                        final Map<String, String> attributesToAdd = new HashMap<>();
+                        attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        attributesToAdd.put(RESULT_TABLENAME, tableName);
+						attributesToAdd.put(RESULT_URL, jdbcURL);                    
+                        attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
+                        
+						//attributesToAdd.put(GeoAttributes.CRS.key(), "Later");
+						attributesToAdd.put(GEO_COLUMN, geoColumn);
+						
+                        if(maxRowsPerFlowFile > 0) {
+                            attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
+                            attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
+                        }
+
+                        attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
+						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
+							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+						
+                        fileToProcess = session.putAllAttributes(fileToProcess, attributesToAdd);
+                        sqlWriter.updateCounters(session);
+
+                        logger.debug("{} contains {} records; transferring to 'success'",
+                                new Object[]{fileToProcess, nrOfRows.get()});
+
+                        session.getProvenanceReporter().receive(fileToProcess, jdbcURL, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+                        resultSetFlowFiles.add(fileToProcess);
+                        // If we've reached the batch size, send out the flow files
+                        if (outputBatchSize > 0 && resultSetFlowFiles.size() >= outputBatchSize) {
+                            session.transfer(resultSetFlowFiles, REL_SUCCESS);
+                            session.commitAsync();
+                            resultSetFlowFiles.clear();
+                        }
+                    } else {
+                        // If there were no rows returned, don't send the flowfile
+                        session.remove(fileToProcess);
+                        // If no rows and this was first FlowFile, yield
+                        if(fragmentIndex == 0){
+                            context.yield();
+                        }
+                        break;
+                    }
+
+                    fragmentIndex++;
+                    if (maxFragments > 0 && fragmentIndex >= maxFragments) {
+                        break;
+                    }
+
+                    // If we aren't splitting up the data into flow files or fragments, then the result set has been entirely fetched so don't loop back around
+                    if (maxFragments == 0 && maxRowsPerFlowFile == 0) {
+                        break;
+                    }
+
+                    // If we are splitting up the data into flow files, don't loop back around if we've gotten all results
+                    if(maxRowsPerFlowFile > 0 && nrOfRows.get() < maxRowsPerFlowFile) {
+                        break;
+                    }
+                }
+
+                // Apply state changes from the Max Value tracker
+                maxValCollector.applyStateChanges();
+
+                // Even though the maximum value and total count are known at this point, to maintain consistent behavior if Output Batch Size is set, do not store the attributes
+                if (outputBatchSize == 0) {
+                    for (int i = 0; i < resultSetFlowFiles.size(); i++) {
+                        // Add maximum values as attributes
+                        for (Map.Entry<String, String> entry : statePropertyMap.entrySet()) {
+                            // Get just the column name from the key
+                            String key = entry.getKey();
+                            String colName = key.substring(key.lastIndexOf(NAMESPACE_DELIMITER) + NAMESPACE_DELIMITER.length());
+                            resultSetFlowFiles.set(i, session.putAttribute(resultSetFlowFiles.get(i), "maxvalue." + colName, entry.getValue()));
+                        }
+
+                        //set count on all FlowFiles
+                        if (maxRowsPerFlowFile > 0) {
+                            resultSetFlowFiles.set(i,
+                                    session.putAttribute(resultSetFlowFiles.get(i), FRAGMENT_COUNT, Integer.toString(fragmentIndex)));
+                        }
+                    }
+                }
+            } catch (final SQLException e) {
+                throw e;
+            }
+
+            session.transfer(resultSetFlowFiles, REL_SUCCESS);
+
+        } catch (final ProcessException | SQLException e) {
+            logger.error("Unable to execute SQL select query {} due to {}", new Object[]{selectQuery, e});
+            if (!resultSetFlowFiles.isEmpty()) {
+                session.remove(resultSetFlowFiles);
+            }
+            context.yield();
+        } finally {
+            try {
+                // Update the state
+                session.setState(statePropertyMap, Scope.CLUSTER);
+            } catch (IOException ioe) {
+                getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded", new Object[]{this, ioe});
+            }
+
+            session.commitAsync();
+        }
+    }
+     
+    public void getDeletes(final ProcessContext context, final ProcessSessionFactory sessionFactory) throws ProcessException {
+        ProcessSession session = sessionFactory.createSession();
+        final List<FlowFile> resultSetFlowFiles = new ArrayList<>();
+
+        final ComponentLog logger = getLogger();
+
+        final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
+        final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+        final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+        final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
+        final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
+        final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
+        final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
+        final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
+        final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet()
+                ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger()
+                : 0;
+        final Integer transIsolationLevel = context.getProperty(TRANS_ISOLATION_LEVEL).isSet()
+                ? context.getProperty(TRANS_ISOLATION_LEVEL).asInteger()
+                : null;
+
+        SqlWriter sqlWriter = configureSqlWriter(session, context);
+
+        final StateMap stateMap;
+        try {
+            stateMap = session.getState(Scope.CLUSTER);
+        } catch (final IOException ioe) {
+            getLogger().error("Failed to retrieve observed maximum values from the State Manager. Will not perform "
+                    + "query until this is accomplished.", ioe);
+            context.yield();
+            return;
+        }
+
+        // Make a mutable copy of the current state property map. This will be updated by the result row callback, and eventually
+        // set as the current state map (after the session has been committed)
+        final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
+
+        final String selectQuery = getQueryDelete(dbAdapter, tableName, statePropertyMap);
+
+        final StopWatch stopWatch = new StopWatch(true);
+        final String fragmentIdentifier = UUID.randomUUID().toString();
+
+        try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
+             final Statement st = con.createStatement()) {
+
+            if (fetchSize != null && fetchSize > 0) {
+                try {
+                    st.setFetchSize(fetchSize);
+                } catch (SQLException se) {
+                    // Not all drivers support this, just log the error (at debug level) and move on
+                    logger.debug("Cannot set fetch size to {} due to {}", new Object[]{fetchSize, se.getLocalizedMessage()}, se);
+                }
+            }
+
+            if (transIsolationLevel != null) {
+                con.setTransactionIsolation(transIsolationLevel);
+            }
+
+            String jdbcURL = "DBCPService";
+            try {
+                DatabaseMetaData databaseMetaData = con.getMetaData();
+                if (databaseMetaData != null) {
+                    jdbcURL = databaseMetaData.getURL();
+                }
+            } catch (SQLException se) {
+                // Ignore and use default JDBC URL. This shouldn't happen unless the driver doesn't implement getMetaData() properly
+            }
+
+            st.setQueryTimeout(queryTimeout); // timeout in seconds
+            if (logger.isDebugEnabled()) {
+                logger.debug("Executing query {}", new Object[] { selectQuery });
+            }
+            try (final ResultSet resultSet = st.executeQuery(selectQuery)) {
+                int fragmentIndex=0;
+                // Max values will be updated in the state property map by the callback
+                final MaxValueResultSetRowCollector maxValCollector = new MaxValueResultSetRowCollector(tableName, statePropertyMap, dbAdapter);
+
+                while(true) {
+                    final AtomicLong nrOfRows = new AtomicLong(0L);
+
+                    FlowFile fileToProcess = session.create();
+                    try {
+                        fileToProcess = session.write(fileToProcess, out -> {
+                            try {
+                                nrOfRows.set(sqlWriter.writeResultSet(resultSet, out, getLogger(), maxValCollector));
+                            } catch (Exception e) {
+                                throw new ProcessException("Error during database query or conversion of records.", e);
+                            }
+                        });
+                    } catch (ProcessException e) {
+                        // Add flowfile to results before rethrowing so it will be removed from session in outer catch
+                        resultSetFlowFiles.add(fileToProcess);
+                        throw e;
+                    }
+
+                    if (nrOfRows.get() > 0) {
+                        // set attributes
+                        final Map<String, String> attributesToAdd = new HashMap<>();
+                        attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        attributesToAdd.put(RESULT_TABLENAME, tableName);
+                        attributesToAdd.put(RESULT_URL, jdbcURL);   
+                        attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
 
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
@@ -443,8 +910,8 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
             session.commitAsync();
         }
-    }
-
+    }    
+    
     protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String columnNames, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
 
@@ -526,16 +993,19 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                 // Iterate over the row, check-and-set max values
                 final ResultSetMetaData meta = resultSet.getMetaData();
                 final int nrOfColumns = meta.getColumnCount();
+                String fullyQualifiedMaxValueKey;
+                String maxValueString;
+                 
                 if (nrOfColumns > 0) {
                     for (int i = 1; i <= nrOfColumns; i++) {
                         String colName = meta.getColumnName(i).toLowerCase();
-                        String fullyQualifiedMaxValueKey = getStateKey(tableName, colName, dbAdapter);
+                        fullyQualifiedMaxValueKey = getStateKey(tableName, colName, dbAdapter);
                         Integer type = columnTypeMap.get(fullyQualifiedMaxValueKey);
                         // Skip any columns we're not keeping track of or whose value is null
                         if (type == null || resultSet.getObject(i) == null) {
                             continue;
                         }
-                        String maxValueString = newColMap.get(fullyQualifiedMaxValueKey);
+                        maxValueString = newColMap.get(fullyQualifiedMaxValueKey);
                         // If we can't find the value at the fully-qualified key name, it is possible (under a previous scheme)
                         // the value has been stored under a key that is only the column name. Fall back to check the column name; either way, when a new
                         // maximum value is observed, it will be stored under the fully-qualified key from then on.
@@ -547,7 +1017,37 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                             newColMap.put(fullyQualifiedMaxValueKey, newMaxValueString);
                         }
                     }
+                    
+                    // Process event table for update & delete
+                    for (int i = 1; i <= nrOfColumns; i++) {
+                        String colName = meta.getColumnName(i).toLowerCase();
+        	            if (colName.equals(CDC_EVENT_DATETIME.toLowerCase())) {
+        	            	String setl_table = getEventTableFromLayer(tableName);
+        	            	if (nrOfColumns > 3) {  // max column in event table = 3, to get update need more
+        	            		fullyQualifiedMaxValueKey = getStateKey(setl_table, CDC_UPDATE_DATETIME, dbAdapter);
+        			        	maxValueString = newColMap.get(fullyQualifiedMaxValueKey);	            		
+        	            	}
+        	            	else {
+        	            		fullyQualifiedMaxValueKey = getStateKey(setl_table, CDC_DELETE_DATETIME, dbAdapter);
+        			        	maxValueString = newColMap.get(fullyQualifiedMaxValueKey);	            		
+        	            	}
+        	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");
+        	            	Date maxTimestampValue = null;
+        		            if (maxValueString != null) {
+        		            	maxTimestampValue = dateFormat.parse(maxValueString);
+        		            }
+        		        	String latestTime = resultSet.getString(CDC_EVENT_DATETIME);
+        		        	Date colTimestampValue = dateFormat.parse(latestTime);
+        		        	
+        		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
+        		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
+        		            }  	            	
+        	            }                         
+                    }                  
+                    
                 }
+                
+                
             } catch (ParseException | SQLException e) {
                 throw new IOException(e);
             }

@@ -110,6 +110,7 @@ public class FetchPostGIS extends AbstractQueryPostGISTable {
         pds.add(SQL_QUERY);
         pds.add(RECORD_WRITER_FACTORY);
         pds.add(MAX_VALUE_COLUMN_NAMES);
+        pds.add(GEO_COLUMN_NAME);
         pds.add(INITIAL_LOAD_STRATEGY);
         pds.add(QUERY_TIMEOUT);
         pds.add(FETCH_SIZE);

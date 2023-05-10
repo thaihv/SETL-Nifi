@@ -91,7 +91,12 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
     public static final String FRAGMENT_ID = FragmentAttributes.FRAGMENT_ID.key();
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
-
+    public static final String CDC_UPDATE_DATETIME = "updated";
+    public static final String CDC_DELETE_DATETIME = "deleted";
+    public static final String CDC_EVENT_DATETIME = "Changed";
+    public static final String GEO_COLUMN = "geo.column";
+    public static final String GEO_FEATURE_TYPE = "geo.feature.type";
+    public static final String EVENT_PREFIX = "nifi_";    
     // Relationships
     public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
@@ -142,7 +147,13 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
             .build();
-
+    public static final PropertyDescriptor GEO_COLUMN_NAME = new PropertyDescriptor.Builder()
+            .name("Geometry column")
+            .description("Set a column name as a spatial data if there are many geometry columns")
+            .required(false)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+            .build();
     public static final PropertyDescriptor QUERY_TIMEOUT = new PropertyDescriptor.Builder()
             .name("Max Wait Time")
             .description("The maximum amount of time allowed for a running SQL select query "
@@ -229,7 +240,10 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
 
         return super.customValidate(validationContext);
     }
-
+	public String getEventTableFromLayer(final String layerName) {
+		String setl_table = EVENT_PREFIX + layerName;
+		return setl_table.substring(0, Math.min(setl_table.length(), 30));		
+	}
     public void setup(final ProcessContext context) {
         setup(context,true,null);
     }
@@ -251,6 +265,8 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
 
             final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+            String setl_table = getEventTableFromLayer(tableName);
+            
             try (final Connection con = dbcpService.getConnection(flowFile == null ? Collections.emptyMap() : flowFile.getAttributes());
                  final Statement st = con.createStatement()) {
 
@@ -310,6 +326,13 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             } catch (SQLException e) {
                 throw new ProcessException("Unable to communicate with database in order to determine column types", e);
             }
+            
+            
+			String colKey = getStateKey(setl_table, CDC_UPDATE_DATETIME, dbAdapter);
+			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types		
+			colKey = getStateKey(setl_table, CDC_DELETE_DATETIME, dbAdapter);
+			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types	
+			
             setupComplete.set(true);
         }
     }
