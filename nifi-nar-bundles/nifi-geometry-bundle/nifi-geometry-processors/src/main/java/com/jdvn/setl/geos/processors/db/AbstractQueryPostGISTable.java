@@ -342,6 +342,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
             if (logger.isDebugEnabled()) {
                 logger.debug("Executing query {}", new Object[] { selectQuery });
             }
+            
+            final String crs = getCRSFromGeometryColumn(con, tableName, geoColumn);           
+            
             try (final ResultSet resultSet = st.executeQuery(selectQuery)) {
                 int fragmentIndex=0;
                 // Max values will be updated in the state property map by the callback
@@ -373,19 +376,24 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 						attributesToAdd.put(RESULT_URL, jdbcURL);
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
                         
-						//attributesToAdd.put(GeoAttributes.CRS.key(), "Later");
+						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
-						
-						
+
+						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
+						String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
+								+ ", [" + Double.toString(bbox[1]) + "," + Double.toString(bbox[3]) + "]]";
+						attributesToAdd.put(GeoAttributes.GEO_ENVELOPE.key(), envelop);
+						attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
 
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
                             attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
                         }
+
+                        attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
 							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
 						
-                        attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
                         fileToProcess = session.putAllAttributes(fileToProcess, attributesToAdd);
                         sqlWriter.updateCounters(session);
 
@@ -470,8 +478,69 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
             session.commitAsync();
         }
     }
-    
-	protected String getQueryUpdate(DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
+   
+	private double[] getExtentOfGeometryColumn(Connection connection, String layerName, String geoColumn){
+		double[] bbox = {0,0,0,0};
+		final StringBuilder query;
+		query = new StringBuilder("SELECT ");
+		query.append("min(ST_XMin(").append(geoColumn).append(")) as left,");
+		query.append("min(ST_YMin(").append(geoColumn).append(")) as bottom,");
+		query.append("max(ST_XMax(").append(geoColumn).append(")) as right,");
+		query.append("max(ST_YMax(").append(geoColumn).append(")) as top");
+		query.append(" FROM ").append(layerName);
+		try (final Statement st = connection.createStatement()) {
+	        try (final ResultSet resultSet = st.executeQuery(query.toString())) {
+	            while (resultSet.next()) {
+	            	bbox[0] = resultSet.getDouble("left");
+	            	bbox[1] = resultSet.getDouble("bottom");
+	            	bbox[2] = resultSet.getDouble("right");
+	            	bbox[3] = resultSet.getDouble("top");
+	            }
+	        } catch (final SQLException e) {
+	            throw e;
+	        }	
+		} catch (SQLException e1) {
+			e1.printStackTrace();
+		}
+		return bbox;		
+	}    
+	private String getCRSFromGeometryColumn(Connection connection, String layerName, String geoColumn){
+		String crs_wkt = null;
+		final StringBuilder query;
+		query = new StringBuilder("SELECT srtext AS wkt FROM ");
+		query.append("spatial_ref_sys");
+		query.append(" WHERE srid = ");
+		query.append("(SELECT Find_SRID('',").append("'").append(layerName).append("',").append("'").append(geoColumn).append("'))");
+		
+		try (final Statement st = connection.createStatement()) {
+	        try (final ResultSet resultSet = st.executeQuery(query.toString())) {
+	            while (resultSet.next()) {
+	                crs_wkt = resultSet.getString("wkt");
+	            }
+	        } catch (final SQLException e) {
+	            throw e;
+	        }	
+		} catch (SQLException e1) {
+			e1.printStackTrace();
+		}
+		return crs_wkt;		
+	}
+	private List<String> getPrimaryKeyColumns(Connection connection, String catalog, String schema, String layerName){
+		List<String> columns = new ArrayList<>();
+		try {
+			DatabaseMetaData meta = connection.getMetaData();
+	        try (ResultSet primaryKeys = meta.getPrimaryKeys(catalog, schema, layerName)) {
+	            while (primaryKeys.next()) {
+	                columns.add(primaryKeys.getString("COLUMN_NAME"));
+	            }
+	        }
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		return columns;		
+	}
+	
+	protected String getQueryUpdate(Connection con, DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
 		
 		if (StringUtils.isEmpty(tableName)) {
 			throw new IllegalArgumentException("Table name must be specified");
@@ -479,11 +548,17 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
 		final StringBuilder query;
 		String eventTable = getEventTableFromLayer(tableName);
-		
+		List<String> Ids = getPrimaryKeyColumns(con, null,null,tableName);
 		query = new StringBuilder("SELECT S.*, to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
-		query.append(tableName).append(" S, ").append(eventTable).append(" E ");
-		query.append("WHERE S.id = E.id");
-		
+		query.append(tableName).append(" S, ").append(eventTable).append(" E WHERE ");
+		boolean first = true;
+		for (String e : Ids) {
+		    if (!first)
+		    	query.append (" AND ");
+		    else
+		        first = false;
+		    query.append ("S.").append(e).append(" = ").append("E.").append(e);
+		}
 		if (stateMap != null && !stateMap.isEmpty()) {
 			String maxValueKey = getStateKey(eventTable, CDC_UPDATE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
@@ -493,7 +568,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 		return query.toString();
 
 	}  
-	protected String getQueryDelete(DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
+	protected String getQueryDelete(Connection con, DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
 		
 		if (StringUtils.isEmpty(tableName)) {
 			throw new IllegalArgumentException("Table name must be specified");
@@ -501,7 +576,11 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 		final StringBuilder query;
 
 		String eventTable = getEventTableFromLayer(tableName);
-		query = new StringBuilder("SELECT id");
+		List<String> Ids = getPrimaryKeyColumns(con, null,null,tableName);
+		String IdsString = String.join(",", Ids);
+		
+		query = new StringBuilder("SELECT ");
+		query.append(IdsString);
 		query.append(", to_char(Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
 		query.append(eventTable);
 		query.append(" WHERE Event='d'");
@@ -555,13 +634,15 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         // set as the current state map (after the session has been committed)
         final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
-        final String selectQuery = getQueryUpdate(dbAdapter, tableName, statePropertyMap);
-
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
-
+        String selectQuery = null;
+         
+        
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
+        	
+        	selectQuery = getQueryUpdate(con, dbAdapter, tableName, statePropertyMap);
 
             if (fetchSize != null && fetchSize > 0) {
                 try {
@@ -590,6 +671,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
             if (logger.isDebugEnabled()) {
                 logger.debug("Executing query {}", new Object[] { selectQuery });
             }
+            
+            final String crs = getCRSFromGeometryColumn(con, tableName, geoColumn);
+            
             try (final ResultSet resultSet = st.executeQuery(selectQuery)) {
                 int fragmentIndex=0;
                 // Max values will be updated in the state property map by the callback
@@ -621,8 +705,14 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 						attributesToAdd.put(RESULT_URL, jdbcURL);                    
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
                         
-						//attributesToAdd.put(GeoAttributes.CRS.key(), "Later");
+						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
+						
+						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
+						String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
+								+ ", [" + Double.toString(bbox[1]) + "," + Double.toString(bbox[3]) + "]]";
+						attributesToAdd.put(GeoAttributes.GEO_ENVELOPE.key(), envelop);
+						attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
 						
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
@@ -755,13 +845,16 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         // set as the current state map (after the session has been committed)
         final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
-        final String selectQuery = getQueryDelete(dbAdapter, tableName, statePropertyMap);
+        String selectQuery = null;
 
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
 
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
+        	
+        	selectQuery = getQueryDelete(con, dbAdapter, tableName, statePropertyMap);
+        	
 
             if (fetchSize != null && fetchSize > 0) {
                 try {
