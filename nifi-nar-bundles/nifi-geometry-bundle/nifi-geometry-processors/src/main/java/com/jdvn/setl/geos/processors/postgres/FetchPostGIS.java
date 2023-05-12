@@ -121,6 +121,7 @@ public class FetchPostGIS extends AbstractQueryPostGISTable {
         pds.add(USE_AVRO_LOGICAL_TYPES);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_PRECISION);
         pds.add(VARIABLE_REGISTRY_ONLY_DEFAULT_SCALE);
+        pds.add(GENERATE_EVENT_TRACKERS);
 
         propDescriptors = Collections.unmodifiableList(pds);
     }

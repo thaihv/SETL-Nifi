@@ -47,6 +47,7 @@ import static java.sql.Types.VARCHAR;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -182,7 +183,20 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
-
+    
+    public static final AllowableValue ON_USE = new AllowableValue("Use Exists", "Use Exists", "Keep using the tables and triggers created from previously SETL jobs");
+    public static final AllowableValue RE_CREATED_ALL = new AllowableValue("Re-Created", "Re-Created", "Drop and create new all event tables and triggers to start SETL process");
+    public static final AllowableValue RE_NEW_EVENTS = new AllowableValue("Renew-Table", "Renew-Table", "Erase all data from event tables");
+    
+    public static final PropertyDescriptor GENERATE_EVENT_TRACKERS = new PropertyDescriptor.Builder()
+            .name("create-tables-and-triggers-for-setl")
+            .displayName("Generate SETL event trackers")
+            .description("Create tables and triggers to track changes from the source table. The information from this event trackers is useful to update to the target on PutGSS processor")
+            .required(true)
+            .allowableValues(ON_USE, RE_NEW_EVENTS, RE_CREATED_ALL)
+            .defaultValue(ON_USE.getValue())
+            .build();
+    
     protected List<PropertyDescriptor> propDescriptors;
 
     // The delimiter to use when referencing qualified names (such as table@!@column in the state map)
@@ -244,6 +258,136 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
 		String setl_table = EVENT_PREFIX + layerName;
 		return setl_table.substring(0, Math.min(setl_table.length(), 30));		
 	}
+	boolean tableExists(Connection connection, String tableName) {
+		DatabaseMetaData meta;
+		ResultSet resultSet = null;
+		try {
+			meta = connection.getMetaData();
+			resultSet = meta.getTables("%", "%", "%", new String[] { "TABLE" });
+			while (resultSet.next()) {
+				String currTableName = resultSet.getString("TABLE_NAME");
+				if (tableName.toUpperCase().equals(currTableName.toUpperCase())) {
+					return true;
+				}
+			}
+
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+		}
+		return false;
+	}	
+	void createSETLEventTable(Connection connection, String tableName) {
+		Statement stmt = null;
+		try {
+			stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("CREATE TABLE ");
+			sqlBuilder.append(tableName);
+			sqlBuilder.append("(id integer NOT NULL, ");
+			sqlBuilder.append("Event character(1), ");
+			sqlBuilder.append("Changed timestamp without time zone NOT NULL DEFAULT now())");
+
+			stmt.execute(sqlBuilder.toString());
+			getLogger().info("Event tracker table for " + tableName + " is created.!");
+				
+		} catch (SQLException e) {
+			getLogger().warn("Sorry, The table for event trackers can not created for some reason!");
+			e.printStackTrace();
+		} finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};		
+		}
+	}
+	
+	
+	void dropSETLEventTable(Connection connection, String tableName) {
+		Statement stmt = null;
+		try {
+			stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("DROP TABLE ");
+			sqlBuilder.append(tableName);
+
+			stmt.execute(sqlBuilder.toString());
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};			
+		}
+	}	
+	void deleteAllFromSETLEventTable(Connection connection, String tableName) {
+		Statement stmt = null;
+		try {
+			stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("DELETE FROM ");
+			sqlBuilder.append(tableName);
+
+			stmt.execute(sqlBuilder.toString());
+			getLogger().info("All data in event tracker table for " + tableName + " is deleted.!");			
+		} catch (SQLException e) {
+			getLogger().warn("Sorry, The table for event trackers can not deleted for some reason!");
+			e.printStackTrace();
+		} finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};		
+		}
+	}	
+	boolean triggerExists(Connection connection, String triggerName){
+		DatabaseMetaData meta;
+		ResultSet resultSet = null;
+		try {
+			meta = connection.getMetaData();
+			resultSet = meta.getTables("%", "%", "%", new String[] { "TRIGGER" });
+			while (resultSet.next()) {
+				String currTriggerName = resultSet.getString("TABLE_NAME");
+				if (triggerName.toUpperCase().equals(currTriggerName.toUpperCase())) {
+					return true;
+				}
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};		
+		}
+		return false;
+	}
+	void createSETLTriggers(Connection connection, String layerName, String eventTableName) {
+		Statement stmt = null;
+		try {
+			stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+			// SET UP LATER
+			stmt.execute(sqlBuilder.toString());
+			
+			getLogger().info("Triggers for event trackers are created.!");
+		} catch (SQLException e) {
+			getLogger().warn("Sorry, triggers for event trackers can not created for some reason!");
+			e.printStackTrace();
+		}finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};			
+		}
+	}
+	void dropSETLTrigger(Connection connection, String triggerName, String tableName) {
+		Statement stmt = null;
+		try {
+			stmt = connection.createStatement();
+			final StringBuilder sqlBuilder = new StringBuilder();
+
+			sqlBuilder.append("DROP TRIGGER ");
+			sqlBuilder.append(triggerName);
+			sqlBuilder.append(" ON ").append(tableName);			
+			stmt.execute(sqlBuilder.toString());
+			stmt.close();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};		
+		}
+	}	
     public void setup(final ProcessContext context) {
         setup(context,true,null);
     }
@@ -261,6 +405,8 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
 
             // Try to fill the columnTypeMap with the types of the desired max-value columns
             final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
+            final String use_evt_trackers = context.getProperty(GENERATE_EVENT_TRACKERS).getValue();
+            
             final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
             final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
 
@@ -270,11 +416,8 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             try (final Connection con = dbcpService.getConnection(flowFile == null ? Collections.emptyMap() : flowFile.getAttributes());
                  final Statement st = con.createStatement()) {
 
-                // Try a query that returns no rows, for the purposes of getting metadata about the columns. It is possible
-                // to use DatabaseMetaData.getColumns(), but not all drivers support this, notably the schema-on-read
-                // approach as in Apache Drill
+            	// Set Max in state for columns for insert
                 String query;
-
                 if (StringUtils.isEmpty(sqlQuery)) {
                     query = dbAdapter.getSelectStatement(tableName, maxValueColumnNames, "1 = 0", null, null, null);
                 } else {
@@ -323,16 +466,33 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
                     throw new ProcessException("No columns found in table from those specified: " + maxValueColumnNames);
                 }
 
+                // Set Max time values for Update/Delete 
+    			String colKey = getStateKey(setl_table, CDC_UPDATE_DATETIME, dbAdapter);
+    			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types		
+    			colKey = getStateKey(setl_table, CDC_DELETE_DATETIME, dbAdapter);
+    			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types	
+                
+    			// Setup tables & triggers for event trackers
+    			boolean bExist = tableExists(con, setl_table);
+    			if (!bExist) {
+    				createSETLEventTable(con, setl_table);
+    			} else {
+    				if (use_evt_trackers.equals("Re-Created")) {
+    					dropSETLEventTable(con, setl_table);
+    					createSETLEventTable(con, setl_table);
+    				}else if (use_evt_trackers.equals("Renew-Table")) {
+    					deleteAllFromSETLEventTable(con, setl_table);
+    				}
+    			}
+    			bExist = triggerExists(con, setl_table);
+    			if (!bExist) {
+    			} else {
+    			}		
+    			
             } catch (SQLException e) {
                 throw new ProcessException("Unable to communicate with database in order to determine column types", e);
             }
             
-            
-			String colKey = getStateKey(setl_table, CDC_UPDATE_DATETIME, dbAdapter);
-			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types		
-			colKey = getStateKey(setl_table, CDC_DELETE_DATETIME, dbAdapter);
-			columnTypeMap.putIfAbsent(colKey, 93); // EVENT_DATETIME is a TIMESTAMP Type 93 of java.sql.Types	
-			
             setupComplete.set(true);
         }
     }
