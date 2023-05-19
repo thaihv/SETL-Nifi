@@ -687,7 +687,7 @@ public class PutPostGIS extends AbstractProcessor {
         final String src_schemaName = flowFile.getAttribute(SOURCE_SCHEMANAME);
         final String src_tableName = flowFile.getAttribute(SOURCE_TABLENAME);
         final String src_PK_list = flowFile.getAttribute(RESULT_PKLIST);
-        final List<String> listPkeys_source = new ArrayList<String>(Arrays.asList(src_PK_list.split(",")));;
+        final List<String> listPkeys_source = new ArrayList<String>(Arrays.asList(src_PK_list.split(",")));
         UuidBase idbase = new UuidBase(src_url,src_schemaName,src_tableName);        
         String nifiuid = null;
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
