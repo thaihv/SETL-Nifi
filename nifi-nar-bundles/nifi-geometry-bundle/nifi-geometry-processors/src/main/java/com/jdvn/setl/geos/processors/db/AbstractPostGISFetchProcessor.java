@@ -43,6 +43,7 @@ import static java.sql.Types.TIMESTAMP;
 import static java.sql.Types.TINYINT;
 import static java.sql.Types.VARBINARY;
 import static java.sql.Types.VARCHAR;
+import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIBUTES;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -72,6 +73,7 @@ import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.ValidationContext;
 import org.apache.nifi.components.ValidationResult;
+import org.apache.nifi.components.PropertyDescriptor.Builder;
 import org.apache.nifi.dbcp.DBCPService;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
@@ -113,7 +115,15 @@ public abstract class AbstractPostGISFetchProcessor extends AbstractSessionFacto
             .required(true)
             .identifiesControllerService(DBCPService.class)
             .build();
-
+    public static final PropertyDescriptor SCHEMA_NAME = new Builder()
+            .name("db-record-schema-name")
+            .displayName("Schema Name")
+            .description("The name of the schema that the table belongs to. This may not apply for the database that you are updating. In this case, leave the field empty. Note that if the "
+                    + "property is set and the database is case-sensitive, the schema name must match the database's schema name exactly.")
+            .required(false)
+            .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
     public static final PropertyDescriptor TABLE_NAME = new PropertyDescriptor.Builder()
             .name("Table Name")
             .description("The name of the database table to be queried.")

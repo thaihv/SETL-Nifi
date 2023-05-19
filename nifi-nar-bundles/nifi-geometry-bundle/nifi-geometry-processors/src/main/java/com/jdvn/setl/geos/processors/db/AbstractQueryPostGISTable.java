@@ -53,11 +53,11 @@ import org.apache.nifi.util.StopWatch;
 
 public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProcessor {
 
-    public static final String RESULT_TABLENAME = "tablename";
+    public static final String RESULT_TABLENAME = "source.tablename";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
     public static final String RESULT_SCHEMANAME = "source.schemaname";
+    public static final String RESULT_PKLIST = "source.pks";
     public static final String RESULT_URL = "source.url";
-
     public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
@@ -224,6 +224,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
         final String maxValueColumnNames = context.getProperty(MAX_VALUE_COLUMN_NAMES).evaluateAttributeExpressions().getValue();
         
+        final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions().getValue();
         final String geoColumn = context.getProperty(GEO_COLUMN_NAME).evaluateAttributeExpressions().getValue();
         
         final String initialLoadStrategy = context.getProperty(INITIAL_LOAD_STRATEGY).getValue();
@@ -311,10 +312,13 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, maxValueColumnNameList, customWhereClause, statePropertyMap);
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
+        
 
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
-
+        	
+        	final List<String> Ids = getPrimaryKeyColumns(con, null, schemaName,tableName);
+        	
             if (fetchSize != null && fetchSize > 0) {
                 try {
                     st.setFetchSize(fetchSize);
@@ -372,7 +376,10 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
+                                                
 						attributesToAdd.put(RESULT_URL, jdbcURL);
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
                         
@@ -604,6 +611,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
         
+        final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions().getValue();
         final String geoColumn = context.getProperty(GEO_COLUMN_NAME).evaluateAttributeExpressions().getValue();
         
         final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
@@ -641,6 +649,8 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
+        	
+        	final List<String> Ids = getPrimaryKeyColumns(con, null, schemaName,tableName);
         	
         	selectQuery = getQueryUpdate(con, dbAdapter, tableName, statePropertyMap);
 
@@ -701,7 +711,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
 						attributesToAdd.put(RESULT_URL, jdbcURL);                    
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
                         
@@ -816,6 +828,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
         final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
         final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
+        final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions().getValue();
         final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
         final Integer queryTimeout = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.SECONDS).intValue();
         final Integer fetchSize = context.getProperty(FETCH_SIZE).evaluateAttributeExpressions().asInteger();
@@ -852,6 +865,8 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
+        	
+        	final List<String> Ids = getPrimaryKeyColumns(con, null, schemaName,tableName);
         	
         	selectQuery = getQueryDelete(con, dbAdapter, tableName, statePropertyMap);
         	
@@ -910,7 +925,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
+                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
                         attributesToAdd.put(RESULT_TABLENAME, tableName);
+                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
                         attributesToAdd.put(RESULT_URL, jdbcURL);   
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
 

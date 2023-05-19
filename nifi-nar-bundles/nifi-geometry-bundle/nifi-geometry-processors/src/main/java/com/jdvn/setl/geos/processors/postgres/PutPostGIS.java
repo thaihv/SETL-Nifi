@@ -24,6 +24,7 @@ import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -107,7 +109,15 @@ public class PutPostGIS extends AbstractProcessor {
     public static final String SQL_TYPE = "SQL";   // Not an allowable value in the Statement Type property, must be set by attribute
     public static final String USE_ATTR_TYPE = "Use statement.type Attribute";
     public static final String USE_RECORD_PATH = "Use Record Path";
-
+    
+    public static final String SOURCE_TABLENAME = "source.tablename";
+    public static final String SOURCE_SCHEMANAME = "source.schemaname";
+    public static final String RESULT_PKLIST = "source.pks";
+    public static final String SOURCE_URL = "source.url";
+    
+    public static final String GEO_COLUMN = "geo.column";
+    public static final String SETL_UUID = "nifiuid";
+    
     static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     static final String PUT_DATABASE_RECORD_ERROR = "putdatabaserecord.error";
@@ -337,7 +347,7 @@ public class PutPostGIS extends AbstractProcessor {
     protected static final Map<String, DatabaseAdapter> dbAdapters;
     protected static List<PropertyDescriptor> propDescriptors;
     private Cache<SchemaKey, TableSchema> schemaCache;
-
+    
     static {
         dbAdapters = new HashMap<>();
         ArrayList<AllowableValue> dbAdapterValues = new ArrayList<>();
@@ -456,14 +466,103 @@ public class PutPostGIS extends AbstractProcessor {
         final String dataRecordPathValue = context.getProperty(DATA_RECORD_PATH).getValue();
         dataRecordPath = dataRecordPathValue == null ? null : RecordPath.compile(dataRecordPathValue);
     }
+    private boolean checkColumnExisted(final Statement stmt, String tableName, String columnName) throws SQLException {
+    	ResultSet resultSet = null;
+		try {			
+			final StringBuilder sqlBuilder = new StringBuilder();		
+			sqlBuilder.append("SELECT COUNT(*) as B FROM information_schema.columns WHERE ");
+			sqlBuilder.append("table_name=");
+			sqlBuilder.append("'").append(tableName).append("'");
+			sqlBuilder.append(" AND ");
+			sqlBuilder.append("column_name=");
+			sqlBuilder.append("'").append(columnName).append("'");
+			
+			resultSet = stmt.executeQuery(sqlBuilder.toString()); 
+			while (resultSet.next()) {
+				int n = resultSet.getInt("B");
+				if (n > 0) {
+					return true;
+				}
+			}
+			
+		} catch (SQLException e) {
+			e.printStackTrace();
+		} finally {
+			try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+		}
+		return false;
+		
+    }    
+    
+	UUID createGUIDfromFkeyString(String strEncode) {
+		return UUID.nameUUIDFromBytes(strEncode.getBytes());
+	}    
+	private boolean checkAndFillSETLCondition(final ProcessContext context) {
+		ResultSet resultSet = null;
+		final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
+		final String schemaName = context.getProperty(SCHEMA_NAME).evaluateAttributeExpressions().getValue();
+		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+		try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
+				final Statement stmt = con.createStatement()) {
+			
+			boolean fidExisted = checkColumnExisted(stmt, tableName, SETL_UUID);
+			if (!fidExisted) {
+				final StringBuilder sqlBuilder = new StringBuilder();
+				sqlBuilder.append("ALTER TABLE ");
+				sqlBuilder.append(tableName);
+				sqlBuilder.append(" ADD COLUMN ");
+				sqlBuilder.append(SETL_UUID);
+				sqlBuilder.append(" VARCHAR");
 
+				stmt.execute(sqlBuilder.toString());
+				getLogger().info("SETL_UUID column in " + tableName + " is created! ");
+				
+				
+				// Delete old primary key constraints
+				sqlBuilder.delete(0, sqlBuilder.toString().length());
+				sqlBuilder.append("select concat('alter table ");
+				sqlBuilder.append(schemaName).append(".").append(tableName);
+				sqlBuilder.append(" drop constraint ', constraint_name) as dropstatement");
+				sqlBuilder.append(" from information_schema.table_constraints where table_schema = ");
+				sqlBuilder.append("'").append(schemaName).append("'");
+				sqlBuilder.append(" and table_name = ");
+				sqlBuilder.append("'").append(tableName).append("'");
+				sqlBuilder.append(" and constraint_type = 'PRIMARY KEY'");
+				resultSet = stmt.executeQuery(sqlBuilder.toString()); 
+				while (resultSet.next()) {
+					String dropKeyStatement = resultSet.getString("dropstatement");
+					stmt.execute(dropKeyStatement);
+				}
+				// Create new primary key constraints
+				sqlBuilder.delete(0, sqlBuilder.toString().length());
+				sqlBuilder.append("ALTER TABLE ");
+				sqlBuilder.append(tableName);
+				sqlBuilder.append(" ADD PRIMARY KEY (");
+				sqlBuilder.append(SETL_UUID);
+				sqlBuilder.append(")");
+				stmt.execute(sqlBuilder.toString());
+				getLogger().info("SETL_UUID column is already set as Primary Key. ");
+
+			}
+		} catch (final Exception e) {
+			getLogger().warn("Error SQL {}, we can not create UID column for the target table of SETL", e);
+			return false;
+		} finally {
+			try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+		}
+
+		return true;
+	}
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
         FlowFile flowFile = session.get();
         if (flowFile == null) {
             return;
         }
-
+        boolean capableToPut = checkAndFillSETLCondition(context);
+        if (!capableToPut) {
+        	return;
+        } 
         final DBCPService dbcpService = context.getProperty(DBCP_SERVICE).asControllerService(DBCPService.class);
         final Connection connection = dbcpService.getConnection(flowFile.getAttributes());
 
@@ -584,6 +683,13 @@ public class PutPostGIS extends AbstractProcessor {
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
         final int timeoutMillis = context.getProperty(QUERY_TIMEOUT).evaluateAttributeExpressions().asTimePeriod(TimeUnit.MILLISECONDS).intValue();
 
+        final String src_url = flowFile.getAttribute(SOURCE_URL);
+        final String src_schemaName = flowFile.getAttribute(SOURCE_SCHEMANAME);
+        final String src_tableName = flowFile.getAttribute(SOURCE_TABLENAME);
+        final String src_PK_list = flowFile.getAttribute(RESULT_PKLIST);
+        final List<String> listPkeys_source = new ArrayList<String>(Arrays.asList(src_PK_list.split(",")));;
+        UuidBase idbase = new UuidBase(src_url,src_schemaName,src_tableName);        
+        String nifiuid = null;
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException(format("Cannot process %s because Table Name is null or empty", flowFile));
@@ -606,7 +712,7 @@ public class PutPostGIS extends AbstractProcessor {
         if (tableSchema == null) {
             throw new IllegalArgumentException("No table schema specified!");
         }
-
+        
         // build the fully qualified table name
         final String fqTableName =  generateTableName(settings, catalog, schemaName, tableName, tableSchema);
 
@@ -683,6 +789,8 @@ public class PutPostGIS extends AbstractProcessor {
                     final Map<String, ColumnDescription> columns = tableSchema.getColumns();
 
                     int deleteIndex = 0;
+                    nifiuid = "";
+                    
                     for (int i = 0; i < fieldIndexes.size(); i++) {
                         final int currentFieldIndex = fieldIndexes.get(i);
                         Object currentValue = values[currentFieldIndex];
@@ -691,7 +799,7 @@ public class PutPostGIS extends AbstractProcessor {
                         final String fieldName = recordSchema.getField(currentFieldIndex).getFieldName();
                         String columnName = normalizeColumnName(fieldName, settings.translateFieldNames);
                         int sqlType;
-
+                        
                         final ColumnDescription column = columns.get(columnName);
                         // 'column' should not be null here as the fieldIndexes should correspond to fields that match table columns, but better to handle just in case
                         if (column == null) {
@@ -703,6 +811,16 @@ public class PutPostGIS extends AbstractProcessor {
                             }
                         } else {
                             sqlType = column.dataType;
+                            for (String name : listPkeys_source) {
+                                if (name.toLowerCase().equals(column.getColumnName().toLowerCase())) {
+                                	if (column.dataType == 12 )
+                                		nifiuid = nifiuid + currentValue;
+                                	if (column.dataType == 4 )
+                                		nifiuid = nifiuid + String.valueOf(currentValue);
+                                	continue;
+                                }
+                            }
+
                         }
 
                         // Convert (if necessary) from field data type to column data type
@@ -758,6 +876,12 @@ public class PutPostGIS extends AbstractProcessor {
                             setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
+                    // Add value for field NIFIUID in case of INSERT
+                    if (INSERT_TYPE.equalsIgnoreCase(statementType)) {
+                        nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
+                        setParameter(ps, fieldIndexes.size() + 1, nifiuid, Types.VARCHAR, 12);  // SQL Type of Varchar is 12, at last position
+                    }
+
 
                     ps.addBatch();
                     session.adjustCounter(statementType + " updates performed", 1, false);
@@ -905,11 +1029,10 @@ public class PutPostGIS extends AbstractProcessor {
 
     private void putToDatabase(final ProcessContext context, final ProcessSession session, final FlowFile flowFile, final Connection connection) throws Exception {
         final String statementType = getStatementType(context, flowFile);
-
         try (final InputStream in = session.read(flowFile)) {
             final RecordReaderFactory recordReaderFactory = context.getProperty(RECORD_READER_FACTORY).asControllerService(RecordReaderFactory.class);
             final RecordReader recordReader = recordReaderFactory.createRecordReader(flowFile, in, getLogger());
-
+            
             if (SQL_TYPE.equalsIgnoreCase(statementType)) {
                 executeSQL(context, flowFile, connection, recordReader);
             } else {
@@ -967,7 +1090,7 @@ public class PutPostGIS extends AbstractProcessor {
     SqlAndIncludedColumns generateInsert(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, SQLException {
 
-        checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
+        //checkValuesForRequiredColumns(recordSchema, tableSchema, settings);
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("INSERT INTO ");
@@ -1010,10 +1133,11 @@ public class PutPostGIS extends AbstractProcessor {
                             + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                 }
             }
-
+            
+            sqlBuilder.append(",").append(SETL_UUID);
             // complete the SQL statements by adding ?'s for all of the values to be escaped.
             sqlBuilder.append(") VALUES (");
-            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size()));
+            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size() + 1));  // + 1 for new NIFIUID filed
             sqlBuilder.append(")");
 
             if (fieldsFound.get() == 0) {
@@ -1664,5 +1788,39 @@ public class PutPostGIS extends AbstractProcessor {
             quoteTableName = context.getProperty(QUOTE_TABLE_IDENTIFIER).asBoolean();
         }
     }
+
+    static class UuidBase {
+    	private String url;
+    	private String schemaName;
+    	private String tableName;
+		public UuidBase(String url, String schemaName, String tableName) {
+			super();
+			this.url = url;
+			this.schemaName = schemaName;
+			this.tableName = tableName;
+		}
+		public String getUrl() {
+			return url;
+		}
+		public void setUrl(String url) {
+			this.url = url;
+		}
+		public String getSchemaName() {
+			return schemaName;
+		}
+		public void setSchemaName(String schemaName) {
+			this.schemaName = schemaName;
+		}
+		public String getTableName() {
+			return tableName;
+		}
+		public void setTableName(String tableName) {
+			this.tableName = tableName;
+		}
+		@Override
+		public String toString() {
+			return "UuidBase [url=" + url + ", schemaName=" + schemaName + ", tableName=" + tableName + "]";
+		}
+    }    
 
 }
