@@ -876,8 +876,8 @@ public class PutPostGIS extends AbstractProcessor {
                             setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
-                    // Add value for field NIFIUID in case of INSERT
-                    if (INSERT_TYPE.equalsIgnoreCase(statementType)) {
+                    // Add value for field NIFIUID in case of INSERT/ UPDATE
+                    if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType)) {
                         nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
                         setParameter(ps, fieldIndexes.size() + 1, nifiuid, Types.VARCHAR, 12);  // SQL Type of Varchar is 12, at last position
                     }
@@ -1241,12 +1241,9 @@ public class PutPostGIS extends AbstractProcessor {
     }
 
     SqlAndIncludedColumns generateUpdate(final RecordSchema recordSchema, final String tableName, final String updateKeys,
-                                         final TableSchema tableSchema, final DMLSettings settings)
-            throws IllegalArgumentException, MalformedRecordException, SQLException {
-
-
-        final Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        final Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, tableSchema.getQuotedIdentifierString());
+                                         final TableSchema tableSchema, final DMLSettings settings) throws IllegalArgumentException, MalformedRecordException, SQLException {
+   	
+    	final Set<String> normalizedKeyColumnNames = new HashSet<>(Arrays.asList(updateKeys.split(",")));
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("UPDATE ");
@@ -1302,34 +1299,14 @@ public class PutPostGIS extends AbstractProcessor {
             // Set the WHERE clause based on the Update Key values
             sqlBuilder.append(" WHERE ");
             AtomicInteger whereFieldCount = new AtomicInteger(0);
+            
+            for (String name : normalizedKeyColumnNames) {
 
-            for (int i = 0; i < fieldCount; i++) {
-
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
-
-                final String normalizedColName = normalizeColumnName(fieldName, settings.translateFieldNames);
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc != null) {
-
-                    // Check if this column is a Update Key. If so, add it to the WHERE clause
-                    if (normalizedKeyColumnNames.contains(normalizedColName)) {
-
-                        if (whereFieldCount.getAndIncrement() > 0) {
-                            sqlBuilder.append(" AND ");
-                        }
-
-                        if (settings.escapeColumnNames) {
-                            sqlBuilder.append(tableSchema.getQuotedIdentifierString())
-                                    .append(normalizedColName)
-                                    .append(tableSchema.getQuotedIdentifierString());
-                        } else {
-                            sqlBuilder.append(normalizedColName);
-                        }
-                        sqlBuilder.append(" = ?");
-                        includedColumns.add(i);
-                    }
+                if (whereFieldCount.getAndIncrement() > 0) {
+                    sqlBuilder.append(" AND ");
                 }
+                sqlBuilder.append(name).append(" = ?");
+
             }
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
