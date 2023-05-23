@@ -743,7 +743,7 @@ public class PutPostGIS extends AbstractProcessor {
                         } else if (UPDATE_TYPE.equalsIgnoreCase(statementType)) {
                             sqlHolder = generateUpdate(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else if (DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                            sqlHolder = generateDelete(recordSchema, fqTableName, tableSchema, settings);
+                            sqlHolder = generateDelete(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else if (UPSERT_TYPE.equalsIgnoreCase(statementType)) {
                             sqlHolder = generateUpsert(recordSchema, fqTableName, updateKeys, tableSchema, settings);
                         } else if (INSERT_IGNORE_TYPE.equalsIgnoreCase(statementType)) {
@@ -811,6 +811,7 @@ public class PutPostGIS extends AbstractProcessor {
                             }
                         } else {
                             sqlType = column.dataType;
+                            // Get primary keys from source to generate Global UID  
                             for (String name : listPkeys_source) {
                                 if (name.toLowerCase().equals(column.getColumnName().toLowerCase())) {
                                 	if (column.dataType == 12 )
@@ -876,8 +877,8 @@ public class PutPostGIS extends AbstractProcessor {
                             setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
-                    // Add value for field NIFIUID in case of INSERT/ UPDATE
-                    if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType)) {
+                    // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
+                    if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
                         nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
                         setParameter(ps, fieldIndexes.size() + 1, nifiuid, Types.VARCHAR, 12);  // SQL Type of Varchar is 12, at last position
                     }
@@ -1312,23 +1313,11 @@ public class PutPostGIS extends AbstractProcessor {
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
-    SqlAndIncludedColumns generateDelete(final RecordSchema recordSchema, final String tableName, final TableSchema tableSchema, final DMLSettings settings)
+    SqlAndIncludedColumns generateDelete(final RecordSchema recordSchema, final String tableName, final String updateKeys, final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, MalformedRecordException, SQLDataException {
 
-        final Set<String> normalizedFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
-        for (final String requiredColName : tableSchema.getRequiredColumnNames()) {
-            final String normalizedColName = normalizeColumnName(requiredColName, settings.translateFieldNames);
-            if (!normalizedFieldNames.contains(normalizedColName)) {
-                String missingColMessage = "Record does not have a value for the Required column '" + requiredColName + "'";
-                if (settings.failUnmappedColumns) {
-                    getLogger().error(missingColMessage);
-                    throw new MalformedRecordException(missingColMessage);
-                } else if (settings.warningUnmappedColumns) {
-                    getLogger().warn(missingColMessage);
-                }
-            }
-        }
-
+    	final Set<String> normalizedKeyColumnNames = new HashSet<>(Arrays.asList(updateKeys.split(",")));
+    	
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("DELETE FROM ");
         sqlBuilder.append(tableName);
@@ -1363,9 +1352,7 @@ public class PutPostGIS extends AbstractProcessor {
                     } else {
                         columnName = desc.getColumnName();
                     }
-                    // Need to build a null-safe construct for the WHERE clause, since we are using PreparedStatement and won't know if the values are null. If they are null,
-                    // then the filter should be "column IS null" vs "column = null". Since we don't know whether the value is null, we can use the following construct (from NIFI-3742):
-                    //   (column = ? OR (column is null AND ? is null))
+                    // for --> (column = ? OR (column is null AND ? is null))
                     sqlBuilder.append("(");
                     sqlBuilder.append(columnName);
                     sqlBuilder.append(" = ?");
@@ -1390,6 +1377,16 @@ public class PutPostGIS extends AbstractProcessor {
                 throw new SQLDataException("None of the fields in the record map to the columns defined by the " + tableName + " table\n"
                         + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
             }
+        }
+        // Concat with NIFIUID generated from code
+        sqlBuilder.append(" AND ");
+        AtomicInteger whereFieldCount = new AtomicInteger(0);
+        for (String name : normalizedKeyColumnNames) {
+
+            if (whereFieldCount.getAndIncrement() > 0) {
+                sqlBuilder.append(" AND ");
+            }
+            sqlBuilder.append(name).append(" = ?");
         }
 
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
