@@ -50,6 +50,8 @@ import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
 
+import com.jdvn.setl.geos.processors.util.GeoUtils;
+
 
 public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProcessor {
 
@@ -276,6 +278,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
             }
         }
 
+
         List<String> maxValueColumnNameList = StringUtils.isEmpty(maxValueColumnNames)
                 ? null
                 : Arrays.asList(maxValueColumnNames.split("\\s*,\\s*"));
@@ -289,7 +292,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 
             try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
                  final Statement st = con.createStatement()) {
-
+	
                 if (transIsolationLevel != null) {
                     con.setTransactionIsolation(transIsolationLevel);
                 }
@@ -309,7 +312,25 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
             }
         }
 
-        final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, maxValueColumnNameList, customWhereClause, statePropertyMap);
+        List<String> columnNamesList = null;
+        String selectQuery = null;
+        
+		try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
+				final Statement st = con.createStatement()) {
+			
+			columnNamesList = getAllTableColumnNames(con, schemaName, tableName);
+			
+			if (StringUtils.isEmpty(columnNames)) {
+				selectQuery = getQuery(dbAdapter, tableName, sqlQuery, String.join(",", columnNamesList), geoColumn, maxValueColumnNameList, customWhereClause, statePropertyMap);
+			} else {
+				selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, geoColumn, maxValueColumnNameList, customWhereClause, statePropertyMap);
+			}
+
+		} catch (final Exception e) {
+			logger.error("Unable to execute SQL select query {}", new Object[] { e });
+			context.yield();
+		}      
+		
         final StopWatch stopWatch = new StopWatch(true);
         final String fragmentIdentifier = UUID.randomUUID().toString();
         
@@ -385,17 +406,25 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
+						attributesToAdd.put(GeoUtils.GEO_CHAR_SET, "UTF-8");
+						
 
 						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
 						String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
 								+ ", [" + Double.toString(bbox[1]) + "," + Double.toString(bbox[3]) + "]]";
 						attributesToAdd.put(GeoAttributes.GEO_ENVELOPE.key(), envelop);
 						attributesToAdd.put(GeoAttributes.GEO_TYPE.key(), "Features");
-
+						
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
                             attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
                         }
+                        
+						if (maxRowsPerFlowFile > 0) {
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
+									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+						} else
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
 
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
@@ -532,6 +561,28 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 		}
 		return crs_wkt;		
 	}
+	private List<String> getAllTableColumnNames(Connection connection, String schemaName, String tableName){
+		List<String> columns = new ArrayList<>();
+		final StringBuilder query;
+		query = new StringBuilder("SELECT column_name FROM information_schema.columns");
+		query.append(" WHERE table_schema = ");
+		query.append("'").append(schemaName).append("'");
+		query.append(" AND table_name = ");
+		query.append("'").append(tableName).append("'");
+		
+		try (final Statement st = connection.createStatement()) {
+	        try (final ResultSet resultSet = st.executeQuery(query.toString())) {
+	            while (resultSet.next()) {
+	                columns.add(resultSet.getString("column_name"));
+	            }
+	        } catch (final SQLException e) {
+	            throw e;
+	        }	
+		} catch (SQLException e1) {
+			e1.printStackTrace();
+		}
+		return columns;		
+	}	
 	private List<String> getPrimaryKeyColumns(Connection connection, String catalog, String schema, String layerName){
 		List<String> columns = new ArrayList<>();
 		try {
@@ -719,6 +770,8 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
+						attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
+						attributesToAdd.put(GeoUtils.GEO_CHAR_SET, "UTF-8");
 						
 						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
 						String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
@@ -730,7 +783,13 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
                             attributesToAdd.put(FRAGMENT_INDEX, String.valueOf(fragmentIndex));
                         }
-
+                        
+						if (maxRowsPerFlowFile > 0) {
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
+									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+						} else
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
+						
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
 							attributesToAdd.put(CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
@@ -1022,13 +1081,37 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         }
     }    
     
-    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String columnNames, List<String> maxValColumnNames,
+    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String columnNames, String geoColumn, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
 
-        return getQuery(dbAdapter, tableName, null, columnNames, maxValColumnNames, customWhereClause, stateMap);
+        return getQuery(dbAdapter, tableName, null, columnNames, geoColumn, maxValColumnNames, customWhereClause, stateMap);
     }
-
-    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String sqlQuery, String columnNames, List<String> maxValColumnNames,
+    protected String getSelectStatement(String tableName, String columnNames, String geoColumnName) {
+        if (StringUtils.isEmpty(tableName)) {
+            throw new IllegalArgumentException("Table name cannot be null or empty");
+        }
+        final StringBuilder query = new StringBuilder("SELECT ");
+  
+		boolean first = true;
+        List<String> columnNamesList = new ArrayList<String>(Arrays.asList(columnNames.split(",")));
+        for (String name: columnNamesList) {        	
+		    if (!first)
+		    	query.append (" , ");
+		    else
+		        first = false;
+		    
+        	if (name.toLowerCase().equals(geoColumnName.toLowerCase())) {
+        		query.append("ST_AsText(").append(name).append(") as ").append(geoColumnName);
+        	}else {
+        		query.append(name);
+        	}        	
+        }
+        query.append(" FROM ");
+        query.append(tableName);
+        return query.toString();
+    }    
+    
+    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String sqlQuery, String columnNames, String geoColumn, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException("Table name must be specified");
@@ -1036,7 +1119,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final StringBuilder query;
 
         if (StringUtils.isEmpty(sqlQuery)) {
-            query = new StringBuilder(dbAdapter.getSelectStatement(tableName, columnNames, null, null, null, null));
+            //query = new StringBuilder(dbAdapter.getSelectStatement(tableName, columnNames, null, null, null, null));
+            query = new StringBuilder(getSelectStatement(tableName, columnNames, geoColumn));
+            
         } else {
             query = getWrappedQuery(dbAdapter, sqlQuery, tableName);
         }
