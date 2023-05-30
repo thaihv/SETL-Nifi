@@ -1423,7 +1423,7 @@ public class PutGSS extends AbstractProcessor {
     }
 
     private static String normalizeColumnName(final String colName, final boolean translateColumnNames) {
-        return colName == null ? null : (translateColumnNames ? colName.toUpperCase().replace("_", "") : colName);
+        return colName == null ? null : (translateColumnNames ? colName.toUpperCase().replace("_", "") : colName.toUpperCase());
     }
 
     static class TableSchema {

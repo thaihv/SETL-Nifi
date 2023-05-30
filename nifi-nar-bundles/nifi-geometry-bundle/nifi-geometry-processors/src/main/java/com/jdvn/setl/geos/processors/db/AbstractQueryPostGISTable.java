@@ -598,18 +598,34 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 		return columns;		
 	}
 	
-	protected String getQueryUpdate(Connection con, DatabaseAdapter dbAdapter, String tableName, Map<String, String> stateMap) {
+	protected String getQueryUpdate(Connection con, DatabaseAdapter dbAdapter, String tableName, String columnNames, String geoColumn, Map<String, String> stateMap) {
 		
 		if (StringUtils.isEmpty(tableName)) {
 			throw new IllegalArgumentException("Table name must be specified");
 		}
 
-		final StringBuilder query;
+		final StringBuilder query = new StringBuilder("SELECT ");
 		String eventTable = getEventTableFromLayer(tableName);
 		List<String> Ids = getPrimaryKeyColumns(con, null,null,tableName);
-		query = new StringBuilder("SELECT S.*, to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
-		query.append(tableName).append(" S, ").append(eventTable).append(" E WHERE ");
+		
 		boolean first = true;
+        List<String> columnNamesList = new ArrayList<String>(Arrays.asList(columnNames.split(",")));
+        for (String name: columnNamesList) {        	
+		    if (!first)
+		    	query.append (" , ");
+		    else
+		        first = false;
+		    
+        	if (name.toLowerCase().equals(geoColumn.toLowerCase())) {
+        		query.append("ST_AsText(").append(name).append(") as ").append(geoColumn);
+        	}else {
+        		query.append("S.").append(name);
+        	}        	
+        }
+		
+		query.append(", to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(tableName).append(" S, ").append(eventTable).append(" E WHERE ");
+		first = true;
 		for (String e : Ids) {
 		    if (!first)
 		    	query.append (" AND ");
@@ -622,6 +638,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
 				query.append(" AND to_char(E.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') > ").append("'").append(maxValue).append("'");
+			
 		}
 		return query.toString();
 
@@ -697,14 +714,17 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final String fragmentIdentifier = UUID.randomUUID().toString();
         String selectQuery = null;
          
-        
+        List<String> columnNamesList = null;
         try (final Connection con = dbcpService.getConnection(Collections.emptyMap());
              final Statement st = con.createStatement()) {
         	
+        	
         	final List<String> Ids = getPrimaryKeyColumns(con, null, schemaName,tableName);
         	
-        	selectQuery = getQueryUpdate(con, dbAdapter, tableName, statePropertyMap);
-
+			columnNamesList = getAllTableColumnNames(con, schemaName, tableName);
+			final String columnNames = String.join(",", columnNamesList);
+			selectQuery = getQueryUpdate(con, dbAdapter, tableName, columnNames, geoColumn, statePropertyMap);
+			
             if (fetchSize != null && fetchSize > 0) {
                 try {
                     st.setFetchSize(fetchSize);
