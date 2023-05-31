@@ -384,6 +384,7 @@ public class ShpReader extends AbstractProcessor {
 							});
 
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+							transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
 									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
@@ -437,6 +438,7 @@ public class ShpReader extends AbstractProcessor {
 					else {	
 						session.remove(flowFile);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());

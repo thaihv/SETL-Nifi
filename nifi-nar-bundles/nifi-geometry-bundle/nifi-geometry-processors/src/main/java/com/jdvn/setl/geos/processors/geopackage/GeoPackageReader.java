@@ -196,6 +196,7 @@ public class GeoPackageReader extends AbstractProcessor {
 		                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
 		                    transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+		                    transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 		                    transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 		                    transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
@@ -203,6 +204,7 @@ public class GeoPackageReader extends AbstractProcessor {
 							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
 							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
 		                    transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), "application/avro+geowkt");
+		                    
 
 		                    session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		                    logger.info("Features added {} to flow", new Object[]{transformed});
@@ -233,6 +235,7 @@ public class GeoPackageReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), name);
                     transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+                    transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
                     transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
                     transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
@@ -299,7 +302,8 @@ public class GeoPackageReader extends AbstractProcessor {
 							
 		                    transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
 			                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");             
+			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+			                transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
 			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
 			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 			                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));
@@ -344,6 +348,7 @@ public class GeoPackageReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), t.getTableName());
 	                transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Tiles");
+	                transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), szEnvelop);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 	                transformed = session.putAttribute(transformed, GeoAttributes.GEO_TILE_MATRIX.key(), new String(encoded));

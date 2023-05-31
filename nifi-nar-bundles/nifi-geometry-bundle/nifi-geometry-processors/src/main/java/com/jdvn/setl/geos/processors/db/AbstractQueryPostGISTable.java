@@ -407,6 +407,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
 						attributesToAdd.put(GeoUtils.GEO_CHAR_SET, "UTF-8");
+						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "PostGIS");
 						
 
 						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
@@ -422,9 +423,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
-									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+									geoColumn + ":" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 						} else
-							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + ":" + tableName);
 
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
@@ -790,8 +791,8 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
 						attributesToAdd.put(GEO_COLUMN, geoColumn);
-						attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
 						attributesToAdd.put(GeoUtils.GEO_CHAR_SET, "UTF-8");
+						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "PostGIS");
 						
 						double[] bbox = getExtentOfGeometryColumn(con, tableName, geoColumn);
 						String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
@@ -806,9 +807,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
-									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+									geoColumn + ":" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 						} else
-							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + ":" + tableName);
 						
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
@@ -1009,6 +1010,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
                         attributesToAdd.put(RESULT_URL, jdbcURL);   
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
+                        attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "PostGIS");
 
                         if(maxRowsPerFlowFile > 0) {
                             attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);

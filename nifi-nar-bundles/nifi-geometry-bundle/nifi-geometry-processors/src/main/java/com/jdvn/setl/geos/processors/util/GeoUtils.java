@@ -105,6 +105,7 @@ public class GeoUtils {
     public static final String GPKG_TILE_COLUMN = "tile_column";
     public static final String GPKG_TILE_ROW = "tile_row";
     public static final String GPKG_TILE_DATA = "tile_data";
+    public static final String GEO_DB_SRC_TYPE = "geo.source.type";
     
     public static final String DATA_COLUMNS = "gpkg_data_columns";
     protected static final int GENERIC_GEOGRAPHIC_SRID = 0;

@@ -24,6 +24,7 @@ import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -83,6 +84,9 @@ import org.apache.nifi.serialization.record.SchemaIdentifier;
 import org.apache.nifi.serialization.record.util.DataTypeUtils;
 import org.geotools.geometry.jts.JTS;
 import org.geotools.referencing.CRS;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.io.ParseException;
+import org.locationtech.jts.io.WKBReader;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.operation.MathTransform;
@@ -117,7 +121,8 @@ public class PutGSS extends AbstractProcessor {
     public static final String SQL_TYPE = "SQL";   // Not an allowable value in the Statement Type property, must be set by attribute
     public static final String USE_ATTR_TYPE = "Use statement.type Attribute";
     public static final String USE_RECORD_PATH = "Use Record Path";
-
+    public static final String RESULT_PKLIST = "source.pks";
+    
     static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     static final String PUT_DATABASE_RECORD_ERROR = "putdatabaserecord.error";
@@ -632,6 +637,19 @@ public class PutGSS extends AbstractProcessor {
         }
     }
 
+	private boolean checkHex(String s) {
+
+		int n = s.length();
+		for (int i = 0; i < n; i++) {
+
+			char ch = s.charAt(i);
+			if ((ch < '0' || ch > '9') && (ch < 'A' || ch > 'F')) {
+				return false;
+			}
+		}
+		return true;
+	}
+    
 	UUID createGUIDfromFkeyString(String strEncode) {
 		return UUID.nameUUIDFromBytes(strEncode.getBytes());
 	}
@@ -647,6 +665,8 @@ public class PutGSS extends AbstractProcessor {
         final String updateKeys = context.getProperty(UPDATE_KEYS).evaluateAttributeExpressions(flowFile).getValue();
         final int maxBatchSize = context.getProperty(MAX_BATCH_SIZE).evaluateAttributeExpressions(flowFile).asInteger();
 
+        
+        final String geo_src_type = flowFile.getAttribute(GeoUtils.GEO_DB_SRC_TYPE);
         final String geo_column = flowFile.getAttribute(GEO_COLUMN);
         final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
         final String srs_target = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement()).mCrs;
@@ -658,14 +678,13 @@ public class PutGSS extends AbstractProcessor {
         	targetCRS = CRS.parseWKT(srs_target);
         }
 
-        
+        final String src_PK_list = flowFile.getAttribute(RESULT_PKLIST);
+        final List<String> listPkeys_source = src_PK_list == null ? null: new ArrayList<String>(Arrays.asList(src_PK_list.split(",")));
+        String nifiuid = null;
         final String src_url = flowFile.getAttribute(SOURCE_URL);
         final String src_schemaName = flowFile.getAttribute(SOURCE_SCHEMANAME);
         final String src_tableName = flowFile.getAttribute(SOURCE_TABLENAME);
         
-
-		
-		
         UuidBase idbase = new UuidBase(src_url,src_schemaName,src_tableName);
         
         // Ensure the table name has been set, the generated SQL statements (and TableSchema cache) will need it
@@ -756,6 +775,7 @@ public class PutGSS extends AbstractProcessor {
                     final Map<String, ColumnDescription> columns = tableSchema.getColumns();
 
                     int deleteIndex = 0;
+                    nifiuid = "";
                     for (int i = 0; i < fieldIndexes.size(); i++) {
                         final int currentFieldIndex = fieldIndexes.get(i);
                         Object currentValue = values[currentFieldIndex];
@@ -776,6 +796,18 @@ public class PutGSS extends AbstractProcessor {
                             }
                         } else {
                             sqlType = column.dataType;
+                            if (geo_src_type.toLowerCase().contains("postgis") && listPkeys_source!= null) {
+                                // Get primary keys from source to generate Global UID  
+                                for (String name : listPkeys_source) {
+                                    if (name.toLowerCase().equals(column.getColumnName().toLowerCase())) {
+                                    	if (column.dataType == 12 )
+                                    		nifiuid = nifiuid + currentValue;
+                                    	if (column.dataType == 4 || column.dataType == 2)
+                                    		nifiuid = nifiuid + String.valueOf(currentValue);
+                                    	continue;
+                                    }
+                                }
+                            }
                         }
                     	// Get values for 3 cases of Geocolum, SETLUUID, normal Columns
                     	// DELETE_TYPE need 02 times to set values
@@ -831,6 +863,19 @@ public class PutGSS extends AbstractProcessor {
 											currentValue = ((Number) currentValue).intValue();
 										}
 									}
+									if (currentValue instanceof java.lang.String && checkHex((String)currentValue)) {
+										try {
+											Geometry geom = new WKBReader().read(WKBReader.hexToBytes((String)currentValue));
+											if (geom.isValid()) {												
+												byte[] wkb = new org.locationtech.jts.io.WKBWriter().write(geom);
+												stmt.setBytes(i + 1, wkb);
+											};
+											break;
+										} catch (ParseException e) {
+											e.printStackTrace();
+										}
+
+									}
 								}								
 							}
 							
@@ -843,6 +888,16 @@ public class PutGSS extends AbstractProcessor {
 								stmt.setObject(i + 1, currentValue);							
 						}                                              
                     }
+                    
+
+                    if (geo_src_type.toLowerCase().contains("postgis")) {
+                        // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
+                        if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
+                            nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
+                            stmt.setObject(fieldIndexes.size() + 1, nifiuid);  
+                        }   
+                    }
+
                     if (INSERT_TYPE.equalsIgnoreCase(statementType) != true) { // GSS is not support Batch for DELETE/UPDATE/UPSERT
                     	stmt.executeUpdate();
                     	break;
@@ -1126,6 +1181,8 @@ public class PutGSS extends AbstractProcessor {
 					sqlBuilder.append('?');
 				}
 			}
+            if (!fieldNames.contains(GeoUtils.SETL_UUID.toUpperCase()))
+            	sqlBuilder.append(",?"); //for SETLUUID;
             sqlBuilder.append(")");
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);

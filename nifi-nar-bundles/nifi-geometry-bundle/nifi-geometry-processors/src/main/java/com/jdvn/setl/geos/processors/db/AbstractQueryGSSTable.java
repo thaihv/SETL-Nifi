@@ -310,7 +310,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
-						
+						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 
 						IGSSResultSetMetaData rsmd = resultSet.getMetaData();
 						if (rsmd.hasGeometryColumn()) {
@@ -585,7 +585,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
-
+						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);
 
 						if (srs_target != null) {
@@ -807,6 +807,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
 						attributesToAdd.put(RESULT_TABLENAME, tableName);						
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
+						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
