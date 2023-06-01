@@ -19,7 +19,6 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLDataException;
 import java.sql.SQLException;
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.sql.SQLTransientException;
 import java.sql.Statement;
 import java.sql.Types;
@@ -1247,9 +1246,7 @@ public class PutGSS extends AbstractProcessor {
                                          final TableSchema tableSchema, final DMLSettings settings)
             throws IllegalArgumentException, MalformedRecordException, SQLException {
 
-
-        final Set<String> keyColumnNames = getUpdateKeyColumnNames(tableName, updateKeys, tableSchema);
-        final Set<String> normalizedKeyColumnNames = normalizeKeyColumnNamesAndCheckForValues(recordSchema, updateKeys, settings, keyColumnNames, tableSchema.getQuotedIdentifierString());
+    	final Set<String> normalizedKeyColumnNames = new HashSet<>(Arrays.asList(updateKeys.split(",")));
 
         final StringBuilder sqlBuilder = new StringBuilder();
         sqlBuilder.append("UPDATE ");
@@ -1312,32 +1309,41 @@ public class PutGSS extends AbstractProcessor {
             sqlBuilder.append(" WHERE ");
             AtomicInteger whereFieldCount = new AtomicInteger(0);
 
-            for (int i = 0; i < fieldCount; i++) {
+            if (fieldNames.contains(GeoUtils.SETL_UUID.toUpperCase())) { // Case of source is GSS
+                for (int i = 0; i < fieldCount; i++) {
 
-                RecordField field = recordSchema.getField(i);
-                String fieldName = field.getFieldName();
+                    RecordField field = recordSchema.getField(i);
+                    String fieldName = field.getFieldName();
 
-                final String normalizedColName = normalizeColumnName(fieldName, settings.translateFieldNames);
-                final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
-                if (desc != null) {
+                    final String normalizedColName = normalizeColumnName(fieldName, settings.translateFieldNames);
+                    final ColumnDescription desc = tableSchema.getColumns().get(normalizeColumnName(fieldName, settings.translateFieldNames));
+                    if (desc != null) {
 
-                    // Check if this column is a Update Key. If so, add it to the WHERE clause
-                    if (normalizedKeyColumnNames.contains(normalizedColName)) {
+                        // Check if this column is a Update Key. If so, add it to the WHERE clause
+                        if (normalizedKeyColumnNames.contains(normalizedColName)) {
 
-                        if (whereFieldCount.getAndIncrement() > 0) {
-                            sqlBuilder.append(" AND ");
+                            if (whereFieldCount.getAndIncrement() > 0) {
+                                sqlBuilder.append(" AND ");
+                            }
+
+                            if (settings.escapeColumnNames) {
+                                sqlBuilder.append(tableSchema.getQuotedIdentifierString())
+                                        .append(normalizedColName)
+                                        .append(tableSchema.getQuotedIdentifierString());
+                            } else {
+                                sqlBuilder.append(normalizedColName);
+                            }
+                            sqlBuilder.append(" = ?");
+                            includedColumns.add(i);
                         }
-
-                        if (settings.escapeColumnNames) {
-                            sqlBuilder.append(tableSchema.getQuotedIdentifierString())
-                                    .append(normalizedColName)
-                                    .append(tableSchema.getQuotedIdentifierString());
-                        } else {
-                            sqlBuilder.append(normalizedColName);
-                        }
-                        sqlBuilder.append(" = ?");
-                        includedColumns.add(i);
                     }
+                }            	
+            }else { // Case of source is PostGIS without UIDD field in source records 
+                for (String name : normalizedKeyColumnNames) { 
+                    if (whereFieldCount.getAndIncrement() > 0) {
+                        sqlBuilder.append(" AND ");
+                    }
+                    sqlBuilder.append(name).append(" = ?");
                 }
             }
         }
@@ -1429,54 +1435,6 @@ public class PutGSS extends AbstractProcessor {
                 }
             }
         }
-    }
-
-    private Set<String> getUpdateKeyColumnNames(String tableName, String updateKeys, TableSchema tableSchema) throws SQLIntegrityConstraintViolationException {
-        final Set<String> updateKeyColumnNames;
-
-        if (updateKeys == null) {
-            updateKeyColumnNames = tableSchema.getPrimaryKeyColumnNames();
-        } else {
-            updateKeyColumnNames = new HashSet<>();
-            for (final String updateKey : updateKeys.split(",")) {
-                updateKeyColumnNames.add(updateKey.trim());
-            }
-        }
-
-        if (updateKeyColumnNames.isEmpty()) {
-            throw new SQLIntegrityConstraintViolationException("Table '" + tableName + "' not found or does not have a Primary Key and no Update Keys were specified");
-        }
-
-        return updateKeyColumnNames;
-    }
-
-    private Set<String> normalizeKeyColumnNamesAndCheckForValues(RecordSchema recordSchema, String updateKeys, DMLSettings settings, Set<String> updateKeyColumnNames, final String quoteString)
-            throws MalformedRecordException {
-        // Create a Set of all normalized Update Key names, and ensure that there is a field in the record
-        // for each of the Update Key fields.
-        final Set<String> normalizedRecordFieldNames = getNormalizedColumnNames(recordSchema, settings.translateFieldNames);
-
-        final Set<String> normalizedKeyColumnNames = new HashSet<>();
-        for (final String updateKeyColumnName : updateKeyColumnNames) {
-            String normalizedKeyColumnName = normalizeColumnName(updateKeyColumnName, settings.translateFieldNames);
-
-            if (!normalizedRecordFieldNames.contains(normalizedKeyColumnName)) {
-                String missingColMessage = "Record does not have a value for the " + (updateKeys == null ? "Primary" : "Update") + "Key column '" + updateKeyColumnName + "'";
-                if (settings.failUnmappedColumns) {
-                    getLogger().error(missingColMessage);
-                    throw new MalformedRecordException(missingColMessage);
-                } else if (settings.warningUnmappedColumns) {
-                    getLogger().warn(missingColMessage);
-                }
-            }
-            // Optionally quote the name before returning
-            if (settings.escapeColumnNames) {
-                normalizedKeyColumnName = quoteString + normalizedKeyColumnName + quoteString;
-            }
-            normalizedKeyColumnNames.add(normalizedKeyColumnName);
-        }
-
-        return normalizedKeyColumnNames;
     }
 
     private static String normalizeColumnName(final String colName, final boolean translateColumnNames) {
