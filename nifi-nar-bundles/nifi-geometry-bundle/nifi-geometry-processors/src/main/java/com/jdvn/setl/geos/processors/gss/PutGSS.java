@@ -891,10 +891,15 @@ public class PutGSS extends AbstractProcessor {
 
                     if (geo_src_type.toLowerCase().contains("postgis")) {
                         // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
-                        if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                            nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
+                    	nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
+                        if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType)) {                            
                             stmt.setObject(fieldIndexes.size() + 1, nifiuid);  
-                        }   
+                        }
+                        else {
+                        	 if (DELETE_TYPE.equalsIgnoreCase(statementType) ) {
+                        		 stmt.setObject(++deleteIndex, nifiuid); 
+                        	 }
+                        }
                     }
 
                     if (INSERT_TYPE.equalsIgnoreCase(statementType) != true) { // GSS is not support Batch for DELETE/UPDATE/UPSERT
@@ -1416,7 +1421,10 @@ public class PutGSS extends AbstractProcessor {
                         + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
             }
         }
-
+        if (!fieldNames.contains(GeoUtils.SETL_UUID.toUpperCase())) { // Concat with NIFIUID generated from code                    	
+            sqlBuilder.append(" AND ");
+            sqlBuilder.append(GeoUtils.SETL_UUID).append(" = ?");
+        }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
