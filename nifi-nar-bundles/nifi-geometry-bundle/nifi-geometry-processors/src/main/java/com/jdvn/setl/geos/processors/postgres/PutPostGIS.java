@@ -823,7 +823,10 @@ public class PutPostGIS extends AbstractProcessor {
                             }
 
                         }
-
+                        if (fieldName.contains(SETL_UUID.toUpperCase()) || fieldName.contains(SETL_UUID.toLowerCase())) {
+							String Fkey = (String) currentValue;
+							currentValue = createGUIDfromFkeyString(idbase.toString() + Fkey).toString();
+						}
                         // Convert (if necessary) from field data type to column data type
                         if (fieldSqlType != sqlType) {
                             try {
@@ -878,12 +881,13 @@ public class PutPostGIS extends AbstractProcessor {
                         }
                     }
                     // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
-                    if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
-                        nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
-                        setParameter(ps, fieldIndexes.size() + 1, nifiuid, Types.VARCHAR, 12);  // SQL Type of Varchar is 12, at last position
+                    List<String> fieldNames = recordSchema.getFieldNames();
+                    if (!(fieldNames.contains(SETL_UUID.toUpperCase()) || fieldNames.contains(SETL_UUID.toLowerCase()))) {
+                    	if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
+	                        nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();
+	                        setParameter(ps, fieldIndexes.size() + 1, nifiuid, Types.VARCHAR, 12);  // SQL Type of Varchar is 12, at last position
+                    	}
                     }
-
-
                     ps.addBatch();
                     session.adjustCounter(statementType + " updates performed", 1, false);
                     if (++currentBatchSize == maxBatchSize) {
@@ -1134,12 +1138,17 @@ public class PutPostGIS extends AbstractProcessor {
                             + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                 }
             }
-            
-            sqlBuilder.append(",").append(SETL_UUID);
-            // complete the SQL statements by adding ?'s for all of the values to be escaped.
-            sqlBuilder.append(") VALUES (");
-            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size() + 1));  // + 1 for new NIFIUID filed
-            sqlBuilder.append(")");
+            if (!(fieldNames.contains(SETL_UUID.toUpperCase()) || fieldNames.contains(SETL_UUID.toLowerCase()))) {
+	            sqlBuilder.append(",").append(SETL_UUID);
+	            sqlBuilder.append(") VALUES (");
+	            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size() + 1));  // + 1 for new NIFIUID filed
+	            sqlBuilder.append(")");            	
+            } else {
+	            sqlBuilder.append(") VALUES (");
+	            sqlBuilder.append(StringUtils.repeat("?", ",", includedColumns.size()));
+	            sqlBuilder.append(")");             	
+            }
+
 
             if (fieldsFound.get() == 0) {
                 throw new SQLDataException("None of the fields in the record map to the columns defined by the " + tableName + " table\n"

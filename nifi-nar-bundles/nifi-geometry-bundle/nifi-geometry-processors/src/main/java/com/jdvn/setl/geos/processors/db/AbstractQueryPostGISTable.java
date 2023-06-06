@@ -423,9 +423,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
-									geoColumn + ":" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 						} else
-							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + ":" + tableName);
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
 
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)
@@ -807,9 +807,9 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(GeoAttributes.GEO_NAME.key(),
-									geoColumn + ":" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+									geoColumn + "_" + tableName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 						} else
-							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + ":" + tableName);
+							attributesToAdd.put(GeoAttributes.GEO_NAME.key(), geoColumn + "_" + tableName);
 						
                         attributesToAdd.putAll(sqlWriter.getAttributesToAdd());
 						if (attributesToAdd.get(GeoAttributes.CRS.key()) != null)

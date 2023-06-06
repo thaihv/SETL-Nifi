@@ -531,6 +531,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		}
 
 		List<String> atrColumns = getAttributeColumns(con, tableName);
+		if (atrColumns.contains(GeoUtils.SETL_UUID)) // source table must ignore this field to avoid conflict 
+			atrColumns.remove(GeoUtils.SETL_UUID);
+			
+		
 		final String selectQuery = getQueryUpdate(dbAdapter, tableName, atrColumns, geo_table, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();

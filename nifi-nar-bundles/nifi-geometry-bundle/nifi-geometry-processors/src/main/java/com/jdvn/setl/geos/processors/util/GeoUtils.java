@@ -69,6 +69,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.MultiLineString;
 import org.locationtech.jts.geom.MultiPoint;
+import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.io.ParseException;
@@ -496,7 +497,7 @@ public class GeoUtils {
 						geometryClass = LineString.class;
 						break;
 					case "MULTIPOLYGON":
-						geometryClass = MultiLineString.class;
+						geometryClass = MultiPolygon.class;
 						break;
 					case "POLYGON":
 						geometryClass = Polygon.class;
@@ -539,7 +540,7 @@ public class GeoUtils {
 					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
 						fName = SHP_GEO_COLUMN;
 					int index = featureBuilder.getFeatureType().indexOf(fName);
-					if (fName.contains(geomFieldName) || fName.contains(SHP_GEO_COLUMN))
+					if (fName.equals(geomFieldName.toLowerCase()) || fName.equals(geomFieldName.toUpperCase()) || fName.equals(SHP_GEO_COLUMN))
 						objs[index] = geo;
 					else
 						objs[index] = record.getValue(fName);
