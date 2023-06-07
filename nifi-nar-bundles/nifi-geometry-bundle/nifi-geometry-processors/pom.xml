@@ -64,6 +64,16 @@
 			<artifactId>gt-shapefile</artifactId>
 			<version>${geotools.version}</version>
 		</dependency>
+		<dependency>
+		  <groupId>org.geotools</groupId>
+		  <artifactId>gt-wps</artifactId>
+		  <version>${geotools.version}</version>
+		</dependency>	
+		<dependency>
+		  <groupId>org.geotools</groupId>
+		  <artifactId>gt-xml</artifactId>
+		  <version>${geotools.version}</version>
+		</dependency>			
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-swing</artifactId>
