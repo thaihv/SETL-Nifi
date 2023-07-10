@@ -73,7 +73,12 @@
 		  <groupId>org.geotools</groupId>
 		  <artifactId>gt-xml</artifactId>
 		  <version>${geotools.version}</version>
-		</dependency>			
+		</dependency>
+		<dependency>
+		    <groupId>org.geotools</groupId>
+		    <artifactId>gt-geojson-core</artifactId>
+		    <version>27-RC</version>
+		</dependency>
         <dependency>
             <groupId>org.geotools</groupId>
             <artifactId>gt-swing</artifactId>
@@ -113,7 +118,13 @@
 		   <groupId>org.geotools</groupId>
 		   <artifactId>gt-geopkg</artifactId>
 		   <version>${geotools.version}</version>
-		 </dependency>		     
+		 </dependency>		 
+	    <dependency>
+	      <groupId>org.geotools</groupId>
+	      <artifactId>gt-sample-data</artifactId>
+	      <version>${geotools.version}</version>
+	      <scope>test</scope>
+	    </dependency>		     
 		<dependency>
 		    <groupId>com.vividsolutions</groupId>
 		    <artifactId>jts-core</artifactId>

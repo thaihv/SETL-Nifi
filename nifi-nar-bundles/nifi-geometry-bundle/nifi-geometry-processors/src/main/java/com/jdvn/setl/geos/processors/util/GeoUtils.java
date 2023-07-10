@@ -47,6 +47,7 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.collection.ListFeatureCollection;
+import org.geotools.data.geojson.GeoJSONWriter;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.data.simple.SimpleFeatureSource;
@@ -293,7 +294,7 @@ public class GeoUtils {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		try {
 			final RecordSchema recordSchema = createFeatureRecordSchema(featureSource);
-			SimpleFeatureCollection features = featureSource.getFeatures();
+			SimpleFeatureCollection features = featureSource.getFeatures();	
 			SimpleFeatureIterator it = (SimpleFeatureIterator) features.features();
 			while (it.hasNext()) {
 				SimpleFeature feature = it.next();
@@ -337,6 +338,10 @@ public class GeoUtils {
 		}
 		it.close();
 		return returnRs;
+	}	
+	
+	public static String getGeojsonFromFeatureCollection(SimpleFeatureCollection fc) {
+	    return GeoJSONWriter.toGeoJSON(fc);
 	}	
 	public static ArrayList<Record> getNifiRecordSegmentsFromFeatureSource(final SimpleFeatureSource featureSource, final RecordSchema recordSchema, Set<FeatureId> featureIds, Charset charset ) {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
@@ -557,6 +562,81 @@ public class GeoUtils {
 		}
 		return null;
 	}
+	
+	
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecordsWithoutGeoFname(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source) {
+		List<SimpleFeature> features = new ArrayList<>();
+		String geomFieldName = SHP_GEO_COLUMN;
+		Record record;
+		try {
+			boolean bCreatedSchema = false;
+			SimpleFeatureBuilder featureBuilder = null;
+			SimpleFeatureType TYPE = null;
+			Class geometryClass = null;
+			while ((record = avroReader.nextRecord()) != null) {
+				if (!bCreatedSchema) {
+					geomFieldName = getGeometryFieldName(record);
+					String geovalue = record.getAsString(geomFieldName);
+					String type = geovalue.substring(0, geovalue.indexOf('(')).toUpperCase().trim();
+					switch (type) {
+					case "MULTILINESTRING":
+						geometryClass = MultiLineString.class;
+						break;
+					case "LINESTRING":
+						geometryClass = LineString.class;
+						break;
+					case "MULTIPOLYGON":
+						geometryClass = MultiPolygon.class;
+						break;
+					case "POLYGON":
+						geometryClass = Polygon.class;
+						break;
+					case "MULTIPOINT":
+						geometryClass = MultiPoint.class;
+						break;
+					case "POINT":
+						geometryClass = Point.class;
+						break;
+					case "GEOMETRYCOLLECTION":
+						geometryClass = GeometryCollection.class;
+						break;
+					default:
+						geometryClass = MultiLineString.class;
+					}
+
+					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+					TYPE = generateFeatureType(collectionName, crs_source, geomFieldName, geometryClass, attributes);
+					featureBuilder = new SimpleFeatureBuilder(TYPE);
+					bCreatedSchema = true;
+				}
+				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+				WKTReader reader = new WKTReader(geometryFactory);
+				// Add geometry
+				Geometry geo = reader.read(record.getAsString(geomFieldName));
+				// Add attributes
+				int size = record.getSchema().getFieldCount();
+				Object[] objs = new Object[size];
+				for (int i = 0; i < size; i++) {
+					String fName = record.getSchema().getFieldNames().get(i);
+					int index = featureBuilder.getFeatureType().indexOf(fName);
+					if (fName.equals(geomFieldName.toLowerCase()) || fName.equals(geomFieldName.toUpperCase()))
+						objs[index] = geo;
+					else
+						objs[index] = record.getValue(fName);
+
+				}
+				featureBuilder.addAll(objs);
+				SimpleFeature feature = featureBuilder.buildFeature(null);
+				features.add(feature);
+			}
+
+			return new ListFeatureCollection(TYPE, features);
+		} catch (IOException | MalformedRecordException | ParseException  | MismatchedDimensionException  e) {
+			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });
+		}
+		return null;
+	}	
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public static SimpleFeatureCollection createNifiRecordsWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
 		List<SimpleFeature> features = new ArrayList<>();
