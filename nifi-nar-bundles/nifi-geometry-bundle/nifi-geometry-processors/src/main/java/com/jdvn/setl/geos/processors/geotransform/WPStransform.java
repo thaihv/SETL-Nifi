@@ -89,6 +89,8 @@ import org.geotools.xsd.Encoder;
 import org.geotools.xsd.EncoderDelegate;
 import org.locationtech.jts.io.ParseException;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.type.AttributeDescriptor;
+import org.opengis.feature.type.GeometryDescriptor;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.xml.sax.ContentHandler;
@@ -178,9 +180,28 @@ public class WPStransform extends AbstractProcessor {
         	System.out.println(idt.getIdentifier().getValue());
         }
 
-	}		
+	}	
+
+	List<String> getGeometryPropertyNames(SimpleFeatureCollection collection) {
+		List<String> result = new ArrayList<String>();
+		for (AttributeDescriptor ad : collection.getSchema().getAttributeDescriptors()) {
+			if (ad instanceof GeometryDescriptor) {
+				result.add(ad.getLocalName());
+			}
+		}
+		return result;
+	}	
+	List<String> getGeometryPropertyNames(SimpleFeature feature) {
+		List<String> result = new ArrayList<String>();
+		for (AttributeDescriptor ad : feature.getFeatureType().getAttributeDescriptors()) {
+			if (ad instanceof GeometryDescriptor) {
+				result.add(ad.getLocalName());
+			}
+		}
+		return result;
+	}	
 	@SuppressWarnings("rawtypes")
-	public ArrayList<Record> getTransformedRecordsFromWPSProcess(WebProcessingService wps, String processIden, String geojson_fc, Map<String, Object> map_LiteralData, RecordSchema recordSchema) throws ServiceException, IOException {
+	public ArrayList<Record> getTransformedRecordsFromWPSProcess(WebProcessingService wps, String processIden, String geojson_fc, Map<String, Object> map_LiteralData, RecordSchema recordSchema, String geoColumn) throws ServiceException, IOException {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
 		
     	DescribeProcessRequest descRequest = wps.createDescribeProcessRequest();
@@ -233,14 +254,13 @@ public class WPStransform extends AbstractProcessor {
                         Iterator<SimpleFeature> itr = dfs.iterator();
                         while (itr.hasNext()) {
                         	SimpleFeature feature = itr.next();
-                            System.out.println(feature.getAttribute("id"));
-                            System.out.println(feature.getDefaultGeometry().toString());
+                        	String fColumn = getGeometryPropertyNames(feature).get(0);
             				Map<String, Object> fieldMap = new HashMap<String, Object>();
             				for (int i = 0; i < feature.getAttributeCount(); i++) {
             					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
             					Object value = feature.getAttribute(i);
-            					if (key.equals("geometry"))
-            						key = "SHAPE";
+            					if (key.equals(fColumn))
+            						key = geoColumn;
             					fieldMap.put(key, value);						
             				}
 
@@ -359,8 +379,9 @@ public class WPStransform extends AbstractProcessor {
 						Map<String, Object> map = new TreeMap<>();
 						map.put("distance", 0.04);
 						map.put("preserveTopology", true);
-						String geoJson = GeoUtils.getGeojsonFromFeatureCollection(collection); 												 
-						List<Record> records = getTransformedRecordsFromWPSProcess(wps, identifier, geoJson, map, recordSchema);						
+						String geoJson = GeoUtils.getGeojsonFromFeatureCollection(collection); 			
+						String geoColumn = getGeometryPropertyNames(collection).get(0);
+						List<Record> records = getTransformedRecordsFromWPSProcess(wps, identifier, geoJson, map, recordSchema, geoColumn);						
 
 						FlowFile transformed = session.create(flowFile);
 						transformed = session.write(transformed, new OutputStreamCallback() {
