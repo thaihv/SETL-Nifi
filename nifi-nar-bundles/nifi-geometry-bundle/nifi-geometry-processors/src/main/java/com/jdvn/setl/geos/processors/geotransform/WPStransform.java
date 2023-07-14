@@ -97,6 +97,7 @@ import org.xml.sax.ContentHandler;
 import org.xml.sax.ext.LexicalHandler;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
+import com.jdvn.setl.geos.wpsservice.WPSService;
 
 import net.opengis.wfs.FeatureCollectionType;
 import net.opengis.wps10.DataType;
@@ -122,6 +123,13 @@ public class WPStransform extends AbstractProcessor {
 
 	public static PropertyDescriptor WPS_URL;
 	public static PropertyDescriptor WPS_IDENTIFIER;
+    static final PropertyDescriptor WPS_STORE = new Builder()
+            .name("wps-service")
+            .displayName("WPS Service")
+            .description("Specifies the Controller Service to use for fetch information from WPS service.")
+            .identifiesControllerService(WPSService.class)
+            .required(true)
+            .build();
 	public static final PropertyDescriptor DISTANCE = new PropertyDescriptor.Builder()
 			.name("distance")
 			.description("The distance to make features to be executed by process ")
@@ -309,8 +317,8 @@ public class WPStransform extends AbstractProcessor {
 					.required(true)
 					.allowableValues(capabilitiesIdentifiers)
 					.defaultValue(capabilitiesIdentifiers[0].getValue())
-					.build();
-						
+					.build();		
+			
 			supDescriptors.add(WPS_URL);
 			supDescriptors.add(WPS_IDENTIFIER);
 			supDescriptors.add(DISTANCE);
@@ -327,7 +335,8 @@ public class WPStransform extends AbstractProcessor {
 		} catch (ParseException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
-		} catch (URISyntaxException e) {
+		} 
+		catch (URISyntaxException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -355,6 +364,12 @@ public class WPStransform extends AbstractProcessor {
 		return properties;
 	}
 
+	@Override
+    public void onPropertyModified(final PropertyDescriptor descriptor, final String oldValue, final String newValue) {
+    	System.out.println(descriptor.getDisplayName());
+    	System.out.println(oldValue);
+    	System.out.println(newValue);
+    }
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
 		FlowFile flowFile = session.get();
