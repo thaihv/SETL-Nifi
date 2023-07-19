@@ -16,14 +16,27 @@
  */
 package com.jdvn.setl.geos.wpsservice;
 
+import java.io.IOException;
+import java.util.List;
+
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.controller.ControllerService;
+import org.geotools.data.wps.WebProcessingService;
+import org.geotools.ows.ServiceException;
+
 
 @Tags({ "WPS Service", "WMS", "WFS", "WPS" })
 @CapabilityDescription("Service API for Map in vectors or rasters")
 public interface WPSService extends ControllerService {
 
 	public void execute();
+	public WebProcessingService getWps();
+	public List<AllowableValue> getWPSCapabilities();
+	public void getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException;
+	default boolean isWorkingWell() {
+		return false;
+	}
 
 }

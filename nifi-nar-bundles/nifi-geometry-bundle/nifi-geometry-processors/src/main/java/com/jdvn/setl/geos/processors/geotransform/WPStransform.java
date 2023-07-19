@@ -16,15 +16,11 @@
  */
 package com.jdvn.setl.geos.processors.geotransform;
 
-import static org.apache.nifi.expression.ExpressionLanguageScope.FLOWFILE_ATTRIBUTES;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,7 +50,6 @@ import org.apache.nifi.avro.WriteAvroResultWithSchema;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.PropertyDescriptor.Builder;
-import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
@@ -65,7 +60,6 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
-import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.MapRecord;
@@ -115,14 +109,9 @@ import net.opengis.wps10.WPSCapabilitiesType;
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 
 public class WPStransform extends AbstractProcessor {
-	public static final String GEO_COLUMN = "geo.column";
-	private WebProcessingService wps;
-	private URL url;
 
 	private static AllowableValue[] capabilitiesIdentifiers;
 
-	public static PropertyDescriptor WPS_URL;
-	public static PropertyDescriptor WPS_IDENTIFIER;
     static final PropertyDescriptor WPS_STORE = new Builder()
             .name("wps-service")
             .displayName("WPS Service")
@@ -130,22 +119,7 @@ public class WPStransform extends AbstractProcessor {
             .identifiesControllerService(WPSService.class)
             .required(true)
             .build();
-	public static final PropertyDescriptor DISTANCE = new PropertyDescriptor.Builder()
-			.name("distance")
-			.description("The distance to make features to be executed by process ")
-			.required(true)
-			.defaultValue("0.04")
-			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.build();
-	public static final PropertyDescriptor TOPOLOGY = new PropertyDescriptor.Builder()
-			.name("Preserve Topology")
-			.description("To make features to be executed by process with keep original topology")
-			.required(true)
-			.defaultValue("true")
-			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.build();	
+
 	public static final Relationship REL_SUCCESS = new Relationship.Builder()
 			.name("success")
 			.description("Flowfiles that have been successfully transformed are transferred to this relationship")
@@ -154,7 +128,11 @@ public class WPStransform extends AbstractProcessor {
 			.name("failure")
 			.description("Flowfiles that could not be transformed for some reason are transferred to this relationship")
 			.build();
+
+	public static PropertyDescriptor P_IDENTIFIER;
 	private List<PropertyDescriptor> properties;
+	
+	
 	private Set<Relationship> relationships;
 	
 	@SuppressWarnings("rawtypes")
@@ -209,8 +187,9 @@ public class WPStransform extends AbstractProcessor {
 		return result;
 	}	
 	@SuppressWarnings("rawtypes")
-	public ArrayList<Record> getTransformedRecordsFromWPSProcess(WebProcessingService wps, String processIden, String geojson_fc, Map<String, Object> map_LiteralData, RecordSchema recordSchema, String geoColumn) throws ServiceException, IOException {
+	public ArrayList<Record> getTransformedRecordsFromWPSProcess(WPSService wpsService, String processIden, String geojson_fc, Map<String, Object> map_LiteralData, RecordSchema recordSchema, String geoColumn) throws ServiceException, IOException {
 		final ArrayList<Record> returnRs = new ArrayList<Record>();
+		WebProcessingService wps = wpsService.getWps();
 		
     	DescribeProcessRequest descRequest = wps.createDescribeProcessRequest();
     	descRequest.setIdentifier(processIden); // describe the buffer process
@@ -289,58 +268,13 @@ public class WPStransform extends AbstractProcessor {
         return returnRs;
 
 	}	
+	
 	@Override
 	protected void init(final ProcessorInitializationContext context) {
-
-		List<AllowableValue> listIdentifiers;
-		try {
-			url = new URL("http://localhost:8088/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
-			wps = new WebProcessingService(url);
-			listIdentifiers = getWPSCapabilities(wps);
-			
-			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
-			listIdentifiers.toArray(capabilitiesIdentifiers);
-			
-			// descriptors
-			final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
-		    WPS_URL = new Builder()
-		            .name("basic-url-wps-server")
-		            .displayName("WPS url")
-		            .description("The url of server that provide WPS service.")
-		            .required(true)
-		            .expressionLanguageSupported(FLOWFILE_ATTRIBUTES)
-		            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-		            .defaultValue(url.toURI().toString())
-		            .build();
-			WPS_IDENTIFIER = new PropertyDescriptor.Builder()
-					.name("WPS Process Identifier").description("The Identifier of WPS process that is used to query information of input data and response.")
-					.required(true)
-					.allowableValues(capabilitiesIdentifiers)
-					.defaultValue(capabilitiesIdentifiers[0].getValue())
-					.build();		
-			
-			supDescriptors.add(WPS_URL);
-			supDescriptors.add(WPS_IDENTIFIER);
-			supDescriptors.add(DISTANCE);
-			supDescriptors.add(TOPOLOGY);
-			properties = Collections.unmodifiableList(supDescriptors);
-			
-			
-		} catch (ServiceException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} catch (ParseException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} 
-		catch (URISyntaxException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-
+		
+		List<PropertyDescriptor> props = new ArrayList<>();
+		props.add(WPS_STORE);
+		properties = Collections.unmodifiableList(props);
 		// relationships
 		final Set<Relationship> procRels = new HashSet<>();
 		procRels.add(REL_SUCCESS);
@@ -369,6 +303,26 @@ public class WPStransform extends AbstractProcessor {
     	System.out.println(descriptor.getDisplayName());
     	System.out.println(oldValue);
     	System.out.println(newValue);
+    	if (descriptor.getName().equals("wps-service") && descriptor.getControllerServiceDefinition().equals(WPSService.class)){
+    		List<AllowableValue> listIdentifiers;
+    		WPSService w = (WPSService) super.getControllerServiceLookup().getControllerService(newValue);
+    		
+    		listIdentifiers = w.getWPSCapabilities();
+			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
+			listIdentifiers.toArray(capabilitiesIdentifiers);
+			
+			P_IDENTIFIER = new PropertyDescriptor.Builder()
+					.name("WPS Process Identifier").description("The Identifier of WPS process that is used to query information of input data and response.")
+					.required(true)
+					.allowableValues(capabilitiesIdentifiers)
+					.defaultValue(capabilitiesIdentifiers[0].getValue())
+					.build();		
+	        final List<PropertyDescriptor> props = new ArrayList<>();
+	        props.add(WPS_STORE);
+	        props.add(P_IDENTIFIER);
+			properties = Collections.unmodifiableList(props);
+    	}
+
     }
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
@@ -376,6 +330,7 @@ public class WPStransform extends AbstractProcessor {
 		if (flowFile == null) {
 			return;
 		}
+		final WPSService wpsService = context.getProperty(WPS_STORE).asControllerService(WPSService.class);
 		final StopWatch stopWatch = new StopWatch(true);
 		final ComponentLog logger = getLogger();
 		try {
@@ -387,7 +342,7 @@ public class WPStransform extends AbstractProcessor {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
 						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
-						final String identifier = context.getProperty(WPS_IDENTIFIER).evaluateAttributeExpressions(flowFile).getValue();
+						final String identifier = context.getProperty(P_IDENTIFIER).evaluateAttributeExpressions(flowFile).getValue();
 						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecordsWithoutGeoFname("featurecolection", reader, crs_source);
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						
@@ -396,7 +351,7 @@ public class WPStransform extends AbstractProcessor {
 						map.put("preserveTopology", true);
 						String geoJson = GeoUtils.getGeojsonFromFeatureCollection(collection); 			
 						String geoColumn = getGeometryPropertyNames(collection).get(0);
-						List<Record> records = getTransformedRecordsFromWPSProcess(wps, identifier, geoJson, map, recordSchema, geoColumn);						
+						List<Record> records = getTransformedRecordsFromWPSProcess(wpsService, identifier, geoJson, map, recordSchema, geoColumn);						
 
 						FlowFile transformed = session.create(flowFile);
 						transformed = session.write(transformed, new OutputStreamCallback() {

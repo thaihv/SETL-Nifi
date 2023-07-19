@@ -33,9 +33,11 @@ public class TestWPSStore {
     public void testService() throws InitializationException {
         final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
         final WPSStore service = new WPSStore();
-        runner.addControllerService("test-good", service);
+        runner.addControllerService("wps-server", service);
 
-        runner.setProperty(service, WPSStore.MY_PROPERTY, "test-value");
+        runner.setProperty(service, WPSStore.URL, "http://localhost:8088/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
+        runner.setProperty(service, WPSStore.USER, "thaihv");
+        runner.setProperty(service, WPSStore.PASSWORD, "123456789a");
         runner.enableControllerService(service);
 
         runner.assertValid(service);

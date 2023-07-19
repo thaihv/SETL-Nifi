@@ -35,8 +35,8 @@ public class TestProcessor extends AbstractProcessor {
     protected List<PropertyDescriptor> getSupportedPropertyDescriptors() {
         List<PropertyDescriptor> propDescs = new ArrayList<>();
         propDescs.add(new PropertyDescriptor.Builder()
-                .name("MyService test processor")
-                .description("MyService test processor")
+                .name("WPS Transform test processor")
+                .description("WPS Transform test processor")
                 .identifiesControllerService(WPSService.class)
                 .required(true)
                 .build());
