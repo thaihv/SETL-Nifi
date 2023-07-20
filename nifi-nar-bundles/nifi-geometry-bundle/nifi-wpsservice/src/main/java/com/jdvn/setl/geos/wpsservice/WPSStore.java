@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -41,11 +43,14 @@ import org.geotools.data.wps.request.DescribeProcessRequest;
 import org.geotools.data.wps.response.DescribeProcessResponse;
 import org.geotools.ows.ServiceException;
 
+import net.opengis.wps10.DataInputsType;
 import net.opengis.wps10.InputDescriptionType;
+import net.opengis.wps10.LiteralInputType;
 import net.opengis.wps10.ProcessBriefType;
 import net.opengis.wps10.ProcessDescriptionType;
 import net.opengis.wps10.ProcessDescriptionsType;
 import net.opengis.wps10.ProcessOfferingsType;
+import net.opengis.wps10.SupportedComplexDataInputType;
 import net.opengis.wps10.WPSCapabilitiesType;
 
 @Tags({ "Geo Service", "WPS", "Process", "HTTP", "Map", "Vectors", "Rasters" })
@@ -135,23 +140,40 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 
 	}
 
+	@SuppressWarnings("rawtypes")
 	@Override
-	public void getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException {
+	public Map<String, Object> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException {
+		Map<String, Object> params = new TreeMap<>();
 		if (wps != null) {
-
 			DescribeProcessRequest descRequest = wps.createDescribeProcessRequest();
 			descRequest.setIdentifier(processIden); // describe the buffer process
 
 			DescribeProcessResponse descResponse = wps.issueRequest(descRequest);
 			ProcessDescriptionsType processDesc = descResponse.getProcessDesc();
 			ProcessDescriptionType pdt = (ProcessDescriptionType) processDesc.getProcessDescription().get(0);
-
-			for (int i = 0; i < pdt.getDataInputs().getInput().size(); i++) {
-				InputDescriptionType idt = (InputDescriptionType) pdt.getDataInputs().getInput().get(i);
-				System.out.println(idt.getIdentifier().getValue());
-				System.out.println(idt.getLiteralData());
-			}
+			
+	        DataInputsType dataInputs = pdt.getDataInputs();
+	        if (dataInputs == null) {
+	            return null;
+	        }
+	        EList inputs = dataInputs.getInput();
+	        if ((inputs == null) || inputs.isEmpty()) {
+	            return null;
+	        }
+	        Iterator iterator = inputs.iterator();
+	        while (iterator.hasNext()) {
+	            InputDescriptionType idt = (InputDescriptionType) iterator.next();
+	            String key = idt.getIdentifier().getValue();
+	            LiteralInputType literalData = idt.getLiteralData();
+	            SupportedComplexDataInputType complexData = idt.getComplexData();
+	            if (literalData != null) {
+	            	params.put(key,literalData);
+	            } else if (complexData != null) {
+	            	params.put(key,complexData);
+	            }
+	        }			
 		}
+		return params;
 
 	}
 

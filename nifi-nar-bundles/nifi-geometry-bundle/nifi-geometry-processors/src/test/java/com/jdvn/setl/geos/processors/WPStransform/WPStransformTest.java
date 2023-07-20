@@ -231,7 +231,6 @@ public class WPStransformTest {
         // System.out.println(result);
         assertEquals(expected, result);
     }
-    
 	private void runExecuteProcessBuffer_Online(Geometry geom1) throws ServiceException, IOException, ParseException, ProcessException {
 
 		WPSCapabilitiesType capabilities = wps.getCapabilities();

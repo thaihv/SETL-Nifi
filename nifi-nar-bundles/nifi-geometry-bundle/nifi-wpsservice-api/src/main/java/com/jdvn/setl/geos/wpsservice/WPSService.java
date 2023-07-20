@@ -18,6 +18,7 @@ package com.jdvn.setl.geos.wpsservice;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
@@ -34,7 +35,7 @@ public interface WPSService extends ControllerService {
 	public void execute();
 	public WebProcessingService getWps();
 	public List<AllowableValue> getWPSCapabilities();
-	public void getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException;
+	public Map<String, Object> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException;
 	default boolean isWorkingWell() {
 		return false;
 	}

@@ -81,7 +81,6 @@ import org.geotools.referencing.CRS;
 import org.geotools.wps.WPSConfiguration;
 import org.geotools.xsd.Encoder;
 import org.geotools.xsd.EncoderDelegate;
-import org.locationtech.jts.io.ParseException;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.type.AttributeDescriptor;
 import org.opengis.feature.type.GeometryDescriptor;
@@ -96,12 +95,11 @@ import com.jdvn.setl.geos.wpsservice.WPSService;
 import net.opengis.wfs.FeatureCollectionType;
 import net.opengis.wps10.DataType;
 import net.opengis.wps10.InputDescriptionType;
+import net.opengis.wps10.LiteralInputType;
 import net.opengis.wps10.OutputDataType;
-import net.opengis.wps10.ProcessBriefType;
 import net.opengis.wps10.ProcessDescriptionType;
 import net.opengis.wps10.ProcessDescriptionsType;
-import net.opengis.wps10.ProcessOfferingsType;
-import net.opengis.wps10.WPSCapabilitiesType;
+import net.opengis.wps10.SupportedComplexDataInputType;
 
 @Tags({ "Spatial Filter", "WKT", "WPS", "GML", "Attributes", "Geospatial" })
 @CapabilityDescription("Transform data from a given flow file using WPS.")
@@ -130,27 +128,12 @@ public class WPStransform extends AbstractProcessor {
 			.build();
 
 	public static PropertyDescriptor P_IDENTIFIER;
+	private PropertyDescriptor P_INPUT;
 	private List<PropertyDescriptor> properties;
-	
+	private WPSService gwps;
 	
 	private Set<Relationship> relationships;
 	
-	@SuppressWarnings("rawtypes")
-	public List<AllowableValue> getWPSCapabilities(WebProcessingService wps) throws IOException, ServiceException, ParseException {
-
-		List<AllowableValue> listIdentifiers = new ArrayList<AllowableValue>();
-		WPSCapabilitiesType capabilities = wps.getCapabilities();
-
-		// view a list of processes offered by the server
-		ProcessOfferingsType processOfferings = capabilities.getProcessOfferings();
-		EList processes = processOfferings.getProcess();
-		Iterator iterator = processes.iterator();
-		while (iterator.hasNext()) {
-			ProcessBriefType process = (ProcessBriefType) iterator.next();
-			listIdentifiers.add(new AllowableValue(process.getIdentifier().getValue()));
-		}
-		return listIdentifiers;
-	}	
 	
 	public void getInputDataFromProcessIdentifier(WebProcessingService wps, String processIden) throws ServiceException, IOException {
 		
@@ -304,23 +287,67 @@ public class WPStransform extends AbstractProcessor {
     	System.out.println(oldValue);
     	System.out.println(newValue);
     	if (descriptor.getName().equals("wps-service") && descriptor.getControllerServiceDefinition().equals(WPSService.class)){
-    		List<AllowableValue> listIdentifiers;
-    		WPSService w = (WPSService) super.getControllerServiceLookup().getControllerService(newValue);
-    		
-    		listIdentifiers = w.getWPSCapabilities();
-			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
-			listIdentifiers.toArray(capabilitiesIdentifiers);
-			
-			P_IDENTIFIER = new PropertyDescriptor.Builder()
-					.name("WPS Process Identifier").description("The Identifier of WPS process that is used to query information of input data and response.")
-					.required(true)
-					.allowableValues(capabilitiesIdentifiers)
-					.defaultValue(capabilitiesIdentifiers[0].getValue())
-					.build();		
-	        final List<PropertyDescriptor> props = new ArrayList<>();
-	        props.add(WPS_STORE);
-	        props.add(P_IDENTIFIER);
-			properties = Collections.unmodifiableList(props);
+    		if (this.getControllerServiceLookup().isControllerServiceEnabled(newValue)) {
+    			
+        		List<AllowableValue> listIdentifiers;
+        		gwps = (WPSService) this.getControllerServiceLookup().getControllerService(newValue);      
+        		
+        		listIdentifiers = gwps.getWPSCapabilities();
+    			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
+    			listIdentifiers.toArray(capabilitiesIdentifiers);
+    			
+    			P_IDENTIFIER = new PropertyDescriptor.Builder()
+    					.name("process-id")
+    					.displayName("Process Identifier")
+    					.description("The Identifier of WPS process that is used to query information of input data and response.")
+    					.required(true)
+    					.allowableValues(capabilitiesIdentifiers)
+    					.build();		
+    	        final List<PropertyDescriptor> props = new ArrayList<>();
+    	        props.add(WPS_STORE);
+    	        props.add(P_IDENTIFIER);
+    			properties = Collections.unmodifiableList(props);    			
+    		}
+    	}
+    	if (descriptor.getName().equals("process-id")) {
+    		try {
+				List<PropertyDescriptor> props = new ArrayList<>();
+    	        props.add(WPS_STORE);
+    	        props.add(P_IDENTIFIER);
+    	        
+    			Map<String, Object> parameters = new TreeMap<>();
+    			parameters = gwps.getInputDataFromProcessIdentifier(newValue);
+    			for (Map.Entry<String, Object> entry : parameters.entrySet())
+    			{
+    				Object value = entry.getValue();
+    				if (value instanceof LiteralInputType) {
+    					System.out.println("key: " + entry.getKey() + "; type: Literal Data");
+            	        P_INPUT = new PropertyDescriptor.Builder()
+            					.name(entry.getKey())
+            					.displayName(entry.getKey())
+            					.description("The input parameter of process as type of Literal Data")
+            					.required(true)
+            					.build();
+    				}
+    				else if (value instanceof SupportedComplexDataInputType) {
+    					System.out.println("key: " + entry.getKey() + "; type: Supported Complex Data");
+            	        P_INPUT = new PropertyDescriptor.Builder()
+            					.name(entry.getKey())
+            					.displayName(entry.getKey())
+            					.description("The input parameter of process as type of Supported Complex Data")
+            					.required(true)
+            					.build();    					
+    				}
+    				props.add(P_INPUT);        	        
+    			}
+    			properties = Collections.unmodifiableList(props);
+			} catch (ServiceException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
     	}
 
     }
