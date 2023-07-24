@@ -38,12 +38,18 @@ import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.eclipse.emf.common.util.EList;
+import org.geotools.data.Parameter;
 import org.geotools.data.wps.WebProcessingService;
 import org.geotools.data.wps.request.DescribeProcessRequest;
 import org.geotools.data.wps.response.DescribeProcessResponse;
 import org.geotools.ows.ServiceException;
+import org.geotools.text.Text;
+import org.locationtech.jts.geom.Geometry;
+import org.opengis.util.InternationalString;
 
+import net.opengis.wps10.ComplexDataDescriptionType;
 import net.opengis.wps10.DataInputsType;
+import net.opengis.wps10.DescriptionType;
 import net.opengis.wps10.InputDescriptionType;
 import net.opengis.wps10.LiteralInputType;
 import net.opengis.wps10.ProcessBriefType;
@@ -139,11 +145,157 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 		return null;
 
 	}
+    @SuppressWarnings("rawtypes")
+	private static Class getLiteralTypeFromReference(String ref) {
+    	if (ref != null) {
+            Class guess = guessLiteralType(ref);
+            return guess != null ? guess : String.class; // default to string    		
+    	}
+    	return String.class;
 
-	@SuppressWarnings("rawtypes")
+    }
+
+    /**
+     * Try and parse a literaltype. If nothing matched, return null.
+     *
+     * @return class type it maps to, or null if no match was found
+     */
+    @SuppressWarnings("rawtypes")
+	private static Class guessLiteralType(String s) {
+        final String u = s.toUpperCase();
+
+        if (u.contains("DOUBLE")) {
+            return Double.class;
+        } else if (u.contains("INTEGER")) {
+            return Integer.class;
+        } else if (u.contains("FLOAT")) {
+            return Float.class;
+        } else if (u.contains("BOOLEAN")) {
+            return boolean.class;
+        } else if (u.contains("CHAR")) {
+            return Character.class;
+        } else if (u.contains("STRING")) {
+            return String.class;
+        }
+
+        return null;
+    }	
+    @SuppressWarnings("rawtypes")
+	private static Class getComplexType(String encoding, String mimetype, String schema) {
+        if ((encoding.toUpperCase()).contains("GML")
+                || (mimetype.toUpperCase()).contains("GML")
+                || (schema.toUpperCase()).contains("GML")) {
+            return Geometry.class;
+        } else if ((encoding.toUpperCase()).contains("POLYGON")
+                || (mimetype.toUpperCase()).contains("POLYGON")
+                || (schema.toUpperCase()).contains("POLYGON")) {
+            return Geometry.class;
+        } else if ((encoding.toUpperCase()).contains("POINT")
+                || (mimetype.toUpperCase()).contains("POINT")
+                || (schema.toUpperCase()).contains("POINT")) {
+            return Geometry.class;
+        } else if ((encoding.toUpperCase()).contains("LINE")
+                || (mimetype.toUpperCase()).contains("LINE")
+                || (schema.toUpperCase()).contains("LINE")) {
+            return Geometry.class;
+        } else if ((encoding.toUpperCase()).contains("RING")
+                || (mimetype.toUpperCase()).contains("RING")
+                || (schema.toUpperCase()).contains("RING")) {
+            return Geometry.class;
+        }
+
+        // default to big O
+        return Object.class;
+    }	
+    public static boolean isAbstractNull(DescriptionType description) {
+        if (description.getAbstract() == null) {
+            return true;
+        }
+        if (description.getAbstract().getValue() == null) {
+            return true;
+        }
+
+        return false;
+    }    
+    @SuppressWarnings("rawtypes")
+	public static Map<String, Parameter<?>> createInputParamMap(
+            ProcessDescriptionType processDesc, Map<String, Parameter<?>> map) {
+        if (map == null) {
+            map = new TreeMap<>();
+        }
+
+        // loop through the process desc and setup each input param
+        DataInputsType dataInputs = processDesc.getDataInputs();
+        if (dataInputs == null) {
+            return null;
+        }
+
+        EList inputs = dataInputs.getInput();
+        if ((inputs == null) || inputs.isEmpty()) {
+            return null;
+        }
+
+        Iterator iterator = inputs.iterator();
+        while (iterator.hasNext()) {
+            InputDescriptionType idt = (InputDescriptionType) iterator.next();
+            // determine if the input is a literal or complex data, and from that
+            // find out what type the object should be
+            LiteralInputType literalData = idt.getLiteralData();
+            SupportedComplexDataInputType complexData = idt.getComplexData();
+            Class type = Object.class;
+            if (literalData != null) {
+                String reference = literalData.getDataType().getReference();
+                type = getLiteralTypeFromReference(reference);
+            } else if (complexData != null) {
+                // TODO: get all supported types and determine how to handle that, not just the
+                // default.
+                ComplexDataDescriptionType format = complexData.getDefault().getFormat();
+                String encoding = format.getEncoding();
+                String mimetype = format.getMimeType();
+                String schema = format.getSchema();
+                if (encoding == null) {
+                    encoding = "";
+                }
+                if (mimetype == null) {
+                    mimetype = "";
+                }
+                if (schema == null) {
+                    schema = "";
+                }
+                type = getComplexType(encoding, mimetype, schema);
+            }
+
+            // create the parameter
+            boolean required = true;
+            if (idt.getMinOccurs().intValue() < 1) {
+                required = false;
+            }
+
+            String identifier = idt.getIdentifier().getValue();
+            InternationalString title = Text.text(idt.getTitle().getValue());
+            InternationalString description =
+                    Text.text(isAbstractNull(idt) ? "" : idt.getAbstract().getValue());
+            @SuppressWarnings("unchecked")
+            Parameter<?> param =
+                    new Parameter(
+                            identifier,
+                            type,
+                            title,
+                            description,
+                            required,
+                            idt.getMinOccurs().intValue(),
+                            idt.getMaxOccurs().intValue(),
+                            null,
+                            null);
+            map.put(identifier, param);
+        }
+
+        return map;
+    }
+
 	@Override
-	public Map<String, Object> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException {
-		Map<String, Object> params = new TreeMap<>();
+	public Map<String, Parameter<?>> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException {
+		Map<String, Parameter<?>> params = new TreeMap<>();
 		if (wps != null) {
 			DescribeProcessRequest descRequest = wps.createDescribeProcessRequest();
 			descRequest.setIdentifier(processIden); // describe the buffer process
@@ -152,26 +304,8 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 			ProcessDescriptionsType processDesc = descResponse.getProcessDesc();
 			ProcessDescriptionType pdt = (ProcessDescriptionType) processDesc.getProcessDescription().get(0);
 			
-	        DataInputsType dataInputs = pdt.getDataInputs();
-	        if (dataInputs == null) {
-	            return null;
-	        }
-	        EList inputs = dataInputs.getInput();
-	        if ((inputs == null) || inputs.isEmpty()) {
-	            return null;
-	        }
-	        Iterator iterator = inputs.iterator();
-	        while (iterator.hasNext()) {
-	            InputDescriptionType idt = (InputDescriptionType) iterator.next();
-	            String key = idt.getIdentifier().getValue();
-	            LiteralInputType literalData = idt.getLiteralData();
-	            SupportedComplexDataInputType complexData = idt.getComplexData();
-	            if (literalData != null) {
-	            	params.put(key,literalData);
-	            } else if (complexData != null) {
-	            	params.put(key,complexData);
-	            }
-	        }			
+			params = createInputParamMap(pdt,params);
+					
 		}
 		return params;
 

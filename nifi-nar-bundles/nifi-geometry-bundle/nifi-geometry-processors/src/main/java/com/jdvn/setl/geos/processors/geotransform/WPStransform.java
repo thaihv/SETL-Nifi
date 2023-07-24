@@ -68,6 +68,7 @@ import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
 import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
+import org.geotools.data.Parameter;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.data.wps.WPSUtils;
 import org.geotools.data.wps.WebProcessingService;
@@ -309,36 +310,32 @@ public class WPStransform extends AbstractProcessor {
     			properties = Collections.unmodifiableList(props);    			
     		}
     	}
-    	if (descriptor.getName().equals("process-id")) {
+    	if (descriptor.getName().equals("process-id") && newValue != null) {
     		try {
 				List<PropertyDescriptor> props = new ArrayList<>();
     	        props.add(WPS_STORE);
     	        props.add(P_IDENTIFIER);
     	        
-    			Map<String, Object> parameters = new TreeMap<>();
+    			Map<String, Parameter<?>> parameters = new TreeMap<>();
     			parameters = gwps.getInputDataFromProcessIdentifier(newValue);
-    			for (Map.Entry<String, Object> entry : parameters.entrySet())
+    			for (Map.Entry<String, Parameter<?>> entry : parameters.entrySet())
     			{
-    				Object value = entry.getValue();
-    				if (value instanceof LiteralInputType) {
-    					System.out.println("key: " + entry.getKey() + "; type: Literal Data");
+    				Parameter<?> value = entry.getValue();
+    				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry")) {
+    					System.out.println("key: " + value.getName() + "; type: Literal Data");
             	        P_INPUT = new PropertyDescriptor.Builder()
-            					.name(entry.getKey())
+            					.name(value.getName())
             					.displayName(entry.getKey())
-            					.description("The input parameter of process as type of Literal Data")
-            					.required(true)
+            					.description(value.getDescription().toString())
+            					.required(false)
             					.build();
+            	        props.add(P_INPUT);
     				}
-    				else if (value instanceof SupportedComplexDataInputType) {
-    					System.out.println("key: " + entry.getKey() + "; type: Supported Complex Data");
-            	        P_INPUT = new PropertyDescriptor.Builder()
-            					.name(entry.getKey())
-            					.displayName(entry.getKey())
-            					.description("The input parameter of process as type of Supported Complex Data")
-            					.required(true)
-            					.build();    					
+    				else 
+    				{
+    					System.out.println("key: " + value.getName() + "; type: Supported Complex Data");   					
     				}
-    				props.add(P_INPUT);        	        
+    				        	        
     			}
     			properties = Collections.unmodifiableList(props);
 			} catch (ServiceException e) {
@@ -351,6 +348,7 @@ public class WPStransform extends AbstractProcessor {
     	}
 
     }
+	
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
 		FlowFile flowFile = session.get();

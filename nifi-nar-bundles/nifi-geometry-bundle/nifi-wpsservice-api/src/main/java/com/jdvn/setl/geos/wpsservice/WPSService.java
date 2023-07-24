@@ -24,6 +24,7 @@ import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.controller.ControllerService;
+import org.geotools.data.Parameter;
 import org.geotools.data.wps.WebProcessingService;
 import org.geotools.ows.ServiceException;
 
@@ -35,7 +36,7 @@ public interface WPSService extends ControllerService {
 	public void execute();
 	public WebProcessingService getWps();
 	public List<AllowableValue> getWPSCapabilities();
-	public Map<String, Object> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException;
+	public Map<String, Parameter<?>> getInputDataFromProcessIdentifier(String processIden) throws ServiceException, IOException;
 	default boolean isWorkingWell() {
 		return false;
 	}
