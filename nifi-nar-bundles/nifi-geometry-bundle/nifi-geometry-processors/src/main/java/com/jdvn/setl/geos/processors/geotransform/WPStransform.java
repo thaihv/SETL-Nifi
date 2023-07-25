@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -60,6 +61,7 @@ import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
+import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
 import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.MapRecord;
@@ -96,11 +98,9 @@ import com.jdvn.setl.geos.wpsservice.WPSService;
 import net.opengis.wfs.FeatureCollectionType;
 import net.opengis.wps10.DataType;
 import net.opengis.wps10.InputDescriptionType;
-import net.opengis.wps10.LiteralInputType;
 import net.opengis.wps10.OutputDataType;
 import net.opengis.wps10.ProcessDescriptionType;
 import net.opengis.wps10.ProcessDescriptionsType;
-import net.opengis.wps10.SupportedComplexDataInputType;
 
 @Tags({ "Spatial Filter", "WKT", "WPS", "GML", "Attributes", "Geospatial" })
 @CapabilityDescription("Transform data from a given flow file using WPS.")
@@ -192,21 +192,21 @@ public class WPStransform extends AbstractProcessor {
             InputDescriptionType idt = (InputDescriptionType) iterator.next();
             String identifier = idt.getIdentifier().getValue();            
             List<EObject> list = new ArrayList<>();
-        	if (idt.getIdentifier().getValue().equalsIgnoreCase("features")) {
+        	if (idt.getIdentifier().getValue().equalsIgnoreCase("features") || idt.getIdentifier().getValue().equalsIgnoreCase("geom")) {
         		DataType createdInput =  WPSUtils.createInputDataType(new CDATAEncoder(geojson_fc), WPSUtils.INPUTTYPE_COMPLEXDATA, null, "application/json");
         		list.add(createdInput);
         		execRequest.addInput(identifier, list);
-        	}else if (idt.getIdentifier().getValue().equalsIgnoreCase("distance")){
-                // our value is a single object so create a single datatype for it
-        		Object inputValue = map_LiteralData.get("distance");
-                DataType createdInput = WPSUtils.createInputDataType(inputValue, idt);                        
-                list.add(createdInput);                		
-                execRequest.addInput(identifier, list);
-        	}else if (idt.getIdentifier().getValue().equalsIgnoreCase("preserveTopology")){
-        		Object inputValue = map_LiteralData.get("preserveTopology");
-                DataType createdInput = WPSUtils.createInputDataType(inputValue, idt);                        
-                list.add(createdInput);                		
-                execRequest.addInput(identifier, list);        		
+        	}else {
+        		for (Entry<String, Object> entry : map_LiteralData.entrySet()) {
+        			if (entry.getKey().equals(identifier) && entry.getValue() != null) {
+                		Object inputValue = entry.getValue();
+                        DataType createdInput = WPSUtils.createInputDataType(inputValue, idt);                        
+                        list.add(createdInput);                		
+                        execRequest.addInput(identifier, list);
+                        continue;
+        			}
+        			
+        		}
         	}
         }
         try {        	
@@ -321,19 +321,20 @@ public class WPStransform extends AbstractProcessor {
     			for (Map.Entry<String, Parameter<?>> entry : parameters.entrySet())
     			{
     				Parameter<?> value = entry.getValue();
-    				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry")) {
+    				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry") && !value.getName().equals("features")) {
     					System.out.println("key: " + value.getName() + "; type: Literal Data");
             	        P_INPUT = new PropertyDescriptor.Builder()
             					.name(value.getName())
-            					.displayName(entry.getKey())
+            					.displayName(value.getName())
             					.description(value.getDescription().toString())
-            					.required(false)
+            					.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            					.required(value.isRequired())
             					.build();
             	        props.add(P_INPUT);
     				}
     				else 
     				{
-    					System.out.println("key: " + value.getName() + "; type: Supported Complex Data");   					
+    					System.out.println("key: " + value.getName() + "; type: Supported Complex Data as GEOMETRY");   					
     				}
     				        	        
     			}
@@ -370,10 +371,18 @@ public class WPStransform extends AbstractProcessor {
 						final String identifier = context.getProperty(P_IDENTIFIER).evaluateAttributeExpressions(flowFile).getValue();
 						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecordsWithoutGeoFname("featurecolection", reader, crs_source);
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
-						
-						Map<String, Object> map = new TreeMap<>();
-						map.put("distance", 0.04);
-						map.put("preserveTopology", true);
+												
+						Map<String, Object> map = new TreeMap<>();				
+						for (int i = 0; i < properties.size(); i++) {
+							PropertyDescriptor p = properties.get(i);
+							if (p.getName().equals("wps-service") || p.getName().equals("process-id")) 
+								continue;
+							String value = context.getProperty(p).evaluateAttributeExpressions(flowFile).getValue();
+							map.put(p.getDisplayName(), value);
+							
+							
+						}
+
 						String geoJson = GeoUtils.getGeojsonFromFeatureCollection(collection); 			
 						String geoColumn = getGeometryPropertyNames(collection).get(0);
 						List<Record> records = getTransformedRecordsFromWPSProcess(wpsService, identifier, geoJson, map, recordSchema, geoColumn);						

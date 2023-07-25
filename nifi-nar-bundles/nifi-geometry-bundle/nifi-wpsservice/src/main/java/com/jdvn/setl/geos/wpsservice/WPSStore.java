@@ -244,7 +244,7 @@ public class WPSStore extends AbstractControllerService implements WPSService {
             SupportedComplexDataInputType complexData = idt.getComplexData();
             Class type = Object.class;
             if (literalData != null) {
-                String reference = literalData.getDataType().getReference();
+            	String reference = literalData.getDataType() == null ? null: literalData.getDataType().getReference();
                 type = getLiteralTypeFromReference(reference);
             } else if (complexData != null) {
                 // TODO: get all supported types and determine how to handle that, not just the
