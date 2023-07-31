@@ -17,6 +17,7 @@
 package com.jdvn.setl.geos.wpsservice;
 
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.documentation.CapabilityDescription;
 import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.annotation.lifecycle.OnDisabled;
@@ -104,16 +106,42 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 	@OnEnabled
 	public void onEnabled(final ConfigurationContext context) throws InitializationException {
 		final String szUrl = context.getProperty(URL).evaluateAttributeExpressions().getValue();
+		final String szUserName = context.getProperty(USER).evaluateAttributeExpressions().getValue();
+		final String szPassword = context.getProperty(PASSWORD).evaluateAttributeExpressions().getValue();
 		try {
 			this.url = new URL(szUrl);
 			this.wps = new WebProcessingService(url);
+			this.wps.getHTTPClient().setUser(szUserName);
+			this.wps.getHTTPClient().setPassword(szPassword);
+			if (isWorkingWell())
+				System.out.println("Connect ok!");
+			else
+				System.out.println("Connect NOT ok!");
+			
 		} catch (ServiceException | IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 
 	}
+    static boolean httpOk(HttpURLConnection conn) throws IOException {
+        return (conn.getResponseCode() / 100 == 2);
+    }
+	public boolean isWorkingWell() {
+		try {
+			String sURL = this.url.toString();
+			System.out.println("WPS URL: " + sURL);
+			String authenURL = StringUtils.removeEnd(sURL, "/ows"); // ignore last element of OWS
+			System.out.println("Authenticate URL: " + authenURL);
+			URL url = new URL(authenURL);
+			
+			HttpURLConnection r = (HttpURLConnection) this.wps.getHTTPClient().get(url);
 
+			return httpOk(r);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return false;
+	}
 	@OnDisabled
 	public void shutdown() {
 

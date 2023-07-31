@@ -430,9 +430,7 @@ public class WPStransformTest {
 	}	
     @Test
     public void testGeoServer3CapabilitiesParsing() throws Exception {
-
-        //URL url = new File("src/test/resources/wps/geoserverCapabilities.xml").toURI().toURL();
-        URL url = new URL("http://localhost:8088/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
+        URL url = new URL("http://localhost:8089/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
 
         Configuration config = new WPSConfiguration();
         Parser parser = new Parser(config);

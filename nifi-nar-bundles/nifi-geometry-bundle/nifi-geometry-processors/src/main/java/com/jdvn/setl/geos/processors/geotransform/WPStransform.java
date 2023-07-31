@@ -84,7 +84,6 @@ import org.geotools.data.wps.response.DescribeProcessResponse;
 import org.geotools.gml2.GMLConfiguration;
 import org.geotools.http.HTTPClient;
 import org.geotools.http.HTTPResponse;
-import org.geotools.http.SimpleHttpClient;
 import org.geotools.ows.ServiceException;
 import org.geotools.referencing.CRS;
 import org.geotools.wps.WPSConfiguration;
@@ -222,9 +221,7 @@ public class WPStransform extends AbstractProcessor {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             execRequest.performPostOutput(out);
             
-            HTTPClient httpClient = new SimpleHttpClient();
-          	httpClient.setUser("admin");
-          	httpClient.setPassword("geoserver");
+            HTTPClient httpClient = wps.getHTTPClient();          	
           	HTTPResponse httpResponse;
             try (InputStream in = new ByteArrayInputStream(out.toByteArray())) {
                 httpResponse = httpClient.post(finalURL, in, postContentType);
