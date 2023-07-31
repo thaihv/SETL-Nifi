@@ -11,6 +11,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.net.URL;
@@ -23,6 +24,13 @@ import java.util.Properties;
 import java.util.TreeMap;
 
 import javax.xml.namespace.QName;
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.OutputKeys;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.dom.DOMSource;
+import javax.xml.transform.stream.StreamResult;
 
 import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
@@ -34,6 +42,7 @@ import org.geotools.data.wps.request.ExecuteProcessRequest;
 import org.geotools.data.wps.response.DescribeProcessResponse;
 import org.geotools.data.wps.response.ExecuteProcessResponse;
 import org.geotools.feature.DefaultFeatureCollection;
+import org.geotools.gml2.GMLConfiguration;
 import org.geotools.http.HTTPClient;
 import org.geotools.http.HTTPResponse;
 import org.geotools.http.SimpleHttpClient;
@@ -46,6 +55,7 @@ import org.geotools.xsd.Configuration;
 import org.geotools.xsd.Encoder;
 import org.geotools.xsd.EncoderDelegate;
 import org.geotools.xsd.Parser;
+import org.geotools.xsd.StreamingParser;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -54,7 +64,11 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.opengis.feature.simple.SimpleFeature;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.ContentHandler;
+import org.xml.sax.SAXException;
 import org.xml.sax.ext.LexicalHandler;
 
 import net.opengis.ows11.CodeType;
@@ -95,7 +109,7 @@ public class WPStransformTest {
 
 	protected Properties createExampleFixture() {
 		Properties example = new Properties();
-		example.put("service", "http://localhost:8088/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
+		example.put("service", "http://localhost:8089/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
 		example.put("processId", "geo:buffer");
 		return example;
 	}
@@ -322,7 +336,6 @@ public class WPStransformTest {
 
 	}	
 	@SuppressWarnings("rawtypes")
-	@Test
     public void testExecute_2_Operands_Union() throws ServiceException, IOException, ParseException, ProcessException {
 
         String processIdenLocal = "JTS:union";
@@ -433,6 +446,7 @@ public class WPStransformTest {
         }
     }	
 	@Test
+	@Ignore
     public void testExecute_1_Operand_Buffer_Make_Inputs_By_Call_Process() throws Exception {
 
     	// create a WebProcessingService as shown above, then do a full describeprocess on my process
@@ -554,59 +568,111 @@ public class WPStransformTest {
         	System.out.println(e.getMessage());
         }				
   }
+    public static void printNode(Node node) {
+        System.out.println("Node name: " + node.getNodeName() + " Value: " + node.getTextContent());
+
+        NodeList nodeList = node.getChildNodes();
+        for (int i = 0; i < nodeList.getLength(); i++) {
+            Node currentNode = nodeList.item(i);
+            if (currentNode.getNodeType() == Node.ELEMENT_NODE) {
+                //calls this method for all the children which is Element
+            	printNode(currentNode);
+            }
+        }
+    }
+    public static void printGeometryNode(Node node) {
+        NodeList nodeList = node.getChildNodes();
+        for (int i = 0; i < nodeList.getLength(); i++) {
+            Node currentNode = nodeList.item(i);
+            if (currentNode.getNodeName().equals("feature:coordinates")) {
+            	System.out.println("Node: " + node.getNodeName() + " Value: " + node.getTextContent());            	
+            }
+            printGeometryNode(currentNode);
+        }
+    }    
+
+    protected static void writeXmlToFile(Document doc,OutputStream output) throws TransformerException {
+
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();
+        Transformer transformer = transformerFactory.newTransformer();
+        // pretty print XML
+        transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+        
+        DOMSource source = new DOMSource(doc);
+        StreamResult result = new StreamResult(output);
+
+        transformer.transform(source, result);
+
+    }    
+    private void parseDocumentResponse(InputStream inputStream) throws ParserConfigurationException, SAXException {
+
+		Configuration config = new GMLConfiguration();
+		QName elementName = new QName("http://www.opengis.net/gml", "featureMember" );
+	    StreamingParser parser = new StreamingParser(config, inputStream, elementName);
+	    
+	    SimpleFeature f = null;
+	    while ( ( f = (SimpleFeature) parser.parse() ) != null ) {
+			for (int i = 0; i < f.getAttributeCount(); i++) {
+				String key = f.getFeatureType().getDescriptor(i).getName().getLocalPart();
+				Object value = f.getAttribute(i);
+				System.out.println("Key: " + key + " Value: " + value);
+				
+			}
+	    }
+    }    
     @Test
-    public void testExecute_1_Operand_Buffer_Make_Inputs_From_GML() throws Exception {
+    public void testExecute_1_Inputs_From_XML() throws Exception {
 
 		ExecuteProcessRequest execRequest = wps.createExecuteProcessRequest();
-		execRequest.setIdentifier(processIden);
-        try {
-        	
+		execRequest.setIdentifier("geo:simplify");
+        try {        	
             final URL finalURL = execRequest.getFinalURL();
-            final HTTPResponse httpResponse;
-            
+            HTTPResponse httpResponse;            
             if (execRequest.requiresPost()) {
                 final String postContentType = execRequest.getPostContentType();
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
-                String input = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><wps:Execute version=\"1.0.0\" service=\"WPS\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns=\"http://www.opengis.net/wps/1.0.0\" xmlns:wfs=\"http://www.opengis.net/wfs\" xmlns:wps=\"http://www.opengis.net/wps/1.0.0\" xmlns:ows=\"http://www.opengis.net/ows/1.1\" xmlns:gml=\"http://www.opengis.net/gml\" xmlns:ogc=\"http://www.opengis.net/ogc\" xmlns:wcs=\"http://www.opengis.net/wcs/1.1.1\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xsi:schemaLocation=\"http://www.opengis.net/wps/1.0.0 http://schemas.opengis.net/wps/1.0.0/wpsAll.xsd\">\r\n" + 
-                		"  <ows:Identifier>geo:buffer</ows:Identifier>\r\n" + 
+                String input = "<wps:Execute version=\"1.0.0\" service=\"WPS\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns=\"http://www.opengis.net/wps/1.0.0\" xmlns:wfs=\"http://www.opengis.net/wfs\" xmlns:wps=\"http://www.opengis.net/wps/1.0.0\" xmlns:ows=\"http://www.opengis.net/ows/1.1\" xmlns:gml=\"http://www.opengis.net/gml\" xmlns:ogc=\"http://www.opengis.net/ogc\" xmlns:wcs=\"http://www.opengis.net/wcs/1.1.1\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" xsi:schemaLocation=\"http://www.opengis.net/wps/1.0.0 http://schemas.opengis.net/wps/1.0.0/wpsAll.xsd\">\r\n" + 
+                		"  <ows:Identifier>gs:Simplify</ows:Identifier>\r\n" + 
                 		"  <wps:DataInputs>\r\n" + 
                 		"    <wps:Input>\r\n" + 
-                		"      <ows:Identifier>geom</ows:Identifier>\r\n" + 
+                		"      <ows:Identifier>features</ows:Identifier>\r\n" + 
                 		"      <wps:Data>\r\n" + 
-                		"        <wps:ComplexData mimeType=\"text/xml; subtype=gml/3.1.1\"><gml:MultiGeometry>\r\n" + 
-                		"     <gml:Point>\r\n" + 
-                		"        <gml:coordinates>400,600</gml:coordinates>\r\n" + 
-                		"     </gml:Point>\r\n" + 
-                		"     <gml:Point>\r\n" + 
-                		"        <gml:coordinates>100,200</gml:coordinates>\r\n" + 
-                		"     </gml:Point>\r\n" + 
-                		"</gml:MultiGeometry></wps:ComplexData>\r\n" + 
+                		"        <wps:ComplexData mimeType=\"application/json\"><![CDATA[{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{\"ISO\":null,\"ENGTYPE_3\":null,\"NIFIUID\":\"102\",\"ID_2\":null,\"NAME_2\":null,\"TYPE_3\":null,\"ID_3\":null,\"NAME_3\":null,\"ID_0\":null,\"NAME_0\":null,\"ID_1\":null,\"NAME_1\":null,\"NL_NAME_3\":null,\"VARNAME_3\":null},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[105.081,9.5951],[104.9991,10.1422],[106.1046,10.0678],[105.7547,9.5281],[105.081,9.5951]]]},\"id\":\"fid-19053235_1898fb0519e_-8000\"},{\"type\":\"Feature\",\"properties\":{\"ISO\":null,\"ENGTYPE_3\":null,\"NIFIUID\":\"86\",\"ID_2\":null,\"NAME_2\":null,\"TYPE_3\":null,\"ID_3\":null,\"NAME_3\":null,\"ID_0\":\"444\",\"NAME_0\":null,\"ID_1\":null,\"NAME_1\":null,\"NL_NAME_3\":null,\"VARNAME_3\":null},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[107.7126,9.1149],[107.4111,9.5913],[107.4297,10.4995],[107.72,10.3358],[107.9434,9.9859],[108.1369,9.9449],[108.0066,9.1149],[107.7126,9.1149]]]},\"id\":\"fid-19053235_1898fb0519e_-7fff\"}]}]]></wps:ComplexData>\r\n" + 
                 		"      </wps:Data>\r\n" + 
                 		"    </wps:Input>\r\n" + 
                 		"    <wps:Input>\r\n" + 
                 		"      <ows:Identifier>distance</ows:Identifier>\r\n" + 
                 		"      <wps:Data>\r\n" + 
-                		"        <wps:LiteralData>50</wps:LiteralData>\r\n" + 
+                		"        <wps:LiteralData>0.004</wps:LiteralData>\r\n" + 
                 		"      </wps:Data>\r\n" + 
                 		"    </wps:Input>\r\n" + 
-                		"  </wps:DataInputs>\r\n" + 
+                		"    <wps:Input>\r\n" + 
+                		"      <ows:Identifier>preserveTopology</ows:Identifier>\r\n" + 
+                		"      <wps:Data>\r\n" + 
+                		"        <wps:LiteralData>true</wps:LiteralData>\r\n" + 
+                		"      </wps:Data>\r\n" + 
+                		"    </wps:Input>\r\n" + 
+                		"  </wps:DataInputs>\r\n" +              		
                 		"</wps:Execute>";
                 
                 for (int i = 0; i < input.length(); ++i)
                 	out.write(input.charAt(i));    
               	InputStream in = new ByteArrayInputStream(out.toByteArray()); 
               	httpClient = new SimpleHttpClient();
-              	httpClient.setUser("thaihv");
-              	httpClient.setPassword("123456789a");
+              	httpClient.setUser("admin");
+              	httpClient.setPassword("geoserver");
 				httpResponse = httpClient.post(finalURL, in, postContentType);
 				
-				ExecuteProcessResponse response = (ExecuteProcessResponse) execRequest.createResponse(httpResponse);
-				if (response.getExecuteResponse() != null) {
-					for (Object processOutput : response.getExecuteResponse().getProcessOutputs().getOutput()) {
-						OutputDataType wpsOutput = (OutputDataType) processOutput;
-						System.out.println(wpsOutput.getData().getComplexData().getData().get(0).toString());
-					}					
-				}
+//				Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(httpResponse.getResponseStream());
+//				printGeometryNode(doc.getDocumentElement());
+//			    try (FileOutputStream output = new FileOutputStream("C:\\Download\\wps.xml")) {
+//			    	writeXmlToFile(doc, output);
+//		        } catch (IOException e) {
+//		            e.printStackTrace();
+//		        }
+				
+				parseDocumentResponse(httpResponse.getResponseStream());
+			    
             } 
 
         } catch (Exception e) {

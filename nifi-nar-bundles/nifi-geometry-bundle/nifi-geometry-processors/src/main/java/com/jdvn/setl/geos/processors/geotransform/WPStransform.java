@@ -16,11 +16,14 @@
  */
 package com.jdvn.setl.geos.processors.geotransform;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -34,6 +37,7 @@ import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import javax.xml.namespace.QName;
+import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
@@ -77,28 +81,31 @@ import org.geotools.data.wps.WebProcessingService;
 import org.geotools.data.wps.request.DescribeProcessRequest;
 import org.geotools.data.wps.request.ExecuteProcessRequest;
 import org.geotools.data.wps.response.DescribeProcessResponse;
-import org.geotools.data.wps.response.ExecuteProcessResponse;
-import org.geotools.feature.DefaultFeatureCollection;
+import org.geotools.gml2.GMLConfiguration;
+import org.geotools.http.HTTPClient;
+import org.geotools.http.HTTPResponse;
+import org.geotools.http.SimpleHttpClient;
 import org.geotools.ows.ServiceException;
 import org.geotools.referencing.CRS;
 import org.geotools.wps.WPSConfiguration;
+import org.geotools.xsd.Configuration;
 import org.geotools.xsd.Encoder;
 import org.geotools.xsd.EncoderDelegate;
+import org.geotools.xsd.StreamingParser;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.type.AttributeDescriptor;
 import org.opengis.feature.type.GeometryDescriptor;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.xml.sax.ContentHandler;
+import org.xml.sax.SAXException;
 import org.xml.sax.ext.LexicalHandler;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 import com.jdvn.setl.geos.wpsservice.WPSService;
 
-import net.opengis.wfs.FeatureCollectionType;
 import net.opengis.wps10.DataType;
 import net.opengis.wps10.InputDescriptionType;
-import net.opengis.wps10.OutputDataType;
 import net.opengis.wps10.ProcessDescriptionType;
 import net.opengis.wps10.ProcessDescriptionsType;
 
@@ -209,45 +216,42 @@ public class WPStransform extends AbstractProcessor {
         		}
         	}
         }
-        try {        	
-
-            ExecuteProcessResponse response;
-            response = wps.issueRequest(execRequest);            
-            if ((response.getExceptionResponse() == null) && (response.getExecuteResponse() != null))
-            {
-                if (response.getExecuteResponse().getStatus().getProcessSucceeded() != null)
-                {
-                    for (Object processOutput : response.getExecuteResponse().getProcessOutputs().getOutput())
-                    {
-                        OutputDataType wpsOutput = (OutputDataType) processOutput;
-                        FeatureCollectionType fc = (FeatureCollectionType) wpsOutput.getData().getComplexData().getData().get(0);
-                        DefaultFeatureCollection dfs = (DefaultFeatureCollection) fc.getFeature().get(0);
-                        Iterator<SimpleFeature> itr = dfs.iterator();
-                        while (itr.hasNext()) {
-                        	SimpleFeature feature = itr.next();
-                        	String fColumn = getGeometryPropertyNames(feature).get(0);
-            				Map<String, Object> fieldMap = new HashMap<String, Object>();
-            				for (int i = 0; i < feature.getAttributeCount(); i++) {
-            					String key = feature.getFeatureType().getDescriptor(i).getName().getLocalPart();
-            					Object value = feature.getAttribute(i);
-            					if (key.equals(fColumn))
-            						key = geoColumn;
-            					fieldMap.put(key, value);						
-            				}
-
-            				Record r = new MapRecord(recordSchema, fieldMap);
-            				returnRs.add(r);
-                        }
-
-                    }
-                }
-                return returnRs;
-            } else {     
-            	System.out.println(response.getExceptionResponse().getException().get(0).toString());
+    	URL finalURL = execRequest.getFinalURL();
+        if (execRequest.requiresPost()) {
+            final String postContentType = execRequest.getPostContentType();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            execRequest.performPostOutput(out);
+            
+            HTTPClient httpClient = new SimpleHttpClient();
+          	httpClient.setUser("admin");
+          	httpClient.setPassword("geoserver");
+          	HTTPResponse httpResponse;
+            try (InputStream in = new ByteArrayInputStream(out.toByteArray())) {
+                httpResponse = httpClient.post(finalURL, in, postContentType);
             }
-
-        } catch (Exception e) {
-        	System.out.println(e.getMessage());
+    		Configuration config = new GMLConfiguration();
+    		QName elementName = new QName("http://www.opengis.net/gml", "featureMember" );
+    	    StreamingParser parser;
+			try {
+				parser = new StreamingParser(config, httpResponse.getResponseStream(), elementName);
+	    	    SimpleFeature f = null;
+	    	    while ( ( f = (SimpleFeature) parser.parse() ) != null ) {
+	            	String fColumn = getGeometryPropertyNames(f).get(0);
+					Map<String, Object> fieldMap = new HashMap<String, Object>();
+	    			for (int i = 0; i < f.getAttributeCount(); i++) {
+	    				String key = f.getFeatureType().getDescriptor(i).getName().getLocalPart();
+	    				Object value = f.getAttribute(i);
+						if (key.equals(fColumn))
+							key = geoColumn;
+						fieldMap.put(key, value);	
+	    				
+	    			}
+					Record r = new MapRecord(recordSchema, fieldMap);
+					returnRs.add(r);
+	    	    }
+			} catch (ParserConfigurationException | SAXException e) {
+				e.printStackTrace();
+			}    	    
         }
         return returnRs;
 
@@ -379,8 +383,6 @@ public class WPStransform extends AbstractProcessor {
 								continue;
 							String value = context.getProperty(p).evaluateAttributeExpressions(flowFile).getValue();
 							map.put(p.getDisplayName(), value);
-							
-							
 						}
 
 						String geoJson = GeoUtils.getGeojsonFromFeatureCollection(collection); 			

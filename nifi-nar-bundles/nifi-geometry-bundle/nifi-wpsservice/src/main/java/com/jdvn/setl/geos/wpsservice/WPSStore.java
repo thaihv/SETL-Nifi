@@ -138,7 +138,9 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 			Iterator iterator = processes.iterator();
 			while (iterator.hasNext()) {
 				ProcessBriefType process = (ProcessBriefType) iterator.next();
-				listIdentifiers.add(new AllowableValue(process.getIdentifier().getValue()));
+				String value = process.getIdentifier().getValue();
+				if (!(value.contains("JTS:") || value.contains("geo:"))) // ignore JTS and geo name space in geoserver because it just works for geometries not for features
+					listIdentifiers.add(new AllowableValue(process.getIdentifier().getValue()));
 			}
 			return listIdentifiers;
 		}
