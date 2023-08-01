@@ -80,6 +80,11 @@
 		  <version>${geotools.version}</version>
 		</dependency>
 		<dependency>
+		   <groupId>org.geotools.xsd</groupId>
+		   <artifactId>gt-xsd-kml</artifactId>
+		   <version>${geotools.version}</version>
+		 </dependency>		
+		<dependency>
 		    <groupId>org.geotools</groupId>
 		    <artifactId>gt-geojson-core</artifactId>
 		    <version>${geotools.version}</version>
