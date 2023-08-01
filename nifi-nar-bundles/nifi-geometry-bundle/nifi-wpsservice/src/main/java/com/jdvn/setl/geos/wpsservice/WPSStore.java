@@ -17,7 +17,6 @@
 package com.jdvn.setl.geos.wpsservice;
 
 import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +36,7 @@ import org.apache.nifi.controller.AbstractControllerService;
 import org.apache.nifi.controller.ConfigurationContext;
 import org.apache.nifi.controller.ControllerServiceInitializationContext;
 import org.apache.nifi.expression.ExpressionLanguageScope;
+import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.reporting.InitializationException;
 import org.eclipse.emf.common.util.EList;
@@ -73,12 +73,12 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 			.defaultValue(null).addValidator(StandardValidators.NON_EMPTY_VALIDATOR).required(true)
 			.expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY).build();
 
-	public static final PropertyDescriptor USER = new PropertyDescriptor.Builder().name("Database User")
-			.description("Database user name").defaultValue(null).addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+	public static final PropertyDescriptor USER = new PropertyDescriptor.Builder().name("User")
+			.description("WPS user name").defaultValue(null).addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY).build();
 
 	public static final PropertyDescriptor PASSWORD = new PropertyDescriptor.Builder().name("Password")
-			.description("The password for the database user").defaultValue(null).required(false).sensitive(true)
+			.description("The password for the WPS user").defaultValue(null).required(false).sensitive(true)
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY).build();
 
@@ -119,28 +119,21 @@ public class WPSStore extends AbstractControllerService implements WPSService {
 				System.out.println("Connect NOT ok!");
 			
 		} catch (ServiceException | IOException e) {
-			e.printStackTrace();
+			
 		}
 
 	}
-    static boolean httpOk(HttpURLConnection conn) throws IOException {
-        return (conn.getResponseCode() / 100 == 2);
-    }
-	public boolean isWorkingWell() {
+	public boolean isWorkingWell() {		
 		try {
 			String sURL = this.url.toString();
-			System.out.println("WPS URL: " + sURL);
 			String authenURL = StringUtils.removeEnd(sURL, "/ows"); // ignore last element of OWS
-			System.out.println("Authenticate URL: " + authenURL);
-			URL url = new URL(authenURL);
-			
-			HttpURLConnection r = (HttpURLConnection) this.wps.getHTTPClient().get(url);
 
-			return httpOk(r);
-		} catch (IOException e) {
-			e.printStackTrace();
+			URL url = new URL(authenURL);			
+			this.wps.getHTTPClient().get(url);			
+		} catch (IOException e) {			
+			throw new ProcessException("Have a problem to get connection to this URL. Please check Authenticate Information.", e);
 		}
-		return false;
+		return true;
 	}
 	@OnDisabled
 	public void shutdown() {

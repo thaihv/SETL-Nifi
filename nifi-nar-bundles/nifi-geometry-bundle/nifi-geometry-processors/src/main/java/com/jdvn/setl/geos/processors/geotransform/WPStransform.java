@@ -323,7 +323,7 @@ public class WPStransform extends AbstractProcessor {
     			{
     				Parameter<?> value = entry.getValue();
     				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry") && !value.getName().equals("features")) {
-    					System.out.println("key: " + value.getName() + "; type: Literal Data");
+    					System.out.println("key: " + value.getName() + "; Type: Literal Data");
             	        P_INPUT = new PropertyDescriptor.Builder()
             					.name(value.getName())
             					.displayName(value.getName())
@@ -335,7 +335,7 @@ public class WPStransform extends AbstractProcessor {
     				}
     				else 
     				{
-    					System.out.println("key: " + value.getName() + "; type: Supported Complex Data as GEOMETRY");   					
+    					System.out.println("key: " + value.getName() + "; Type: Supported Complex Data as GEOMETRY");   					
     				}
     				        	        
     			}

@@ -35,9 +35,9 @@ public class TestWPSStore {
         final WPSStore service = new WPSStore();
         runner.addControllerService("wps-server", service);
 
-        runner.setProperty(service, WPSStore.URL, "http://localhost:8088/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
-        runner.setProperty(service, WPSStore.USER, "thaihv");
-        runner.setProperty(service, WPSStore.PASSWORD, "123456789a");
+        runner.setProperty(service, WPSStore.URL, "http://localhost:8089/geoserver/ows?service=wps&version=1.0.0&request=GetCapabilities");
+        runner.setProperty(service, WPSStore.USER, "admin");
+        runner.setProperty(service, WPSStore.PASSWORD, "geoserver");
         runner.enableControllerService(service);
 
         runner.assertValid(service);
