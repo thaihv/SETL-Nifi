@@ -9,7 +9,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 
+import org.geotools.data.collection.ListFeatureCollection;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.feature.simple.SimpleFeatureBuilder;
+import org.geotools.feature.simple.SimpleFeatureTypeBuilder;
+import org.geotools.geometry.jts.WKTReader2;
 import org.geotools.kml.KML;
 import org.geotools.kml.KMLConfiguration;
 import org.geotools.styling.FeatureTypeStyle;
@@ -19,7 +27,9 @@ import org.geotools.xsd.Parser;
 import org.geotools.xsd.StreamingParser;
 import org.junit.Before;
 import org.junit.Test;
+import org.locationtech.jts.geom.Point;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.simple.SimpleFeatureType;
 
 public class KmlTest {
 
@@ -27,7 +37,7 @@ public class KmlTest {
 	public void init()  {
 
 	}
-    @SuppressWarnings("rawtypes")
+	@SuppressWarnings("unchecked")
 	@Test
     public void test_KMLtofile() throws Exception {
         
@@ -48,12 +58,38 @@ public class KmlTest {
 		InputStream in = new FileInputStream(inFile);
 		Encoder encoder = new Encoder(new KMLConfiguration());
 		encoder.setIndenting(true);
+		
 		Parser parser = new Parser(new KMLConfiguration());
 		SimpleFeature f = (SimpleFeature) parser.parse( in );
-		Collection placemarks = (Collection) f.getAttribute("Feature");
+		Collection<SimpleFeature> placemarks = (Collection<SimpleFeature>) f.getAttribute("Feature");
 		
+		
+        Iterator<SimpleFeature> iterator = placemarks.iterator();
+        SimpleFeature sf = null;
+        while (iterator.hasNext()) {
+        	sf = iterator.next();        	
+        }
+        
+        System.out.println("value= " + sf.getBounds());
+        
+        SimpleFeatureTypeBuilder tb = new SimpleFeatureTypeBuilder();
+        tb.setName("feature");
+        tb.setNamespaceURI("http://geotools.org");
+        tb.add("geometry", Point.class);
+        tb.add("name", String.class);
+
+        SimpleFeatureType TYPE = tb.buildFeatureType();
+
+        WKTReader2 wkt = new WKTReader2();
+        List<SimpleFeature> collection = new LinkedList<SimpleFeature>();
+        collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read("POINT (1 2)"),"name1" }, null));
+        collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read("POINT (4 4)"),"name2" }, null));
+        
+        SimpleFeatureCollection featureCollection = new ListFeatureCollection(TYPE, collection);
+        
+        
 		try (FileOutputStream output = new FileOutputStream("C:\\Download\\test_kmlv1.kml")) {
-			encoder.encode(placemarks, KML.kml, output);
+			encoder.encode(featureCollection, KML.kml, output);
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
