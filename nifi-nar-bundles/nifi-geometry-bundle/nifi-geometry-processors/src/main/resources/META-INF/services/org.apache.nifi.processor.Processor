@@ -23,3 +23,5 @@ com.jdvn.setl.geos.processors.geotransform.CRStransform
 com.jdvn.setl.geos.processors.geotransform.WPStransform
 com.jdvn.setl.geos.processors.postgres.FetchPostGIS
 com.jdvn.setl.geos.processors.postgres.PutPostGIS
+com.jdvn.setl.geos.processors.geotext.GetXMLs
+com.jdvn.setl.geos.processors.geotext.PutXMLs
