@@ -17,16 +17,13 @@
 package com.jdvn.setl.geos.processors.geotext;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.Serializable;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -60,17 +57,13 @@ import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
-import org.geotools.data.DataStore;
-import org.geotools.data.DataStoreFinder;
-import org.geotools.data.DefaultTransaction;
-import org.geotools.data.Transaction;
-import org.geotools.data.shapefile.ShapefileDataStore;
-import org.geotools.data.shapefile.ShapefileDataStoreFactory;
+import org.geotools.data.geojson.GeoJSONWriter;
 import org.geotools.data.simple.SimpleFeatureCollection;
-import org.geotools.data.simple.SimpleFeatureSource;
-import org.geotools.data.simple.SimpleFeatureStore;
+import org.geotools.kml.KMLConfiguration;
 import org.geotools.referencing.CRS;
-import org.opengis.feature.simple.SimpleFeatureType;
+import org.geotools.wfs.GML;
+import org.geotools.wfs.GML.Version;
+import org.geotools.xsd.Encoder;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
@@ -114,7 +107,7 @@ public class PutXMLs extends AbstractProcessor {
                     .build();
         }
     };
-	public static final PropertyDescriptor T_FLOWFILE = new PropertyDescriptor.Builder()
+	public static final PropertyDescriptor B_TO_DIRECTORY = new PropertyDescriptor.Builder()
 			.name("Write Data To Directory")
 			.description("If true, write formated data to the given directory. If not, write data to flowfile to process.")
 			.required(true)
@@ -128,14 +121,14 @@ public class PutXMLs extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor MAX_DESTINATION_FILES = new PropertyDescriptor.Builder()
             .name("Maximum File Count")
             .description("Specifies the maximum number of files that can exist in the output directory")
             .required(false)
             .addValidator(StandardValidators.INTEGER_VALIDATOR)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
@@ -152,7 +145,7 @@ public class PutXMLs extends AbstractProcessor {
             .defaultValue("0")
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor CONFLICT_RESOLUTION = new PropertyDescriptor.Builder()
             .name("Conflict Resolution Strategy")
@@ -160,7 +153,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(true)
             .defaultValue(FAIL_RESOLUTION)
             .allowableValues(REPLACE_RESOLUTION, IGNORE_RESOLUTION, FAIL_RESOLUTION)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor CHANGE_LAST_MODIFIED_TIME = new PropertyDescriptor.Builder()
             .name("Last Modified Time")
@@ -169,7 +162,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor CHANGE_PERMISSIONS = new PropertyDescriptor.Builder()
             .name("Permissions")
@@ -179,7 +172,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(false)
             .addValidator(PERMISSIONS_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor MERGE_PARTS = new PropertyDescriptor.Builder()
             .name("Merge Flowfiles")
@@ -187,7 +180,7 @@ public class PutXMLs extends AbstractProcessor {
             .allowableValues("true", "false")
             .defaultValue("true")
             .required(true)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor CHANGE_OWNER = new PropertyDescriptor.Builder()
             .name("Owner")
@@ -196,7 +189,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor CHANGE_GROUP = new PropertyDescriptor.Builder()
             .name("Group")
@@ -205,7 +198,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor CREATE_DIRS = new PropertyDescriptor.Builder()
             .name("Create Missing Directories")
@@ -213,7 +206,7 @@ public class PutXMLs extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(T_FLOWFILE, "true")
+            .dependsOn(B_TO_DIRECTORY, "true")
             .build();
     public static final AllowableValue GML = new AllowableValue("GML", "GML", "Data in GML format");
     public static final AllowableValue KML = new AllowableValue("KML", "KML", "Data in KML format");
@@ -249,7 +242,7 @@ public class PutXMLs extends AbstractProcessor {
 
         // descriptors
         final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
-        supDescriptors.add(T_FLOWFILE);
+        supDescriptors.add(B_TO_DIRECTORY);
         supDescriptors.add(DIRECTORY);
         supDescriptors.add(CONFLICT_RESOLUTION);
         supDescriptors.add(CHARSET);
@@ -261,6 +254,7 @@ public class PutXMLs extends AbstractProcessor {
         supDescriptors.add(CHANGE_PERMISSIONS);
         supDescriptors.add(CHANGE_OWNER);
         supDescriptors.add(CHANGE_GROUP);
+        supDescriptors.add(DATA_TYPE);
         properties = Collections.unmodifiableList(supDescriptors);
     }
 
@@ -274,136 +268,84 @@ public class PutXMLs extends AbstractProcessor {
         return properties;
     }
 
-    @Override
+	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
 		FlowFile flowFile = session.get();
 		if (flowFile == null) {
 			return;
 		}
 		final StopWatch stopWatch = new StopWatch(true);
-        final ComponentLog logger = getLogger();
-        
-        String rootname = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
-        if (FilenameUtils.getExtension(rootname).contains("shp") == true)
-        	rootname = rootname.substring(0, rootname.length() - 4);
-        
-        String geoname = flowFile.getAttributes().get(GeoAttributes.GEO_NAME.key());     
-        String part_name = ".shp";
-        if (geoname != null) {
-        	if (geoname.indexOf(":") != -1)
-        		rootname = geoname.substring(0, geoname.indexOf(":"));
-        	else 
-        		rootname = geoname;
-        	if (geoname.lastIndexOf(":") != -1)
-        		part_name  = "_" + geoname.substring(geoname.lastIndexOf(":") + 1) + ".shp";
-        }
+		final ComponentLog logger = getLogger();
 
-        String fragmentIdentifier = flowFile.getAttributes().get(FRAGMENT_ID) == null ? "shapefile" : flowFile.getAttributes().get(FRAGMENT_ID);
-        
+		final boolean b_todirectory = context.getProperty(B_TO_DIRECTORY).asBoolean();
+		final String dataType  = context.getProperty(DATA_TYPE).evaluateAttributeExpressions().getValue();
+		
+		File targetFile;
+		String rootname = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
+		if (!FilenameUtils.getExtension(rootname).toUpperCase().equals(dataType))
+			targetFile = new File(context.getProperty(DIRECTORY) + "/" + rootname + "." + dataType.toLowerCase());
+		else
+			targetFile = new File(context.getProperty(DIRECTORY) + "/" + rootname);
+		
+		if (b_todirectory) {
+			try {
+				session.read(flowFile, new InputStreamCallback() {
+					@Override
+					public void process(final InputStream in) {
+						try {
+							AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
+							final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+							final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
+							SimpleFeatureCollection featureCollection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("featurecollection", reader, crs_source, null);
 
-        final boolean merged = context.getProperty(MERGE_PARTS).asBoolean();
-        String filename = merged ? rootname + ".shp" : rootname + part_name;
-        
-        final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
-        String charset_in = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
-        String charset_flow = flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET);
-        final String charset = charset_in == null ? charset_flow : charset_in;
-        final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
-		try {
-			session.read(flowFile, new InputStreamCallback() {
-				@Override
-				public void process(final InputStream in) {
-					try {
-						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
-						CoordinateReferenceSystem crs_target = crs_source;
-						if (!srs_wkt.equals("0")) {
-							try {
-								crs_target = CRS.parseWKT(srs_wkt);
-							} catch (FactoryException e) {
-								logger.error("Unable to create the CRS from {}, We will use CRS from flowfile. Verify your CRS Well-Known Text!", new Object[]{srs_wkt});
-								crs_target = crs_source;
-							}
-						}				
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(fragmentIdentifier, reader, crs_source, crs_target);
-						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
-							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});
-						else {
-							logger.info("Unable to create the shape file {}", new Object[]{srcFile.toURI().toString()});
-						}	
-						session.adjustCounter("Records Written", collection.size(), false);
-					} catch (IOException | FactoryException e) {
-						logger.error("Could not save {} because {}", new Object[]{flowFile, e});
-						session.transfer(flowFile, REL_FAILURE);
-						return;
+				            if (dataType.equals("GML")) {
+				                GML encode = new GML(Version.WFS1_1);
+				                encode.setNamespace("geotools", "http://geotools.org");		
+				        		try (FileOutputStream output = new FileOutputStream(targetFile)) {
+				        			encode.encode(output, featureCollection );
+				        		} catch (IOException e) {
+				        			e.printStackTrace();
+				        		}
+				            }
+				            else if (dataType.equals("KML")){		            	
+				        		Encoder encoder = new Encoder(new KMLConfiguration());
+				        		encoder.setIndenting(true);
+				        		try (FileOutputStream output = new FileOutputStream(targetFile)) {
+				        			encoder.encode(featureCollection, org.geotools.kml.KML.kml, output);
+				        		} catch (IOException e) {
+				        			e.printStackTrace();
+				        		}
+				            }
+				            else { // case of Geojson
+				        		try (FileOutputStream output = new FileOutputStream(targetFile)) {
+				        			GeoJSONWriter w = new GeoJSONWriter(output);
+				        			w.writeFeatureCollection(featureCollection);
+				        			w.close();
+
+				        		} catch (IOException e) {
+				        			e.printStackTrace();
+				        		}
+				            }
+
+							session.adjustCounter("Records Written", featureCollection.size(), false);
+						} catch (IOException | FactoryException e) {
+							logger.error("Could not save {} because {}", new Object[] { flowFile, e });
+							session.transfer(flowFile, REL_FAILURE);
+							return;
+						}
 					}
-				}
-			});
+				});
 
-		} catch (Exception e) {
-			logger.error("Could not save {} because {}", new Object[]{flowFile, e});
-			session.transfer(flowFile, REL_FAILURE);
-			return;
-		} 
-
-		session.getProvenanceReporter().send(flowFile, srcFile.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+			} catch (Exception e) {
+				logger.error("Could not save {} because {}", new Object[] { flowFile, e });
+				session.transfer(flowFile, REL_FAILURE);
+				return;
+			}
+		} else {
+			System.out.println("XMLs From flowfile");
+		}
+		session.getProvenanceReporter().send(flowFile, targetFile.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 		session.transfer(flowFile, REL_SUCCESS);
 	}
-	public boolean createShapeFileFromGeoDataFlowfile(File srcFile, String charsetName, SimpleFeatureCollection collection) {
-		final ComponentLog logger = getLogger();
-		SimpleFeatureType schema = null;
-		if (collection.features().hasNext())
-			schema = collection.features().next().getFeatureType();
-		else
-			return false;
-		
-		ShapefileDataStoreFactory dataStoreFactory = new ShapefileDataStoreFactory();
-		Map<String, Serializable> params = new HashMap<>();
-		Transaction transaction = null;
-		try {
-			ShapefileDataStore newDataStore;
-			if(!srcFile.exists()) { 
-				params.put("url", srcFile.toURI().toURL());
-				params.put("create spatial index", Boolean.TRUE);
-				newDataStore = (ShapefileDataStore) dataStoreFactory.createNewDataStore(params);
-				newDataStore.setCharset(Charset.forName(charsetName));
-				newDataStore.createSchema(schema);
-			}else {
-				params.put("url", srcFile.toURI().toURL());
-				DataStore dataStore = DataStoreFinder.getDataStore(params);
-				newDataStore = (ShapefileDataStore) dataStore;
-			} 
-			/*
-			 * Write the features to the shapefile
-			 */
-			transaction = new DefaultTransaction("create");
 
-			String typeName = newDataStore.getTypeNames()[0];
-			SimpleFeatureSource featureTarget = newDataStore.getFeatureSource(typeName);
-
-			if (featureTarget instanceof SimpleFeatureStore) {
-				SimpleFeatureStore featureStore = (SimpleFeatureStore) featureTarget;
-
-				featureStore.setTransaction(transaction);
-				try {
-					featureStore.addFeatures(collection);
-					transaction.commit();
-				} catch (Exception problem) {
-					problem.printStackTrace();
-					transaction.rollback();
-				} finally {
-					transaction.close();
-				}
-			} else {
-				logger.error(typeName + " does not support read/write access");
-				transaction.close();
-				return false;
-			}
-		} catch (IOException e) {
-			logger.error("Could not create Shape File because {}", new Object[]{e});
-			return false;
-		} 
-		return true;
-	} 
 }

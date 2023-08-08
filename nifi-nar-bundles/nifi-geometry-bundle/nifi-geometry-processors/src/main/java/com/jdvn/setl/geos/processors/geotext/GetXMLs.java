@@ -18,9 +18,10 @@ package com.jdvn.setl.geos.processors.geotext;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
 import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,13 +38,11 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -85,11 +84,15 @@ import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
-import org.geotools.data.DataStore;
-import org.geotools.data.DataStoreFinder;
-import org.geotools.data.shapefile.ShapefileDataStore;
-import org.geotools.data.simple.SimpleFeatureSource;
-import org.opengis.filter.identity.FeatureId;
+import org.geotools.data.geojson.GeoJSONReader;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.kml.KMLConfiguration;
+import org.geotools.referencing.CRS;
+import org.geotools.wfs.GML;
+import org.geotools.wfs.GML.Version;
+import org.geotools.xsd.Encoder;
+import org.geotools.xsd.Parser;
+import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
@@ -108,7 +111,7 @@ public class GetXMLs extends AbstractProcessor {
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
     
-	public static final PropertyDescriptor S_FLOWFILE = new PropertyDescriptor.Builder()
+	public static final PropertyDescriptor B_FROM_DIRECTORY = new PropertyDescriptor.Builder()
 			.name("Data From Directory")
 			.description("If true, then use the given directory to detect data. If not, use source flowfile to process.")
 			.required(true)
@@ -121,7 +124,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.createDirectoryExistsValidator(true, false))
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor RECURSE = new PropertyDescriptor.Builder()
             .name("Recurse Subdirectories")
@@ -129,7 +132,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor FILE_FILTER = new PropertyDescriptor.Builder()
             .name("File Filter")
@@ -137,14 +140,14 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .defaultValue("[^\\.].*")
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor PATH_FILTER = new PropertyDescriptor.Builder()
             .name("Path Filter")
             .description("When " + RECURSE.getName() + " is true, then only subdirectories whose path matches the given regular expression will be scanned")
             .required(false)
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor KEEP_SOURCE_FILE = new PropertyDescriptor.Builder()
             .name("Keep Source File")
@@ -155,7 +158,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();  
     public static final PropertyDescriptor DELETE_EMPTY_FLOWFILE = new PropertyDescriptor.Builder()
             .name("Delete Zero-Record FlowFiles")
@@ -163,7 +166,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor CHARSET = new PropertyDescriptor.Builder()
             .name("Character Set")
@@ -171,7 +174,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(false)
             .addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor BATCH_SIZE = new PropertyDescriptor.Builder()
             .name("Batch Size")
@@ -179,7 +182,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .defaultValue("10")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor MAX_ROWS_PER_FLOW_FILE = new PropertyDescriptor.Builder()
             .name("shapefile-max-rows")
@@ -190,7 +193,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     static final PropertyDescriptor INCLUDE_ZERO_RECORD_FLOWFILES = new PropertyDescriptor.Builder()
             .name("include-zero-record-flowfiles")
@@ -200,7 +203,7 @@ public class GetXMLs extends AbstractProcessor {
             .expressionLanguageSupported(ExpressionLanguageScope.NONE)
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .required(true)
             .build();
     public static final PropertyDescriptor IGNORE_HIDDEN_FILES = new PropertyDescriptor.Builder()
@@ -208,7 +211,7 @@ public class GetXMLs extends AbstractProcessor {
             .description("Indicates whether or not hidden files should be ignored")
             .allowableValues("true", "false")
             .defaultValue("true")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .required(true)
             .build();
     public static final PropertyDescriptor POLLING_INTERVAL = new PropertyDescriptor.Builder()
@@ -217,7 +220,7 @@ public class GetXMLs extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
             .defaultValue("0 sec")
-            .dependsOn(S_FLOWFILE, "true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final AllowableValue GML = new AllowableValue("GML", "GML", "Data in GML format");
     public static final AllowableValue KML = new AllowableValue("KML", "KML", "Data in KML format");
@@ -252,15 +255,46 @@ public class GetXMLs extends AbstractProcessor {
 
     private final Lock listingLock = new ReentrantLock();
 
+    public static PropertyDescriptor CRS_TARGET;
     private final AtomicLong queueLastUpdated = new AtomicLong(0L);
+	private static AllowableValue[] capabilitiesCrsIdentifiers;
+	private static String crsDefault;
 
     @Override
     protected void init(final ProcessorInitializationContext context) {
+
+		List<AllowableValue> listCrsIdentifiers = new ArrayList<AllowableValue>();
+
+		for (String code : CRS.getSupportedCodes("EPSG")) {
+			if ("WGS84(DD)".equals(code))
+				continue;
+			if (code.contains("EPSG"))
+				listCrsIdentifiers.add(new AllowableValue(code));
+		}
+		for (String code : CRS.getSupportedCodes("ESRI")) {
+			if ("WGS84(DD)".equals(code))
+				continue;
+			listCrsIdentifiers.add(new AllowableValue("ESRI:" + code));
+		}
+
+		capabilitiesCrsIdentifiers = new AllowableValue[listCrsIdentifiers.size()];
+		listCrsIdentifiers.toArray(capabilitiesCrsIdentifiers);
+		crsDefault = "EPSG:4326";
+		CRS_TARGET = new PropertyDescriptor.Builder()
+				.name("Target CRS").description("The presentation of Coordinate Reference System of spatial dataflow output in OGC Well-Known Text Format")
+				.required(true)
+				.allowableValues(capabilitiesCrsIdentifiers)
+				.defaultValue(crsDefault)
+				.dependsOn(B_FROM_DIRECTORY, "true")
+				.build();
+
+		
         final List<PropertyDescriptor> properties = new ArrayList<>();
-        properties.add(S_FLOWFILE);
+        properties.add(B_FROM_DIRECTORY);
         properties.add(S_DIRECTORY);
         properties.add(FILE_FILTER);
         properties.add(PATH_FILTER);
+        properties.add(CRS_TARGET);
         properties.add(BATCH_SIZE);
         properties.add(MAX_ROWS_PER_FLOW_FILE);
         properties.add(KEEP_SOURCE_FILE);
@@ -298,230 +332,182 @@ public class GetXMLs extends AbstractProcessor {
 	@Override
 	public void onTrigger(final ProcessContext context, final ProcessSession session) {
 
-        final File directory = new File(context.getProperty(S_DIRECTORY).evaluateAttributeExpressions().getValue());
-        final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
-        final boolean deleteZeroFlowFile = context.getProperty(DELETE_EMPTY_FLOWFILE).asBoolean();
-        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions().getValue();
-        
-        final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
-        final ComponentLog logger = getLogger();
+		final boolean b_fromflow = context.getProperty(B_FROM_DIRECTORY).asBoolean();
+		final String dataType    = context.getProperty(DATA_TYPE).evaluateAttributeExpressions().getValue();
+		if (b_fromflow) {
+	        final File directory = new File(context.getProperty(S_DIRECTORY).evaluateAttributeExpressions().getValue());
+	        final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
+	        final String srs_target = context.getProperty(CRS_TARGET).evaluateAttributeExpressions().getValue();
+	        
+	        final ComponentLog logger = getLogger();
 
-        if (fileQueue.size() < 100) {
-            final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
-            if ((queueLastUpdated.get() < System.currentTimeMillis() - pollingMillis) && listingLock.tryLock()) {
-                try {
-                    final Set<File> listing = performListing(directory, fileFilterRef.get(), context.getProperty(RECURSE).asBoolean().booleanValue());
+	        if (fileQueue.size() < 100) {
+	            final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
+	            if ((queueLastUpdated.get() < System.currentTimeMillis() - pollingMillis) && listingLock.tryLock()) {
+	                try {
+	                    final Set<File> listing = performListing(directory, fileFilterRef.get(), context.getProperty(RECURSE).asBoolean().booleanValue());
 
-                    queueLock.lock();
-                    try {
-                        listing.removeAll(inProcess);
-                        if (!keepingSourceFile) {
-                            listing.removeAll(recentlyProcessed);
-                        }
+	                    queueLock.lock();
+	                    try {
+	                        listing.removeAll(inProcess);
+	                        if (!keepingSourceFile) {
+	                            listing.removeAll(recentlyProcessed);
+	                        }
 
-                        fileQueue.clear();
-                        fileQueue.addAll(listing);
+	                        fileQueue.clear();
+	                        fileQueue.addAll(listing);
 
-                        queueLastUpdated.set(System.currentTimeMillis());
-                        recentlyProcessed.clear();
+	                        queueLastUpdated.set(System.currentTimeMillis());
+	                        recentlyProcessed.clear();
 
-                        if (listing.isEmpty()) {
-                            context.yield();
-                        }
-                    } finally {
-                        queueLock.unlock();
-                    }
-                } finally {
-                    listingLock.unlock();
-                }
-            }
-        }
+	                        if (listing.isEmpty()) {
+	                            context.yield();
+	                        }
+	                    } finally {
+	                        queueLock.unlock();
+	                    }
+	                } finally {
+	                    listingLock.unlock();
+	                }
+	            }
+	        }
 
-        final int batchSize = context.getProperty(BATCH_SIZE).asInteger();
-        final List<File> files = new ArrayList<>(batchSize);
-        queueLock.lock();
-        try {
-            fileQueue.drainTo(files, batchSize);
-            if (files.isEmpty()) {
-                return;
-            } else {
-                inProcess.addAll(files);
-            }
-        } finally {
-            queueLock.unlock();
-        }
+	        final int batchSize = context.getProperty(BATCH_SIZE).asInteger();
+	        final List<File> files = new ArrayList<>(batchSize);
+	        queueLock.lock();
+	        try {
+	            fileQueue.drainTo(files, batchSize);
+	            if (files.isEmpty()) {
+	                return;
+	            } else {
+	                inProcess.addAll(files);
+	            }
+	        } finally {
+	            queueLock.unlock();
+	        }
 
-        final ListIterator<File> itr = files.listIterator();
-        FlowFile flowFile = null;
-        File currentfile = null;
-        try {
-            final Path directoryPath = directory.toPath();
-            while (itr.hasNext()) {
-                final File file = itr.next();
-                currentfile = file;
-                final Path filePath = file.toPath();
-                final Path relativePath = directoryPath.relativize(filePath.getParent());
-                String relativePathString = relativePath.toString() + "/";
-                if (relativePathString.isEmpty()) {
-                    relativePathString = "./";
-                }
-                final Path absPath = filePath.toAbsolutePath();
-                final String absPathString = absPath.getParent().toString() + "/";
+	        final ListIterator<File> itr = files.listIterator();
+	        FlowFile flowFile = null;
+	        File currentfile = null;
+	        try {
+	            final Path directoryPath = directory.toPath();
+	            while (itr.hasNext()) {
+	                final File file = itr.next();
+	                currentfile = file;
+	                final StopWatch stopWatch = new StopWatch(true);
+	                
+	                final Path filePath = file.toPath();
+	                final Path relativePath = directoryPath.relativize(filePath.getParent());
+	                String relativePathString = relativePath.toString() + "/";
+	                if (relativePathString.isEmpty()) {
+	                    relativePathString = "./";
+	                }
+	                final Path absPath = filePath.toAbsolutePath();
+	                final String absPathString = absPath.getParent().toString() + "/";
 
-                flowFile = session.create();
-                
-                flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
-                String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
-                
-                flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), file.getName());
-                flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), relativePathString);
-                flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), absPathString);
-                Map<String, String> attributes = getAttributesFromFile(filePath);
-                if (attributes.size() > 0) {
-                    flowFile = session.putAllAttributes(flowFile, attributes);
-                }
+	                flowFile = session.create();
+	                
+	                flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);	  
+	                String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
+	                
+	                flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), file.getName());
+	                flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), relativePathString);
+	                flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), absPathString);
+	                
+	                Map<String, String> attributes = getAttributesFromFile(filePath);
+	                if (attributes.size() > 0) {
+	                    flowFile = session.putAllAttributes(flowFile, attributes);
+	                }
+	                
+	                SimpleFeatureCollection featureCollection = null;
+		            InputStream targetStream = new FileInputStream(file);
+		            if (dataType.equals("GML")) {
+			            GML gml = new GML(Version.WFS1_1);
+			            featureCollection = gml.decodeFeatureCollection(targetStream);
+		            }
+		            else if (dataType.equals("KML")){		            	
+		        		Encoder encoder = new Encoder(new KMLConfiguration());
+		        		encoder.setIndenting(true);
+		        		
+		        		Parser parser = new Parser(new KMLConfiguration());
+		        		SimpleFeature f = (SimpleFeature) parser.parse( targetStream );
+		        		featureCollection = (SimpleFeatureCollection) f.getAttribute("Feature");		            	
+		            }
+		            else { // case of Geojson
+		                GeoJSONReader r = new GeoJSONReader(targetStream);
+		                featureCollection = r.getFeatures();
+		                r.close();	            	
+		            }
 
-				Map<String, Object> mapAttrs = new HashMap<>();
-				mapAttrs.put("url", file.toURI().toURL());
-				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-				String typeName = dataStore.getTypeNames()[0];
-				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?				
-				if (charset != null)
-					((ShapefileDataStore)dataStore).setCharset(Charset.forName(charset));
-				Charset charset_in = ((ShapefileDataStore)dataStore).getCharset();
-				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
-					int from = 0;
-					int to = 0;
-					final String fragmentIdentifier = UUID.randomUUID().toString();
-					int fragmentIndex = 0;
-					final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
-					List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
-
-					while (from < maxRecord) {
-						final StopWatch stopWatch = new StopWatch(true);
-						to = from + maxRowsPerFlowFile;
-						if (to > maxRecord)
-							to = maxRecord;
-						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getNifiRecordSegmentsFromFeatureSource(featureSource, recordSchema, selectedIds, charset_in);
-						if (records.size() > 0) {
-							FlowFile transformed = session.create(flowFile);
-							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
-							transformed = session.write(transformed, new OutputStreamCallback() {
-								@Override
-								public void process(final OutputStream out) throws IOException {
-									final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-									@SuppressWarnings("resource")
-									final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
-											CodecFactory.bzip2Codec());
-									writer.write(new ListRecordSet(recordSchema, records));
-									writer.flush();
-								}
-							});
-
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
-									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
-							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());							
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
-							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
-							if (myCrs != null) {
-								transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-								transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
-							}
-
-							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-							logger.info("added {} to flow", new Object[] { transformed });
-							session.adjustCounter("Records Read", records.size(), false);
-							session.transfer(transformed, REL_SUCCESS);
-						}
-						from = to;
-						fragmentIndex++;
-						
-					}
-					dataStore.dispose();
-					session.remove(flowFile);
-					
-				} else {
-					final StopWatch stopWatch = new StopWatch(true);
-					final List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset_in);
-					FlowFile transformed = session.create(flowFile);
-					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
+		            List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(featureCollection);
+		            final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureCollection);
+		            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
+		            
 					if (records.size() > 0) {
-						RecordSchema recordSchema = records.get(0).getSchema();
+						FlowFile transformed = session.create(flowFile);
+						CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
 						transformed = session.write(transformed, new OutputStreamCallback() {
 							@Override
 							public void process(final OutputStream out) throws IOException {
 								final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
 								@SuppressWarnings("resource")
-								final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
-										CodecFactory.bzip2Codec());
+								final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.bzip2Codec());
 								writer.write(new ListRecordSet(recordSchema, records));
 								writer.flush();
 							}
 						});
-					}
-					if (records.size() == 0 && deleteZeroFlowFile == true) {
-						session.remove(flowFile);
-						logger.info("deleted {} from flow", new Object[] { transformed });
-						dataStore.dispose();
-						session.remove(transformed);
-					}
-					else {	
-						session.remove(flowFile);
+
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
-						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 						if (myCrs != null) {
 							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
 							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
 						}
+
 						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						logger.info("added {} to flow", new Object[] { transformed });
-						dataStore.dispose();
 						session.adjustCounter("Records Read", records.size(), false);
-						session.transfer(transformed, REL_SUCCESS);						
+						session.transfer(transformed, REL_SUCCESS);
+						session.remove(flowFile);
 					}
-					
-				}
-                if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
-                    queueLock.lock();
-                    try {
-                        while (itr.hasNext()) {
-                            final File nextFile = itr.next();
-                            fileQueue.add(nextFile);
-                            inProcess.remove(nextFile);
-                        }
-                    } finally {
-                        queueLock.unlock();
-                    }
-                }
-            }
-        } catch (final Exception e) {
-            logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
+	                if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
+	                    queueLock.lock();
+	                    try {
+	                        while (itr.hasNext()) {
+	                            final File nextFile = itr.next();
+	                            fileQueue.add(nextFile);
+	                            inProcess.remove(nextFile);
+	                        }
+	                    } finally {
+	                        queueLock.unlock();
+	                    }
+	                }
+	            }
+	        } catch (final Exception e) {
+	            logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
 
-            // anything that we've not already processed needs to be put back on the queue
-            if (flowFile != null) {
-                session.remove(flowFile);
-            }
-        } finally {
-            queueLock.lock();
-            try {
-                inProcess.removeAll(files);
-                recentlyProcessed.addAll(files);
-            } finally {
-                queueLock.unlock();
-            }
-        }
+	            // anything that we've not already processed needs to be put back on the queue
+	            if (flowFile != null) {
+	                session.remove(flowFile);
+	            }
+	        } finally {
+	            queueLock.lock();
+	            try {
+	                inProcess.removeAll(files);
+	                recentlyProcessed.addAll(files);
+	            } finally {
+	                queueLock.unlock();
+	            }
+	        }			
+		}
+		else {
+			System.out.println("XMLs From flowfile");
+		}
+
     }        
 
 	
