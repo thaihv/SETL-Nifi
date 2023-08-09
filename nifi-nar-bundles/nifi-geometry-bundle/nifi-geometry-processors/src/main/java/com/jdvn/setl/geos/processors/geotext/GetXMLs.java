@@ -54,6 +54,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
+import javax.xml.parsers.ParserConfigurationException;
+
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -79,6 +81,7 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
@@ -97,7 +100,9 @@ import org.geotools.xsd.Encoder;
 import org.geotools.xsd.Parser;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
+import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
+import org.xml.sax.SAXException;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
@@ -247,7 +252,10 @@ public class GetXMLs extends AbstractProcessor {
     public static final String FILE_MODIFY_DATE_ATTR_FORMAT = "yyyy-MM-dd'T'HH:mm:ssZ";
 
     public static final Relationship REL_SUCCESS = new Relationship.Builder().name("success").description("All files are routed to success").build();
-
+	public static final Relationship REL_FAILURE = new Relationship.Builder()
+			.name("failure")
+			.description("Flowfiles that could not be transformed for some reason are transferred to this relationship")
+			.build();
     private List<PropertyDescriptor> properties;
     private Set<Relationship> relationships;
     private final AtomicReference<FileFilter> fileFilterRef = new AtomicReference<>();
@@ -289,7 +297,6 @@ public class GetXMLs extends AbstractProcessor {
 				.required(true)
 				.allowableValues(capabilitiesCrsIdentifiers)
 				.defaultValue(crsDefault)
-				.dependsOn(B_FROM_DIRECTORY, "true")
 				.build();
 
 		
@@ -314,6 +321,7 @@ public class GetXMLs extends AbstractProcessor {
 
         final Set<Relationship> relationships = new HashSet<>();
         relationships.add(REL_SUCCESS);
+        relationships.add(REL_FAILURE);
         this.relationships = Collections.unmodifiableSet(relationships);
     }
 
@@ -338,12 +346,15 @@ public class GetXMLs extends AbstractProcessor {
 
 		final boolean b_fromflow = context.getProperty(B_FROM_DIRECTORY).asBoolean();
 		final String dataType    = context.getProperty(DATA_TYPE).evaluateAttributeExpressions().getValue();
+		final String srs_target = context.getProperty(CRS_TARGET).evaluateAttributeExpressions().getValue();
+		
+		final StopWatch stopWatch = new StopWatch(true);
+		final ComponentLog logger = getLogger();
+		
 		if (b_fromflow) {
 	        final File directory = new File(context.getProperty(S_DIRECTORY).evaluateAttributeExpressions().getValue());
 	        final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
-	        final String srs_target = context.getProperty(CRS_TARGET).evaluateAttributeExpressions().getValue();
 	        
-	        final ComponentLog logger = getLogger();
 
 	        if (fileQueue.size() < 100) {
 	            final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
@@ -398,7 +409,6 @@ public class GetXMLs extends AbstractProcessor {
 	            while (itr.hasNext()) {
 	                final File file = itr.next();
 	                currentfile = file;
-	                final StopWatch stopWatch = new StopWatch(true);
 	                
 	                final Path filePath = file.toPath();
 	                final Path relativePath = directoryPath.relativize(filePath.getParent());
@@ -508,7 +518,7 @@ public class GetXMLs extends AbstractProcessor {
 	            }
 	        } catch (final Exception e) {
 	            logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
-
+				session.transfer(flowFile, REL_FAILURE);
 	            // anything that we've not already processed needs to be put back on the queue
 	            if (flowFile != null) {
 	                session.remove(flowFile);
@@ -524,7 +534,93 @@ public class GetXMLs extends AbstractProcessor {
 	        }			
 		}
 		else {
-			System.out.println("XMLs From flowfile");
+			FlowFile flowFile = session.get();
+			if (flowFile == null) {
+				return;
+			}
+			try {
+				session.read(flowFile, new InputStreamCallback() {
+					@Override
+					public void process(final InputStream in) {
+						try {
+							SimpleFeatureCollection featureCollection = null;
+				            if (dataType.equals("GML")) {
+				                GML gml = new GML(Version.WFS1_1);
+				                featureCollection = gml.decodeFeatureCollection(in);
+				            }
+				            else if (dataType.equals("KML")){		            	
+				        		Encoder encoder = new Encoder(new KMLConfiguration());
+				        		encoder.setIndenting(true);
+				        		
+				        		Parser parser = new Parser(new KMLConfiguration());
+				        		SimpleFeature f = (SimpleFeature) parser.parse( in );
+				        		@SuppressWarnings("unchecked")
+								Collection<SimpleFeature> placemarks = (Collection<SimpleFeature>) f.getAttribute("Feature");
+				        		
+				        		SimpleFeatureType TYPE;
+				                Iterator<SimpleFeature> iterator = placemarks.iterator();
+				                SimpleFeature sf = null;
+				                ListFeatureCollection lsfeatureCollection = null;
+				                while (iterator.hasNext()) {
+				                	sf = iterator.next();
+				                	TYPE = sf.getType();
+				                	if (lsfeatureCollection == null)
+				                		lsfeatureCollection = new ListFeatureCollection(TYPE, sf);
+				                	else
+				                		lsfeatureCollection.add(sf);
+				                }           			                
+				                featureCollection = lsfeatureCollection;		                
+				            }
+				            else { // case of Geojson
+				                GeoJSONReader r = new GeoJSONReader(in);
+				                featureCollection = r.getFeatures();
+				                r.close();	            	
+				            }
+
+				            List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(featureCollection);
+				            final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureCollection);
+				            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
+				            String geoName = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
+							if (records.size() > 0) {
+								FlowFile transformed = session.create(flowFile);
+								CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
+								transformed = session.write(transformed, new OutputStreamCallback() {
+									@Override
+									public void process(final OutputStream out) throws IOException {
+										final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+										@SuppressWarnings("resource")
+										final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out, CodecFactory.bzip2Codec());
+										writer.write(new ListRecordSet(recordSchema, records));
+										writer.flush();
+									}
+								});
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+								transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+								transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
+								transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, geoName);
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+								if (myCrs != null) {
+									transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+									transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+								}
+								session.getProvenanceReporter().receive(transformed, geoName, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+								logger.info("added {} to flow", new Object[] { transformed });
+								session.adjustCounter("Records Read", records.size(), false);
+								session.transfer(transformed, REL_SUCCESS);
+							}
+						} catch (IOException | FactoryException | SAXException | ParserConfigurationException e) {
+							logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
+							session.transfer(flowFile, REL_FAILURE);
+						}
+					}
+				});
+				session.remove(flowFile);
+
+			} catch (Exception e) {
+				logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
+				session.transfer(flowFile, REL_FAILURE);
+			}
 		}
 
     }        
