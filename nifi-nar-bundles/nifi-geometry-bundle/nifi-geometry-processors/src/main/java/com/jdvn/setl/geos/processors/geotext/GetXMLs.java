@@ -34,10 +34,12 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Locale;
@@ -84,6 +86,7 @@ import org.apache.nifi.serialization.record.ListRecordSet;
 import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
+import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.geojson.GeoJSONReader;
 import org.geotools.data.simple.SimpleFeatureCollection;
 import org.geotools.kml.KMLConfiguration;
@@ -93,6 +96,7 @@ import org.geotools.wfs.GML.Version;
 import org.geotools.xsd.Encoder;
 import org.geotools.xsd.Parser;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
@@ -431,7 +435,22 @@ public class GetXMLs extends AbstractProcessor {
 		        		
 		        		Parser parser = new Parser(new KMLConfiguration());
 		        		SimpleFeature f = (SimpleFeature) parser.parse( targetStream );
-		        		featureCollection = (SimpleFeatureCollection) f.getAttribute("Feature");		            	
+		        		@SuppressWarnings("unchecked")
+						Collection<SimpleFeature> placemarks = (Collection<SimpleFeature>) f.getAttribute("Feature");
+		        		
+		        		SimpleFeatureType TYPE;
+		                Iterator<SimpleFeature> iterator = placemarks.iterator();
+		                SimpleFeature sf = null;
+		                ListFeatureCollection lsfeatureCollection = null;
+		                while (iterator.hasNext()) {
+		                	sf = iterator.next();
+		                	TYPE = sf.getType();
+		                	if (lsfeatureCollection == null)
+		                		lsfeatureCollection = new ListFeatureCollection(TYPE, sf);
+		                	else
+		                		lsfeatureCollection.add(sf);
+		                }           			                
+		                featureCollection = lsfeatureCollection;		                
 		            }
 		            else { // case of Geojson
 		                GeoJSONReader r = new GeoJSONReader(targetStream);

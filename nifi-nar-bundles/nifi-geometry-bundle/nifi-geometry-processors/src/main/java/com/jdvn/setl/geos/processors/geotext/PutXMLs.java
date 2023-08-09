@@ -283,7 +283,10 @@ public class PutXMLs extends AbstractProcessor {
 		File targetFile;
 		String rootname = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
 		if (!FilenameUtils.getExtension(rootname).toUpperCase().equals(dataType))
-			targetFile = new File(context.getProperty(DIRECTORY) + "/" + rootname + "." + dataType.toLowerCase());
+		{
+			String basePath = context.getProperty(DIRECTORY).getValue();
+			targetFile = dataType.equals("GEOJSON") == true ? new File(basePath + "/" + rootname + ".json") : new File(basePath + "/" + rootname + "." + dataType.toLowerCase()) ;
+		}			
 		else
 			targetFile = new File(context.getProperty(DIRECTORY) + "/" + rootname);
 		
