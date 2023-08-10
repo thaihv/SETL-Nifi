@@ -16,6 +16,8 @@
  */
 package com.jdvn.setl.geos.processors.geotext;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -285,7 +287,7 @@ public class PutXMLs extends AbstractProcessor {
 		if (!FilenameUtils.getExtension(rootname).toUpperCase().equals(dataType))
 		{
 			String basePath = context.getProperty(DIRECTORY).getValue();
-			targetFile = dataType.equals("GEOJSON") == true ? new File(basePath + "/" + rootname + ".json") : new File(basePath + "/" + rootname + "." + dataType.toLowerCase()) ;
+			targetFile = dataType.toUpperCase().equals("GEOJSON") == true ? new File(basePath + "/" + rootname + ".json") : new File(basePath + "/" + rootname + "." + dataType.toLowerCase()) ;
 		}			
 		else
 			targetFile = new File(context.getProperty(DIRECTORY) + "/" + rootname);
@@ -338,17 +340,72 @@ public class PutXMLs extends AbstractProcessor {
 						}
 					}
 				});
-
+				session.remove(flowFile);
 			} catch (Exception e) {
 				logger.error("Could not save {} because {}", new Object[] { flowFile, e });
 				session.transfer(flowFile, REL_FAILURE);
 				return;
 			}
 		} else {
-			System.out.println("XMLs From flowfile");
+			try {
+				session.read(flowFile, new InputStreamCallback() {
+					@Override
+					public void process(final InputStream in) {
+						try {
+							AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
+							final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
+							String geoName = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
+							final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
+							SimpleFeatureCollection featureCollection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords("featurecollection", reader, crs_source, null);
+
+							ByteArrayOutputStream xml_out = new ByteArrayOutputStream();							
+				            if (dataType.equals("GML")) {				            					        		
+				            	GML encode = new GML(Version.WFS1_1);
+				            	encode.setNamespace("geotools", "http://geotools.org");
+				            	encode.encode(xml_out,  featureCollection);
+				            }
+				            else if (dataType.equals("KML")){		            	
+				        		Encoder encoder = new Encoder(new KMLConfiguration());
+				        		encoder.setIndenting(true);
+				        		encoder.encode(featureCollection, org.geotools.kml.KML.kml, xml_out);
+				            }
+				            else { // case of Geojson
+			        			GeoJSONWriter w = new GeoJSONWriter(xml_out);
+			        			w.writeFeatureCollection(featureCollection);
+			        			w.close();
+				            }
+				            if (xml_out != null) {
+								FlowFile transformed = session.create();
+				                try (ByteArrayInputStream xml_in = new ByteArrayInputStream(xml_out.toByteArray())) {
+									session.importFrom(xml_in, transformed);		
+									xml_out.close();
+				                }
+								transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+								transformed = session.putAttribute(transformed, CoreAttributes.FILENAME.key(), geoName);
+								transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(), dataType.toUpperCase().equals("GEOJSON") == true ? "application/json": "application/xml");
+								session.getProvenanceReporter().receive(transformed, geoName, stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+								logger.info("added {} to flow", new Object[] { transformed });
+								session.adjustCounter("Data Read", xml_out.size(), false);
+								session.transfer(transformed, REL_SUCCESS);
+				            }
+
+							session.adjustCounter("Data Written", xml_out.size(), false);
+						} catch (IOException | FactoryException e) {
+							logger.error("Could not save {} because {}", new Object[] { flowFile, e });
+							session.transfer(flowFile, REL_FAILURE);
+							return;
+						}
+					}
+				});
+				session.remove(flowFile);
+
+			} catch (Exception e) {
+				logger.error("Could not save {} because {}", new Object[] { flowFile, e });
+				session.transfer(flowFile, REL_FAILURE);
+				return;
+			}
 		}
-		session.getProvenanceReporter().send(flowFile, targetFile.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-		session.transfer(flowFile, REL_SUCCESS);
 	}
 
 }
