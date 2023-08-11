@@ -26,6 +26,7 @@
     <properties>
         <maven.javadoc.skip>true</maven.javadoc.skip>
         <source.skip>true</source.skip>
+        <geotools.version>27.5</geotools.version>
     </properties>
     <build>
         <resources>
@@ -157,6 +158,22 @@
             <artifactId>nifi-web-utils</artifactId>
             <scope>provided</scope>
         </dependency>
+		<dependency>
+			<groupId>org.geotools</groupId>
+			<artifactId>geotools</artifactId>
+			<version>${geotools.version}</version>
+			<type>pom</type>
+		</dependency>
+        <dependency>
+            <groupId>org.geotools</groupId>
+            <artifactId>gt-swing</artifactId>
+            <version>${geotools.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.geotools</groupId>
+            <artifactId>gt-epsg-hsql</artifactId>
+            <version>${geotools.version}</version>                 
+        </dependency>         		        
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-web-content-access</artifactId>
@@ -437,4 +454,17 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+	<repositories>
+		<repository>
+			<id>osgeo</id>
+			<name>OSGeo Release Repository</name>
+			<url>https://repo.osgeo.org/repository/release/</url>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+		</repository>
+	</repositories>    
 </project>
