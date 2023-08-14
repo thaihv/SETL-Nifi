@@ -473,6 +473,7 @@ public class GetXMLs extends AbstractProcessor {
 		            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
 		            
 					if (records.size() > 0) {
+						String center = "[" + String.valueOf(featureCollection.getBounds().centre().getX()) + "," + String.valueOf(featureCollection.getBounds().centre().getY()) + "]";
 						FlowFile transformed = session.create(flowFile);
 						CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
 						transformed = session.write(transformed, new OutputStreamCallback() {
@@ -489,6 +490,7 @@ public class GetXMLs extends AbstractProcessor {
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
@@ -582,6 +584,7 @@ public class GetXMLs extends AbstractProcessor {
 				            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
 				            String geoName = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
 							if (records.size() > 0) {
+								String center = "[" + String.valueOf(featureCollection.getBounds().centre().getX()) + "," + String.valueOf(featureCollection.getBounds().centre().getY()) + "]";
 								FlowFile transformed = session.create(flowFile);
 								CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
 								transformed = session.write(transformed, new OutputStreamCallback() {
@@ -597,6 +600,7 @@ public class GetXMLs extends AbstractProcessor {
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 								transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 								transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
 								transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, geoName);
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));

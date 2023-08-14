@@ -19,6 +19,8 @@ package org.apache.nifi.web.util;
 import java.awt.AlphaComposite;
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -125,58 +127,90 @@ public class GeoUtils {
 		double n = Math.PI - (2.0 * Math.PI * y) / Math.pow(2.0, z);
 		return Math.toDegrees(Math.atan(Math.sinh(n)));
 	}
-	
+	/**
+	 * Draw a String centered in the middle of a Rectangle.
+	 *
+	 * @param g The Graphics instance.
+	 * @param text The String to draw.
+	 * @param rect The Rectangle to center the text in.
+	 */
+	private static void drawCenteredString(Graphics g, String text, Rectangle rect, Font font) {
+	    // Get the FontMetrics
+	    FontMetrics metrics = g.getFontMetrics(font);
+	    // Determine the X coordinate for the text
+	    int x = rect.x + (rect.width - metrics.stringWidth(text)) / 2;
+	    // Determine the Y coordinate for the text (note we add the ascent, as in java 2d 0 is top of the screen)
+	    int y = rect.y + ((rect.height - metrics.getHeight()) / 2) + metrics.getAscent();
+	    // Set the font
+	    g.setFont(font);
+	    // Draw the String
+	    g.drawString(text, x, y);
+	}	
 	public static byte[] createBlankTiles(int w, int h, String displayText) {
 		BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		Graphics2D gr = image.createGraphics();
-		gr.setComposite(AlphaComposite.Clear);
-		gr.fillRect(0, 0, w, h);
-		
-		gr.setComposite(AlphaComposite.Src);
-		gr.setPaint(Color.BLUE);
-		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		gr.setFont(new Font("Segoe Script", Font.BOLD + Font.ITALIC, 15));
-		gr.drawString(displayText, 10, 128);
+		Graphics2D graphics = image.createGraphics();
 		try {
-			ImageIO.write(image, "PNG", baos);
-		} catch (IOException e) {
-			logger.info("Failed clearing out non-client response buffer due to: " + e, e);
-			e.printStackTrace();
+			
+			graphics.setComposite(AlphaComposite.Clear);
+			graphics.fillRect(0, 0, w, h);
+			
+			graphics.setComposite(AlphaComposite.Src);
+			graphics.setPaint(Color.BLUE);
+			graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+			Font font = new Font("Segoe Script", Font.BOLD + Font.ITALIC, 15);
+			drawCenteredString(graphics, displayText, new Rectangle(w, h), font);
+			try {
+				ImageIO.write(image, "PNG", baos);
+			} catch (IOException e) {
+				logger.info("Failed clearing out non-client response buffer due to: " + e, e);
+				e.printStackTrace();
+			}			
 		}
+        finally {
+            graphics.dispose();
+        }
+
 		return baos.toByteArray();
 	}
-    private static byte[] imageFromFeatures(SimpleFeatureCollection fc, ReferencedEnvelope bounds, Style style, int w, int h) {
-
-		BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-		ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    private static byte[] imageFromFeatures(SimpleFeatureCollection featurecollection, ReferencedEnvelope bounds, Style style, int w, int h) {
+    	ByteArrayOutputStream baos = new ByteArrayOutputStream();
         if (bounds != null) {
-    		Graphics2D gr = image.createGraphics();
-    		gr.setComposite(AlphaComposite.Clear);
-    		gr.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-    		if (fc != null) {
-        		MapContent map = new MapContent();
-                Layer layer = new FeatureLayer(fc, style);
-                map.addLayer(layer);
-                
-                Rectangle outputArea = new Rectangle(w, h);    	
-                GTRenderer renderer = new StreamingRenderer();
-                LabelCacheImpl labelCache = new LabelCacheImpl();
-                Map<Object, Object> hints = renderer.getRendererHints();
-                
-                if (hints == null) {
-                  hints = new HashMap<>();
-                }
-                hints.put(StreamingRenderer.LABEL_CACHE_KEY, labelCache);
-                renderer.setRendererHints(hints);
-                renderer.setMapContent(map);
-                renderer.paint(gr, outputArea, bounds); 
-                try {
-        			ImageIO.write(image, "PNG", baos);
-        		} catch (IOException e) {
-        			e.printStackTrace();
-        		}
-                map.dispose();       			
+    		if (featurecollection != null) {
+    			MapContent map = new MapContent();
+    			BufferedImage image = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);    			
+    			try {            		
+                    Layer layer = new FeatureLayer(featurecollection, style);
+                    map.addLayer(layer);                    
+                    
+                    GTRenderer renderer = new StreamingRenderer();
+                    LabelCacheImpl labelCache = new LabelCacheImpl();
+                    Map<Object, Object> hints = renderer.getRendererHints();                    
+                    if (hints == null) {
+                      hints = new HashMap<>();
+                    }
+                    hints.put(StreamingRenderer.LABEL_CACHE_KEY, labelCache);
+
+            		Graphics2D graphics = image.createGraphics();
+            		graphics.setComposite(AlphaComposite.Clear);
+            		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);            		
+                    try {
+                        renderer.setRendererHints(hints);
+                        renderer.setMapContent(map);
+                        renderer.paint(graphics, new Rectangle(w, h), bounds); 
+                        try {
+                			ImageIO.write(image, "PNG", baos);
+                		} catch (IOException e) {
+                			e.printStackTrace();
+                		}                     	
+                    }
+                    finally {
+                        graphics.dispose();
+                    }
+    			}
+    			finally {
+    		        map.dispose();
+    		    }      			
     		}
         }
         return baos.toByteArray();
@@ -395,9 +429,16 @@ public class GeoUtils {
 					double y1 = nw.getY();
 					double y2 = se.getY();
 //					System.out.println("x1,x2,y1,y2: " + String.valueOf(x1) + "," + String.valueOf(x2) + "," + String.valueOf(y1) + "," + String.valueOf(y2));
-							
+
+					SimpleFeatureCollection fc = new ListFeatureCollection(TYPE, collection);					
+					String org_envelope = String.valueOf(fc.getBounds().getMinX()) + " " + String.valueOf(fc.getBounds().getMinY()) + String.valueOf(fc.getBounds().getMaxX()) + " " + String.valueOf(fc.getBounds().getMaxY());
+					content.setEnvelope(org_envelope);
+					String center = String.valueOf(fc.getBounds().centre().getX()) + ";" + String.valueOf(fc.getBounds().centre().getY());
+					content.setCenter(center);
+
 					ReferencedEnvelope envelope = new ReferencedEnvelope(x1, x2, y1, y2, crs_source);
-			        bais = new ByteArrayInputStream(imageFromFeatures(new ListFeatureCollection(TYPE, collection), envelope, style, 256, 256));						
+					if (fc.getBounds().intersects(new Coordinate(x1,y1), new Coordinate(x2,y2)))
+						bais = new ByteArrayInputStream(imageFromFeatures(fc, envelope, style, 256, 256));						
 				}
 			}
 
@@ -405,7 +446,7 @@ public class GeoUtils {
 			e1.printStackTrace();
 		}
 		if (bais == null) { // set default Tiles without data
-			String markedText = "";
+			String markedText = "N/A";
 			bais = new ByteArrayInputStream(createBlankTiles(256, 256, markedText));
 		}
 		return bais;

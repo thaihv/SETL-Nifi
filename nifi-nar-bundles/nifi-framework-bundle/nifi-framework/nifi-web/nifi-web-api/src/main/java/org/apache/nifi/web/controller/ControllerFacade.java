@@ -1374,10 +1374,11 @@ public class ControllerFacade implements Authorizable {
             DownloadableContent result = new DownloadableContent(filename, type, content);
             if (attributes.get(GeoAttributes.CRS.key()) != null) {
             	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
-            	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
+            	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));        		
+        		if (attributes.get(GeoAttributes.GEO_CENTER.key()) != null)
+        			result.setCenter(attributes.get(GeoAttributes.GEO_CENTER.key()));
             	if (attributes.get(GeoAttributes.GEO_TYPE.key()).contentEquals("Tiles")) {
             		result.setEnvelope(attributes.get(GeoAttributes.GEO_ENVELOPE.key()));
-            		result.setCenter(attributes.get(GeoAttributes.GEO_CENTER.key()));
             		result.setZoom_min(Integer.parseInt(attributes.get(GeoAttributes.GEO_ZOOM_MIN.key())));
             		result.setZoom_max(Integer.parseInt(attributes.get(GeoAttributes.GEO_ZOOM_MAX.key())));
             	}

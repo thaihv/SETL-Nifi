@@ -116,11 +116,11 @@ public class GeometryViewerController extends HttpServlet {
 					request.setAttribute("content", formatted);
 					if (DisplayMode.Map.equals(content.getDisplayMode())) {
 						if ("application/avro+geotiles".equals(contentType)) {
-							request.setAttribute("envelope", request.getAttribute(ViewableContent.GEO_CONTENT_ENVELOPE));
-							request.setAttribute("center", request.getAttribute(ViewableContent.GEO_CONTENT_CENTER));
 							request.setAttribute("zoom_min", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN));
 							request.setAttribute("zoom_max", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX));							
 						}
+						request.setAttribute("envelope", request.getAttribute(ViewableContent.GEO_CONTENT_ENVELOPE));
+						request.setAttribute("center", request.getAttribute(ViewableContent.GEO_CONTENT_CENTER));
 						request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
 						request.getRequestDispatcher("/WEB-INF/jsp/mapview.jsp").include(request, response);						
 					}

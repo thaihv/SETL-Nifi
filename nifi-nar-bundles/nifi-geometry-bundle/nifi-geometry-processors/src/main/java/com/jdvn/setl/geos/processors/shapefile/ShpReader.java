@@ -349,6 +349,7 @@ public class ShpReader extends AbstractProcessor {
 				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+								
 				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?				
 				if (charset != null)
 					((ShapefileDataStore)dataStore).setCharset(Charset.forName(charset));
@@ -411,7 +412,7 @@ public class ShpReader extends AbstractProcessor {
 					session.remove(flowFile);
 					
 				} else {
-					final StopWatch stopWatch = new StopWatch(true);
+					final StopWatch stopWatch = new StopWatch(true);					
 					final List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset_in);
 					FlowFile transformed = session.create(flowFile);
 					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
@@ -437,10 +438,12 @@ public class ShpReader extends AbstractProcessor {
 					}
 					else {	
 						session.remove(flowFile);
+						String center = "[" + String.valueOf(featureSource.getBounds().centre().getX()) + "," + String.valueOf(featureSource.getBounds().centre().getY()) + "]";
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));

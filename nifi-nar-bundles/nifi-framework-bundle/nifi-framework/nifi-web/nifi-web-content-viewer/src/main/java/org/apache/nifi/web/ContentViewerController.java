@@ -236,9 +236,9 @@ public class ContentViewerController extends HttpServlet {
                 	if (downloadableContent.isGeoContent()) {
                 		request.setAttribute(ViewableContent.GEO_CONTENT_CRS,downloadableContent.getCrs());
                 		request.setAttribute("geoType",downloadableContent.getGeoType());
+            			request.setAttribute(ViewableContent.GEO_CONTENT_ENVELOPE,downloadableContent.getEnvelope());
+            			request.setAttribute(ViewableContent.GEO_CONTENT_CENTER,downloadableContent.getCenter());
                 		if (downloadableContent.getGeoType().contentEquals("Tiles")) {
-                			request.setAttribute(ViewableContent.GEO_CONTENT_ENVELOPE,downloadableContent.getEnvelope());
-                			request.setAttribute(ViewableContent.GEO_CONTENT_CENTER,downloadableContent.getCenter());
                 			request.setAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN,downloadableContent.getZoom_min());
                 			request.setAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX,downloadableContent.getZoom_max());
                 		}
