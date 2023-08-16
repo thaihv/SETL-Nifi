@@ -34,6 +34,7 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -110,6 +111,20 @@ public class GeoUtils {
 
 	private static final Logger logger = new NiFiLog(LoggerFactory.getLogger(GeoUtils.class));
 
+	public static String getTileZXYFromLatLon(final double lat, final double lon, final int zoom) {
+		int xtile = (int) Math.floor((lon + 180) / 360 * (1 << zoom));
+		int ytile = (int) Math.floor((1 - Math.log(Math.tan(Math.toRadians(lat)) + 1 / Math.cos(Math.toRadians(lat))) / Math.PI) / 2 * (1 << zoom));
+		if (xtile < 0)
+			xtile = 0;
+		if (xtile >= (1 << zoom))
+			xtile = ((1 << zoom) - 1);
+		if (ytile < 0)
+			ytile = 0;
+		if (ytile >= (1 << zoom))
+			ytile = ((1 << zoom) - 1);
+		return ("" + zoom + "/" + xtile + "/" + ytile);
+	}
+		 
 	public static BoundingBox tile2boundingBox(final int x, final int y, final int zoom) {
 		BoundingBox bb = new BoundingBox();
 		bb.north = tile2lat(y, zoom);
@@ -193,7 +208,19 @@ public class GeoUtils {
 
             		Graphics2D graphics = image.createGraphics();
             		graphics.setComposite(AlphaComposite.Clear);
-            		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);            		
+            		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);  
+            		
+            		
+            	    int maxErrors = 5;
+            	    MaxErrorEnforcer errorChecker = new MaxErrorEnforcer(renderer, graphics, map, maxErrors);
+            	    // Add a render listener that reports back non ignorable ones
+            	    final RenderExceptionStrategy nonIgnorableExceptionListener;
+            	    nonIgnorableExceptionListener = new RenderExceptionStrategy(renderer, graphics, map);
+            	    renderer.addRenderListener(nonIgnorableExceptionListener);
+            	    
+            	    int maxRenderingTime = 10000;  // 10s
+            	    RenderingTimeoutEnforcer timeout = new RenderingTimeoutEnforcer(maxRenderingTime, renderer, graphics, map);
+            	    timeout.start();
                     try {
                         renderer.setRendererHints(hints);
                         renderer.setMapContent(map);
@@ -205,11 +232,28 @@ public class GeoUtils {
                 		}                     	
                     }
                     finally {
-                        graphics.dispose();
+                    	timeout.stop();
+                    	if (graphics != null)
+                    		graphics.dispose();
                     }
+                    
+                    if (timeout.isTimedOut()) {
+                    	logger.info("This requested used more time than allowed and has been forcefully stopped. " + "Max rendering time is " + (maxRenderingTime / 1000.0) + "s");
+                    }
+                    // check if a non ignorable error occurred
+                    if (nonIgnorableExceptionListener.exceptionOccurred()) {
+                        Exception renderError = nonIgnorableExceptionListener.getException();
+                        logger.info("Rendering process failed", renderError);
+                    }
+                    // check if too many errors occurred
+                    if (errorChecker.exceedsMaxErrors()) {
+                    	logger.info("More than " + maxErrors + " rendering errors occurred, bailing out.", errorChecker.getLastException());
+                    }
+                    
     			}
     			finally {
-    		        map.dispose();
+    				if (map != null)
+    					map.dispose();
     		    }      			
     		}
         }
@@ -337,6 +381,36 @@ public class GeoUtils {
 		}		
 		return geometryClass;
 	}	
+	private static SimpleFeatureCollection fcFromDataFileStream(final DataFileStream<GenericData.Record> dataFileReader, CoordinateReferenceSystem crs_source) {
+		List<SimpleFeature> collection = new LinkedList<SimpleFeature>();
+		boolean bCreatedFeatureType = false;
+		String geokey = null;
+		SimpleFeatureType TYPE = null;
+		WKTReader2 wkt = new WKTReader2();
+		while (dataFileReader.hasNext()) {
+			final GenericData.Record record = dataFileReader.next();
+			if (bCreatedFeatureType == false) {
+				geokey = getGeometryFieldName(record);
+				SimpleFeatureTypeBuilder tbuilder =  new SimpleFeatureTypeBuilder();
+				tbuilder.setName("Features");
+		    	tbuilder.setCRS(crs_source);
+		    	tbuilder.add("geometry", getTypeGeometry(record));
+		    	
+		    	TYPE = tbuilder.buildFeatureType();
+		    	bCreatedFeatureType = true;
+			}
+			String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
+			if (wktGeo != null)
+				try {
+					collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read(wktGeo)}, null));
+				} catch (ParseException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			
+		}		
+		return new ListFeatureCollection(TYPE, collection);
+	}
 	public static ByteArrayInputStream getImageTileFromContent(final DownloadableContent content, LongParameter z,
 			LongParameter x, LongParameter y) {
 		String geoType = content.getGeoType();
@@ -368,8 +442,7 @@ public class GeoUtils {
 		final DatumReader<GenericData.Record> datumReader = new GenericDatumReader<>(null, null, genericData);
 
 		ByteArrayInputStream bais = null;
-		try (final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(content.getContent(),
-				datumReader)) {
+		try (final DataFileStream<GenericData.Record> dataFileReader = new DataFileStream<>(content.getContent(), datumReader)) {
 			if (geoType.equals("Tiles")) {
 				while (dataFileReader.hasNext()) {
 					final GenericData.Record record = dataFileReader.next();
@@ -384,65 +457,54 @@ public class GeoUtils {
 			}
 			else if (geoType.equals("Features")) {
 				if (content.getCrs() != null) {
-			    	List<SimpleFeature> collection = new LinkedList<SimpleFeature>();
-			    	CoordinateReferenceSystem crs_source = CRS.parseWKT(content.getCrs());			    	
-			    	Style style = createStyle();
-			    	boolean bCreatedFeatureType = false;
-			    	WKTReader2 wkt = new WKTReader2();
-			    	SimpleFeatureType TYPE = null;
-			    	String geokey = null;
-					while (dataFileReader.hasNext()) {
-						final GenericData.Record record = dataFileReader.next();
-						if (bCreatedFeatureType == false) {
-							geokey = getGeometryFieldName(record);
-							SimpleFeatureTypeBuilder tbuilder =  new SimpleFeatureTypeBuilder();
-							tbuilder.setName("Features");
-					    	tbuilder.setCRS(crs_source);
-					    	tbuilder.add("geometry", getTypeGeometry(record));
-					    	
-					    	TYPE = tbuilder.buildFeatureType();
-					    	bCreatedFeatureType = true;
-						}
-						String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
-						if (wktGeo != null)
-							collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read(wktGeo)}, null));
-						
-					}
-					
+			    				    	
+			    	Style style = createStyle();				    
+			    	CoordinateReferenceSystem crs_source = CRS.parseWKT(content.getCrs());
+			    	
+
+			    	// Create BoundingBox from XYZ in EPSG:4326, it is Leaflet projection
 					int x0 = x.getLong().intValue();
 					int y0 = y.getLong().intValue();
-					int z0 = z.getLong().intValue();
-					
+					int z0 = z.getLong().intValue();					
 					BoundingBox bb = tile2boundingBox(x0,y0,z0);
-//					System.out.println("X/Y/Z:" + String.valueOf(x0) + "/" + String.valueOf(y0) + "/" + String.valueOf(z0));
-//					System.out.println("Origin: (North;West) -->" + "(" + String.valueOf(bb.north) + ";" + String.valueOf(bb.west) + ")");
 			        
+					// Transform and Create Envelop in target projection
 					MathTransform transform = CRS.findMathTransform(CRS.decode("EPSG:4326"),crs_source);
 			        GeometryFactory gf = new GeometryFactory();
 			        Point nw1 = gf.createPoint(new Coordinate(bb.north, bb.west));
 			        Point se1 = gf.createPoint(new Coordinate(bb.south, bb.east));
 			        Point nw = (Point) JTS.transform(nw1, transform);
 			        Point se = (Point) JTS.transform(se1, transform);
+								        
+					double x_i1 = nw.getX();
+					double x_i2 = se.getX();
+					double y_i1 = nw.getY();
+					double y_i2 = se.getY();
 					
-					double x1 = nw.getX();
-					double x2 = se.getX();
-					double y1 = nw.getY();
-					double y2 = se.getY();
-//					System.out.println("x1,x2,y1,y2: " + String.valueOf(x1) + "," + String.valueOf(x2) + "," + String.valueOf(y1) + "," + String.valueOf(y2));
-
-					SimpleFeatureCollection fc = new ListFeatureCollection(TYPE, collection);					
-					String org_envelope = String.valueOf(fc.getBounds().getMinX()) + " " + String.valueOf(fc.getBounds().getMinY()) + String.valueOf(fc.getBounds().getMaxX()) + " " + String.valueOf(fc.getBounds().getMaxY());
-					content.setEnvelope(org_envelope);
-					String center = String.valueOf(fc.getBounds().centre().getX()) + ";" + String.valueOf(fc.getBounds().centre().getY());
-					content.setCenter(center);
-
-					ReferencedEnvelope envelope = new ReferencedEnvelope(x1, x2, y1, y2, crs_source);
-					if (fc.getBounds().intersects(new Coordinate(x1,y1), new Coordinate(x2,y2)))
-						bais = new ByteArrayInputStream(imageFromFeatures(fc, envelope, style, 256, 256));						
+					// Get envelop of source features and compare 
+					String envelope = content.getEnvelope();
+					if (envelope != null) {
+						envelope = envelope.substring(1, envelope.length() - 1);
+						List<String> xy = Arrays.asList(envelope.split(","));					
+						double x_o1 = Double.valueOf(xy.get(0).trim());
+						double x_o2 = Double.valueOf(xy.get(1).trim());
+						double y_o1 = Double.valueOf(xy.get(2).trim());
+						double y_o2 = Double.valueOf(xy.get(3).trim());
+						ReferencedEnvelope env_0  = new ReferencedEnvelope(x_o1, x_o2, y_o1, y_o2, crs_source);
+						
+						// Which Envelope part to draw
+						ReferencedEnvelope env_i  = new ReferencedEnvelope(x_i1, x_i2, y_i1, y_i2, crs_source);
+						
+						if (env_0.intersects(new Coordinate(x_i1,y_i1), new Coordinate(x_i2,y_i2))) {
+							final SimpleFeatureCollection fc = fcFromDataFileStream(dataFileReader, crs_source);
+							bais = new ByteArrayInputStream(imageFromFeatures(fc, env_i, style, 256, 256));
+						}							
+					}
+					
 				}
 			}
 
-		} catch (IOException | ParseException | FactoryException | MismatchedDimensionException | TransformException e1) {
+		} catch (IOException | FactoryException | MismatchedDimensionException | TransformException e1) {
 			e1.printStackTrace();
 		}
 		if (bais == null) { // set default Tiles without data

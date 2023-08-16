@@ -324,6 +324,7 @@ public class FlowFileQueueResource extends ApplicationResource {
                     value = "If the client id is not specified, new one will be generated. This value (whether specified or generated) is included in the response.",
                     required = false
             )
+            @Context HttpServletRequest request,
             @QueryParam(CLIENT_ID) @DefaultValue(StringUtils.EMPTY) final ClientIdParameter clientId,
             @ApiParam(
                     value = "The connection id.",
@@ -368,6 +369,7 @@ public class FlowFileQueueResource extends ApplicationResource {
         // get an input stream to the content
         final DownloadableContent content = serviceFacade.getContent(connectionId, flowFileUuid, uri);
 
+        System.out.println("This request with SessionID: " + request.getSession(true).getId());
         ByteArrayInputStream bais = GeoUtils.getImageTileFromContent(content, z, x, y);
 
 		return generateOkResponse(bais).build();

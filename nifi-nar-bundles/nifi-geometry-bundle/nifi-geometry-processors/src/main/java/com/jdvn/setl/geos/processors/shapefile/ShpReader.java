@@ -88,6 +88,7 @@ import org.geotools.data.DataStore;
 import org.geotools.data.DataStoreFinder;
 import org.geotools.data.shapefile.ShapefileDataStore;
 import org.geotools.data.simple.SimpleFeatureSource;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.opengis.filter.identity.FeatureId;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
@@ -437,13 +438,16 @@ public class ShpReader extends AbstractProcessor {
 						session.remove(transformed);
 					}
 					else {	
-						session.remove(flowFile);
-						String center = "[" + String.valueOf(featureSource.getBounds().centre().getX()) + "," + String.valueOf(featureSource.getBounds().centre().getY()) + "]";
+						session.remove(flowFile);						
+						ReferencedEnvelope r = featureSource.getBounds();
+						String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+						String envelope = "[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "," + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]";
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));

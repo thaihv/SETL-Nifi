@@ -16,6 +16,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -177,8 +178,17 @@ public class FeaturesToRastersTest {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-        
-        
-        
     }
+	
+	@Test
+    public void get_EnvelopXY(){
+		String envelope = "[10, 20, 50, 46]"; 
+		envelope = envelope.substring(1, envelope.length() - 1);
+		List<String> xy = Arrays.asList(envelope.split(","));
+		System.out.println(xy);
+		System.out.println(xy.get(0));
+		System.out.println(xy.get(2).trim());
+		
+
+    }	
 }
