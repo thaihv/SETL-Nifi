@@ -283,6 +283,42 @@ public class WPStransform extends AbstractProcessor {
 		return properties;
 	}
 
+	protected List<PropertyDescriptor> fillInputDataParamaters(List<PropertyDescriptor> p_source, String idProcess){
+		
+		Map<String, Parameter<?>> parameters = new TreeMap<>();
+		try {
+			parameters = gwps.getInputDataFromProcessIdentifier(idProcess);
+			for (Map.Entry<String, Parameter<?>> entry : parameters.entrySet())
+			{
+				Parameter<?> value = entry.getValue();
+				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry") && !value.getName().equals("features")) {
+					System.out.println("key: " + value.getName() + "; Type: Literal Data");
+	    	        P_INPUT = new PropertyDescriptor.Builder()
+	    					.name(value.getName())
+	    					.displayName(value.getName())
+	    					.description(value.getDescription().toString())
+	    					.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+	    					.required(value.isRequired())
+	    					.dependsOn(P_IDENTIFIER, idProcess)
+	    					.build();
+	    	        p_source.add(P_INPUT);
+				}
+				else 
+				{
+					System.out.println("key: " + value.getName() + "; Type: Supported Complex Data as GEOMETRY");   					
+				}
+				        	        
+			}
+		} catch (ServiceException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return p_source;		
+	}
 	@Override
     public void onPropertyModified(final PropertyDescriptor descriptor, final String oldValue, final String newValue) {
     	System.out.println(descriptor.getDisplayName());
@@ -297,6 +333,7 @@ public class WPStransform extends AbstractProcessor {
         		listIdentifiers = gwps.getWPSCapabilities();
     			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
     			listIdentifiers.toArray(capabilitiesIdentifiers);
+    			String defaultdentifier = capabilitiesIdentifiers[0].getValue();
     			
     			P_IDENTIFIER = new PropertyDescriptor.Builder()
     					.name("process-id")
@@ -304,49 +341,25 @@ public class WPStransform extends AbstractProcessor {
     					.description("The Identifier of WPS process that is used to query information of input data and response.")
     					.required(true)
     					.allowableValues(capabilitiesIdentifiers)
+    					.defaultValue(defaultdentifier)
+    					.dependsOn(WPS_STORE, newValue)
     					.build();		
-    	        final List<PropertyDescriptor> props = new ArrayList<>();
+    	        List<PropertyDescriptor> props = new ArrayList<>();
     	        props.add(WPS_STORE);
     	        props.add(P_IDENTIFIER);
+    	        props = fillInputDataParamaters(props, defaultdentifier);
     			properties = Collections.unmodifiableList(props);    			
     		}
     	}
     	if (descriptor.getName().equals("process-id") && newValue != null) {
-    		try {
+    		if (gwps != null) {    			
 				List<PropertyDescriptor> props = new ArrayList<>();
     	        props.add(WPS_STORE);
     	        props.add(P_IDENTIFIER);
     	        
-    			Map<String, Parameter<?>> parameters = new TreeMap<>();
-    			parameters = gwps.getInputDataFromProcessIdentifier(newValue);
-    			for (Map.Entry<String, Parameter<?>> entry : parameters.entrySet())
-    			{
-    				Parameter<?> value = entry.getValue();
-    				if (!value.getType().getName().equals("org.locationtech.jts.geom.Geometry") && !value.getName().equals("features")) {
-    					System.out.println("key: " + value.getName() + "; Type: Literal Data");
-            	        P_INPUT = new PropertyDescriptor.Builder()
-            					.name(value.getName())
-            					.displayName(value.getName())
-            					.description(value.getDescription().toString())
-            					.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
-            					.required(value.isRequired())
-            					.build();
-            	        props.add(P_INPUT);
-    				}
-    				else 
-    				{
-    					System.out.println("key: " + value.getName() + "; Type: Supported Complex Data as GEOMETRY");   					
-    				}
-    				        	        
-    			}
-    			properties = Collections.unmodifiableList(props);
-			} catch (ServiceException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
+    	        props = fillInputDataParamaters(props, newValue);
+    			properties = Collections.unmodifiableList(props); 			
+    		}
     	}
 
     }
