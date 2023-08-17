@@ -1,16 +1,12 @@
 
 package com.jdvn.setl.geos.processors.geotransform;
 
-import static org.junit.Assert.assertEquals;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -23,16 +19,8 @@ import org.apache.avro.io.DatumWriter;
 import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
-import org.geotools.metadata.iso.citation.Citations;
-import org.geotools.referencing.CRS;
-import org.geotools.referencing.wkt.Formattable;
 import org.junit.Test;
-import org.locationtech.jts.geom.Coordinate;
-import org.opengis.referencing.FactoryException;
-import org.opengis.referencing.crs.CoordinateReferenceSystem;
-import org.opengis.referencing.operation.TransformException;
 
-import com.jdvn.setl.geos.processors.geotransform.CRStransform;
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 
@@ -44,7 +32,9 @@ public class GeotransformTest {
         runner.setValidateExpressionUsage(false);
 
         runner.setProperty(Geotransform.TRANS_TYPE,  "Simplify");
-        
+        runner.setProperty(Geotransform.DISTANCE,  "0.0005");
+        runner.setProperty(Geotransform.ENDCAPSTYLE,  "2");
+        runner.setProperty(Geotransform.QSEGMENTS,  "3");
         
         final List<Field> buildingFields = new ArrayList<>();
         buildingFields.add(new Field("the_geom", Schema.create(Type.STRING), null, (Object) null));

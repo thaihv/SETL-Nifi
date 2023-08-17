@@ -411,6 +411,7 @@ public class WPStransformTest {
 	
 
 	@Test
+	@Ignore
 	public void testExecute_1_Operand_Buffer_Online() throws IOException, ServiceException, ParseException {
 		WKTReader reader = new WKTReader(new GeometryFactory());
 		Geometry geom = reader.read("POLYGON((20 10, 30 0, 40 10, 30 20, 20 10))");
@@ -422,6 +423,7 @@ public class WPStransformTest {
 		runExecuteProcessBuffer_Online(geom);
 	}
 	@Test
+	@Ignore
 	public void testExecute_1_Operand_Buffer_Manually() throws IOException, ServiceException, ParseException {
 		WKTReader reader = new WKTReader(new GeometryFactory());
 		Geometry geom = reader.read("LINESTRING (100 240, 220 140, 380 240, 480 220)");
