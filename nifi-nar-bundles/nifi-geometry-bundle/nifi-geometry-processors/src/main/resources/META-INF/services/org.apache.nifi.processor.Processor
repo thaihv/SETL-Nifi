@@ -25,3 +25,4 @@ com.jdvn.setl.geos.processors.postgres.FetchPostGIS
 com.jdvn.setl.geos.processors.postgres.PutPostGIS
 com.jdvn.setl.geos.processors.geotext.GetXMLs
 com.jdvn.setl.geos.processors.geotext.PutXMLs
+com.jdvn.setl.geos.processors.geotransform.Geotransform

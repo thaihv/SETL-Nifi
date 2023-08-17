@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
@@ -75,6 +76,7 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
+import org.locationtech.jts.simplify.DouglasPeuckerSimplifier;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.filter.FilterFactory;
@@ -563,7 +565,105 @@ public class GeoUtils {
 		return null;
 	}
 	
-	
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	public static SimpleFeatureCollection createSimpleFeatureCollectionWithGeoTransform(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, String tran_type, Map<String, Object> map) {
+		List<SimpleFeature> features = new ArrayList<>();
+		String geomFieldName = SHP_GEO_COLUMN;
+		Record record;
+		try {
+			boolean bCreatedSchema = false;
+			SimpleFeatureBuilder featureBuilder = null;
+			SimpleFeatureType TYPE = null;
+			Class geometryClass = null;
+			// Get input parameters
+			double distance = 0.0004;
+			int quadrantSegments = 3;
+			int endCapStyle = 1; 
+    		for (Entry<String, Object> entry : map.entrySet()) {
+    			if (entry.getKey().equals("distance") && entry.getValue() != null) {
+            		Object inputValue = entry.getValue();
+            		distance = Double.valueOf((String) inputValue);
+    			}
+    			if (entry.getKey().equals("quadrantSegments") && entry.getValue() != null) {
+            		Object inputValue = entry.getValue();
+            		quadrantSegments = Integer.valueOf((String) inputValue);
+    			}
+    			if (entry.getKey().equals("endCapStyle") && entry.getValue() != null) {
+            		Object inputValue = entry.getValue();
+            		endCapStyle = Integer.valueOf((String) inputValue);
+    			}    			
+    		}
+			while ((record = avroReader.nextRecord()) != null) {				
+				geomFieldName = getGeometryFieldName(record);				
+				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+				WKTReader reader = new WKTReader(geometryFactory);
+				// Add geometry
+				Geometry geo = reader.read(record.getAsString(geomFieldName));					
+	            if (tran_type.equals("Simplify")) {
+	            	geo = DouglasPeuckerSimplifier.simplify(geo, distance);
+	            }
+	            else if (tran_type.equals("Buffer")){
+	            	geo = geo.buffer(distance, quadrantSegments, endCapStyle);
+	            }
+	            else if (tran_type.equals("Centroid")){ 
+	            	geo = geo.getCentroid();
+	            }
+				if (!bCreatedSchema) {					
+					switch (geo.getGeometryType()) {
+					case "MultiLineString":
+						geometryClass = MultiLineString.class;
+						break;
+					case "LineString":
+						geometryClass = LineString.class;
+						break;
+					case "MultiPolygon":
+						geometryClass = MultiPolygon.class;
+						break;
+					case "Polygon":
+						geometryClass = Polygon.class;
+						break;
+					case "MultiPoint":
+						geometryClass = MultiPoint.class;
+						break;
+					case "Point":
+						geometryClass = Point.class;
+						break;
+					case "GeometryCollection":
+						geometryClass = GeometryCollection.class;
+						break;
+					default:
+						geometryClass = MultiLineString.class;
+					}
+					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+					TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
+					featureBuilder = new SimpleFeatureBuilder(TYPE);
+					bCreatedSchema = true;
+				}								
+				// Add attributes
+				int size = record.getSchema().getFieldCount();
+				Object[] objs = new Object[size];
+				for (int i = 0; i < size; i++) {
+					String fName = record.getSchema().getFieldNames().get(i);
+					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
+						fName = SHP_GEO_COLUMN;
+					int index = featureBuilder.getFeatureType().indexOf(fName);
+					if (fName.equals(geomFieldName.toLowerCase()) || fName.equals(geomFieldName.toUpperCase()) || fName.equals(SHP_GEO_COLUMN))
+						objs[index] = geo;
+					else
+						objs[index] = record.getValue(fName);
+
+				}
+				featureBuilder.addAll(objs);
+				SimpleFeature feature = featureBuilder.buildFeature(null);
+				features.add(feature);
+			}
+
+			return new ListFeatureCollection(TYPE, features);
+		} catch (IOException | MalformedRecordException | ParseException | MismatchedDimensionException e) {
+			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });
+		}
+		return null;
+	}	
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public static SimpleFeatureCollection createSimpleFeatureCollectionFromNifiRecordsWithoutGeoFname(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source) {
 		List<SimpleFeature> features = new ArrayList<>();
@@ -638,7 +738,7 @@ public class GeoUtils {
 		return null;
 	}	
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public static SimpleFeatureCollection createNifiRecordsWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
+	public static SimpleFeatureCollection createSimpleFeatureCollectionWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
 		List<SimpleFeature> features = new ArrayList<>();
 		String geomFieldName = SHP_GEO_COLUMN;
 		Record record;

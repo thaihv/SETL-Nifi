@@ -23,7 +23,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.avro.Schema;
@@ -43,7 +45,6 @@ import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.expression.ExpressionLanguageScope;
 import org.apache.nifi.flowfile.FlowFile;
-import org.apache.nifi.flowfile.attributes.CoreAttributes;
 import org.apache.nifi.flowfile.attributes.GeoAttributes;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.processor.AbstractProcessor;
@@ -66,34 +67,55 @@ import org.opengis.referencing.crs.CoordinateReferenceSystem;
 
 import com.jdvn.setl.geos.processors.util.GeoUtils;
 
-@Tags({ "Coordinate Reference System", "WKT", "EPSG", "ESRI", "Attributes", "Geospatial" })
-@CapabilityDescription("Transform data from a given flow file to other CRS.")
+@Tags({ "Features", "Transformation", "Buffer", "Simplify", "Attributes", "Geospatial" })
+@CapabilityDescription("Transform features from a given flow file to other Geometry Type.")
 @ReadsAttributes({ @ReadsAttribute(attribute = "", description = "") })
 @WritesAttributes({ @WritesAttribute(attribute = "", description = "") })
 
-public class CRStransform extends AbstractProcessor {
-	public static final String GEO_COLUMN = "geo.column";
-	public static final PropertyDescriptor USER_DEFINED = new PropertyDescriptor.Builder()
-			.name("Use User-Defined CRS")
-			.description("If true, then use CRS in format WKT for target flowfile.")
+public class Geotransform extends AbstractProcessor {
+
+    public static final AllowableValue Simplify = new AllowableValue("Simplify", "Simplify", "Simplify all features in dataflow");
+    public static final AllowableValue Buffer = new AllowableValue("Buffer", "Buffer", "Buffering for each features in dataflow");
+    public static final AllowableValue Centroid = new AllowableValue("Centroid", "Centroid", "Calculate centroid for each features in dataflow");
+    
+    public static final AllowableValue CAP_ROUND = new AllowableValue("1", "CAP_ROUND", "The ends of linestrings as round");
+    public static final AllowableValue CAP_FLAT = new AllowableValue("2", "CAP_FLAT", "The ends of linestrings as flat");
+    public static final AllowableValue CAP_SQUARE = new AllowableValue("3", "CAP_SQUARE", "The ends of linestrings as square");
+    
+    public static final PropertyDescriptor TRANS_TYPE = new PropertyDescriptor.Builder()
+            .name("type-geo-tranform")
+            .displayName("Tranformation Type")
+            .description("Which type of transformation to execute for incomping datafile. It could be Simplify, Buffering or Centroid")
+            .required(true)
+            .allowableValues(Simplify, Buffer, Centroid)
+            .defaultValue(Simplify.getValue())
+            .build();
+	public static final PropertyDescriptor DISTANCE = new PropertyDescriptor.Builder()
+			.name("Distance Tolerance")
+			.displayName("distance")
+			.description("The tolerance to use for a simplified version of the geometry")
 			.required(true)
-			.allowableValues("true", "false")
-			.defaultValue("false")
-			.build();
-	public static final PropertyDescriptor CRS_TARGET_WKT = new PropertyDescriptor.Builder()
-			.name("CRS in OGC WKT format")
-			.description("The presentation of Coordinate Reference System in OGC Well-Known Text Format . "
-					+ "If the number is 0, the Coordinate Reference System will be set same as CRS flowfile attribute")
-			.required(true)
-			.defaultValue("0")
 			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
-			.dependsOn(USER_DEFINED, "true")
+			.dependsOn(TRANS_TYPE, Simplify.getValue(), Buffer.getValue() )
 			.build();
-	private static AllowableValue[] capabilitiesCrsIdentifiers;
-	private static String crsDefault;
-
-	public static PropertyDescriptor CRS_TARGET;
+	public static final PropertyDescriptor QSEGMENTS = new PropertyDescriptor.Builder()
+			.name("QuadrantSegments")
+			.displayName("quadrantSegments")
+			.description("The number of line segments used to represent a quadrant of a circle.")
+			.addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.dependsOn(TRANS_TYPE, Buffer.getValue() )
+			.build();
+	public static final PropertyDescriptor ENDCAPSTYLE = new PropertyDescriptor.Builder()
+			.name("EndCapStyle")
+			.displayName("endCapStyle")
+			.description("The end cap style to use for be created at the ends of linestrings Values as: CAP_ROUND (default = 1);CAP_FLAT = 2; CAP_SQUARE = 3")
+			.required(true)
+			.allowableValues(CAP_ROUND, CAP_FLAT, CAP_SQUARE)
+            .defaultValue(CAP_ROUND.getValue())
+			.dependsOn(TRANS_TYPE, Buffer.getValue() )
+			.build();	
 	public static final Relationship REL_SUCCESS = new Relationship.Builder()
 			.name("success")
 			.description("Flowfiles that have been successfully transformed are transferred to this relationship")
@@ -107,25 +129,6 @@ public class CRStransform extends AbstractProcessor {
 
 	@Override
 	protected void init(final ProcessorInitializationContext context) {
-
-		List<AllowableValue> listCrsIdentifiers = new ArrayList<AllowableValue>();
-
-		for (String code : CRS.getSupportedCodes("EPSG")) {
-			if ("WGS84(DD)".equals(code))
-				continue;
-			if (code.contains("EPSG"))
-				listCrsIdentifiers.add(new AllowableValue(code));
-		}
-		for (String code : CRS.getSupportedCodes("ESRI")) {
-			if ("WGS84(DD)".equals(code))
-				continue;
-			listCrsIdentifiers.add(new AllowableValue("ESRI:" + code));
-		}
-
-		capabilitiesCrsIdentifiers = new AllowableValue[listCrsIdentifiers.size()];
-		listCrsIdentifiers.toArray(capabilitiesCrsIdentifiers);
-		crsDefault = "EPSG:4326";
-
 		// relationships
 		final Set<Relationship> procRels = new HashSet<>();
 		procRels.add(REL_SUCCESS);
@@ -134,17 +137,10 @@ public class CRStransform extends AbstractProcessor {
 
 		// descriptors
 		final List<PropertyDescriptor> supDescriptors = new ArrayList<>();
-		supDescriptors.add(USER_DEFINED);
-
-		CRS_TARGET = new PropertyDescriptor.Builder()
-				.name("Target CRS").description("The presentation of Coordinate Reference System of spatial dataflow output in OGC Well-Known Text Format")
-				.required(true)
-				.allowableValues(capabilitiesCrsIdentifiers)
-				.defaultValue(crsDefault)
-				.dependsOn(USER_DEFINED, "false")
-				.build();
-		supDescriptors.add(CRS_TARGET);
-		supDescriptors.add(CRS_TARGET_WKT);
+		supDescriptors.add(TRANS_TYPE);
+		supDescriptors.add(DISTANCE);
+		supDescriptors.add(QSEGMENTS);
+		supDescriptors.add(ENDCAPSTYLE);
 		properties = Collections.unmodifiableList(supDescriptors);
 	}
 
@@ -180,20 +176,19 @@ public class CRStransform extends AbstractProcessor {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
 						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
 						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
-
-						final CoordinateReferenceSystem crs_target;
-
-						final boolean bUserCRS = context.getProperty(USER_DEFINED).asBoolean();
-						final String srs_target;
-						if (bUserCRS) {
-							srs_target = context.getProperty(CRS_TARGET_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
-							crs_target = CRS.parseWKT(srs_target);
-						} else {  // Use code to generate CRS
-							srs_target = context.getProperty(CRS_TARGET).evaluateAttributeExpressions(flowFile).getValue();
-							crs_target = CRS.decode(srs_target);
+						String transfrom_type = context.getProperty(TRANS_TYPE).evaluateAttributeExpressions(flowFile).getValue();
+						
+						Map<String, Object> map = new TreeMap<>();				
+						for (int i = 0; i < properties.size(); i++) {
+							PropertyDescriptor p = properties.get(i);
+							if (p.getName().equals("type-geo-tranform")) 
+								continue;
+							String value = context.getProperty(p).evaluateAttributeExpressions(flowFile).getValue();
+							map.put(p.getDisplayName(), value);
 						}
-
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithCRSTransformed("crs_transformed", reader, crs_source, crs_target);
+						
+						
+						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithGeoTransform("featurecollection", reader, crs_source, transfrom_type, map);												
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(collection);
 
@@ -208,10 +203,6 @@ public class CRStransform extends AbstractProcessor {
 								writer.flush();
 							}
 						});
-						if (crs_target != null) {
-							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), crs_target.toWKT());
-							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
-						}
 						session.getProvenanceReporter().receive(transformed, flowFile.getAttributes().get(GeoUtils.GEO_URL), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						session.transfer(transformed, REL_SUCCESS);
 						session.adjustCounter("Records Written", records.size(), false);
