@@ -92,6 +92,7 @@ import org.apache.nifi.util.StopWatch;
 import org.geotools.data.collection.ListFeatureCollection;
 import org.geotools.data.geojson.GeoJSONReader;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.kml.KMLConfiguration;
 import org.geotools.referencing.CRS;
 import org.geotools.wfs.GML;
@@ -472,8 +473,11 @@ public class GetXMLs extends AbstractProcessor {
 		            final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureCollection);
 		            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
 		            
-					if (records.size() > 0) {
-						String center = "[" + String.valueOf(featureCollection.getBounds().centre().getX()) + "," + String.valueOf(featureCollection.getBounds().centre().getY()) + "]";
+					if (records.size() > 0) {						
+						ReferencedEnvelope r = featureCollection.getBounds();
+						String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+						String envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
+												
 						FlowFile transformed = session.create(flowFile);
 						CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
 						transformed = session.write(transformed, new OutputStreamCallback() {
@@ -491,6 +495,7 @@ public class GetXMLs extends AbstractProcessor {
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
@@ -584,7 +589,10 @@ public class GetXMLs extends AbstractProcessor {
 				            final CoordinateReferenceSystem crs_target = CRS.decode(srs_target);
 				            String geoName = flowFile.getAttributes().get(CoreAttributes.FILENAME.key());
 							if (records.size() > 0) {
-								String center = "[" + String.valueOf(featureCollection.getBounds().centre().getX()) + "," + String.valueOf(featureCollection.getBounds().centre().getY()) + "]";
+								ReferencedEnvelope r = featureCollection.getBounds();
+								String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+								String envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
+								
 								FlowFile transformed = session.create(flowFile);
 								CoordinateReferenceSystem myCrs = featureCollection.getSchema().getCoordinateReferenceSystem() == null? crs_target: featureCollection.getSchema().getCoordinateReferenceSystem();
 								transformed = session.write(transformed, new OutputStreamCallback() {
@@ -601,6 +609,7 @@ public class GetXMLs extends AbstractProcessor {
 								transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, dataType);
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+								transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
 								transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.getGeometryFieldName(records.get(0)));
 								transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, geoName);
 								transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));

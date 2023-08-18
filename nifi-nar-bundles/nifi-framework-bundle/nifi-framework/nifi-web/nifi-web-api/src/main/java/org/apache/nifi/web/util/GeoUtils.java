@@ -348,11 +348,15 @@ public class GeoUtils {
 	
 	@SuppressWarnings("rawtypes")
 	public static Class getTypeGeometry(GenericData.Record record) {
-		Class geometryClass = Point.class; // default
-		String geokey = getGeometryFieldName(record); 
-		String value = record.get(geokey) == null ? null : record.get(geokey).toString();
+		Class geometryClass = null; // default
+		String geokey = getGeometryFieldName(record);
+		String value = record.get(geokey) == null ? null : record.get(geokey).toString().trim();
 		if (value != null) {
-			value = value.substring(0, value.indexOf("(")).trim();
+			if (value.indexOf("(") != -1) {
+				value = value.substring(0, value.indexOf("(")).trim();
+			} else if (value.contains("EMPTY")) {  // found case EMPTY
+				value = value.substring(0, value.indexOf("EMPTY")).trim();
+			}
 			switch (value) {
 				case "MULTILINESTRING":
 					geometryClass = MultiLineString.class;
@@ -377,11 +381,11 @@ public class GeoUtils {
 					break;
 				default:
 					geometryClass = Point.class;
-			}			
-		}		
+			}
+		}
 		return geometryClass;
 	}	
-	private static SimpleFeatureCollection fcFromDataFileStream(final DataFileStream<GenericData.Record> dataFileReader, CoordinateReferenceSystem crs_source) {
+	private static SimpleFeatureCollection drawableFeatureCollectionFromDataFileStream(final DataFileStream<GenericData.Record> dataFileReader, CoordinateReferenceSystem crs_source) {
 		List<SimpleFeature> collection = new LinkedList<SimpleFeature>();
 		boolean bCreatedFeatureType = false;
 		String geokey = null;
@@ -390,24 +394,30 @@ public class GeoUtils {
 		while (dataFileReader.hasNext()) {
 			final GenericData.Record record = dataFileReader.next();
 			if (bCreatedFeatureType == false) {
+				
+				@SuppressWarnings("rawtypes")
+				Class geometryClass = getTypeGeometry(record);
+				if (geometryClass == null) 
+					break;
 				geokey = getGeometryFieldName(record);
 				SimpleFeatureTypeBuilder tbuilder =  new SimpleFeatureTypeBuilder();
 				tbuilder.setName("Features");
 		    	tbuilder.setCRS(crs_source);
-		    	tbuilder.add("geometry", getTypeGeometry(record));
+		    	tbuilder.add("geometry", geometryClass);
 		    	
 		    	TYPE = tbuilder.buildFeatureType();
 		    	bCreatedFeatureType = true;
 			}
 			String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
 			if (wktGeo != null)
-				try {
-					collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read(wktGeo)}, null));
-				} catch (ParseException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-			
+				if (!wktGeo.contains("EMPTY")) {  // not found case of EMPTY geometry from WKT
+					try {
+						collection.add(SimpleFeatureBuilder.build(TYPE, new Object[] { wkt.read(wktGeo)}, null));
+					} catch (ParseException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}					
+				}			
 		}		
 		return new ListFeatureCollection(TYPE, collection);
 	}
@@ -486,18 +496,18 @@ public class GeoUtils {
 					if (envelope != null) {
 						envelope = envelope.substring(1, envelope.length() - 1);
 						List<String> xy = Arrays.asList(envelope.split(","));					
-						double x_o1 = Double.valueOf(xy.get(0).trim());
-						double x_o2 = Double.valueOf(xy.get(1).trim());
-						double y_o1 = Double.valueOf(xy.get(2).trim());
-						double y_o2 = Double.valueOf(xy.get(3).trim());
+						double x_o1 = Double.valueOf(xy.get(0).trim().replace("[", ""));
+						double x_o2 = Double.valueOf(xy.get(1).trim().replace("]", ""));
+						double y_o1 = Double.valueOf(xy.get(2).trim().replace("[", ""));
+						double y_o2 = Double.valueOf(xy.get(3).trim().replace("]", ""));
 						ReferencedEnvelope env_0  = new ReferencedEnvelope(x_o1, x_o2, y_o1, y_o2, crs_source);
 						
 						// Which Envelope part to draw
 						ReferencedEnvelope env_i  = new ReferencedEnvelope(x_i1, x_i2, y_i1, y_i2, crs_source);
 						
 						if (env_0.intersects(new Coordinate(x_i1,y_i1), new Coordinate(x_i2,y_i2))) {
-							final SimpleFeatureCollection fc = fcFromDataFileStream(dataFileReader, crs_source);
-							bais = new ByteArrayInputStream(imageFromFeatures(fc, env_i, style, 256, 256));
+							final SimpleFeatureCollection drawablefc = drawableFeatureCollectionFromDataFileStream(dataFileReader, crs_source);
+							bais = new ByteArrayInputStream(imageFromFeatures(drawablefc, env_i, style, 256, 256));
 						}							
 					}
 					

@@ -163,6 +163,10 @@ public class GeoPackageReader extends AbstractProcessor {
 			String[] names = store.getTypeNames();
 			for (String name : names) {
 				SimpleFeatureSource featureSource = store.getFeatureSource(name);
+				// Center and envelope for all features, for fragments in to re-calculate
+				ReferencedEnvelope r = featureSource.getBounds();
+				String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+				String envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
 				
 				SimpleFeatureCollection	selectedfeatures = featureSource.getFeatures();
 				String geofieldName = selectedfeatures.getSchema().getGeometryDescriptor().getLocalName();
@@ -198,6 +202,8 @@ public class GeoPackageReader extends AbstractProcessor {
 		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 		                    transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
 							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
 		                    transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
 		                    transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
 		                    transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
@@ -216,7 +222,7 @@ public class GeoPackageReader extends AbstractProcessor {
 					}
 				}
 				else if (maxRecord > 0) {
-					final StopWatch stopWatch = new StopWatch(true);
+					final StopWatch stopWatch = new StopWatch(true);															
 	                final List<Record> records = GeoUtils.getNifiRecordsFromGeoPackageFeatureTable(featureSource,name,recordSchema);
                     FlowFile transformed = session.create(flowFile);
     				CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageFeatureTable(store,name);  
@@ -237,6 +243,8 @@ public class GeoPackageReader extends AbstractProcessor {
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
                     transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "GeoPackage");
                     transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), name);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);					
                     transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
                     transformed = session.putAttribute(transformed, RESULT_TABLENAME, name);
 

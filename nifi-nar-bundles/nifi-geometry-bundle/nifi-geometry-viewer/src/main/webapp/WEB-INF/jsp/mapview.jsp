@@ -112,7 +112,9 @@
 			var envelope    = <%= request.getAttribute("envelope")%>;
 			var center      = <%= request.getAttribute("center")%>;
 			
-			var geocenter = proj4(crs,'EPSG:4326',center);
+			var geocenter = [105.65287399291995,20.975032806396456];
+			if (center !== null)
+				geocenter = proj4(crs,'EPSG:4326',center);
 			
 			var map = L.map('map', {    
 				center: [geocenter[1],geocenter[0]],
