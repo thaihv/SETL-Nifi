@@ -112,7 +112,7 @@
 			var envelope    = <%= request.getAttribute("envelope")%>;
 			var center      = <%= request.getAttribute("center")%>;
 			
-			var geocenter = [105.65287399291995,20.975032806396456];
+			var geocenter = [105.65287399291995,20.975032806396456];  // Ha Noi,  Vietnam as default location 
 			if (center !== null)
 				geocenter = proj4(crs,'EPSG:4326',center);
 			
@@ -122,7 +122,18 @@
 			    layers: [osm],
 				loadingControl: true});
 			
-			var myTileBound;
+			var bounds;
+			if (envelope !== null){
+				var corner1 = [envelope[0][0], envelope[1][0]];
+				var corner2 = [envelope[0][1], envelope[1][1]];			
+				corner1 = proj4(crs,'EPSG:4326',corner1);
+				corner2 = proj4(crs,'EPSG:4326',corner2);	
+				// Revert from X,Y to Y,X to get work with Leaflet
+				corner1 = L.latLng(corner1[1], corner1[0]);
+				corner2 = L.latLng(corner2[1], corner2[0]);				
+				bounds  = L.latLngBounds(corner1, corner2);				
+			}			
+			
 		    var myTiles = new L.tileLayer(urlGeoTiles, {
 		        minZoom: 1,
 		        maxZoom: 20,
@@ -180,5 +191,7 @@
 						console.log("You clicked the map at latitude: " + lat[1] + " and longitude:" + lng[0]);
 					});
 			myTiles.addTo(map);
+			if (bounds !== null)
+				map.fitBounds(bounds);
 	}
 </script>
