@@ -596,60 +596,53 @@ public class GeoUtils {
     		if (tran_type.equals("Union") || tran_type.equals("Intersects") || tran_type.equals("Bounds") || tran_type.equals("Differences") || tran_type.equals("Envelope")) {
         		boolean start = false;
         		Geometry geoOne = null;
-    			while ((record = avroReader.nextRecord()) != null) {				
-    				geomFieldName = getGeometryFieldName(record);				
-    				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
-    				WKTReader reader = new WKTReader(geometryFactory);
-    				// Add geometry
-    				Geometry geo = reader.read(record.getAsString(geomFieldName));					
-    				if (tran_type.equals("Union")){ 
-    	            	if (!start) {
-    	            		geoOne = geo;
-    	            		start = true;    	            		
-    	            	}
-    	            	else {
-    	            		geo = geo.union(geoOne);
-    	            		geoOne = geo;
-    	            		
-    	            	}
-    				}
-    				else if (tran_type.equals("Intersects")){
-    	            	if (!start) {
-    	            		geoOne = geo;
-    	            		start = true;    	            		
-    	            	}
-    	            	else {
-    	            		geo = geo.intersection(geoOne);
-    	            		if (geo == null)
-    	            			break;
-    	            		else
-    	            			geoOne = geo;
+				while ((record = avroReader.nextRecord()) != null) {
+					geomFieldName = getGeometryFieldName(record);
+					GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+					WKTReader reader = new WKTReader(geometryFactory);
+					// Add geometry
+					Geometry geo = reader.read(record.getAsString(geomFieldName));
+					if (tran_type.equals("Union")) {
+						if (!start) {
+							geoOne = geo;
+							start = true;
+						} else {
+							geo = geo.union(geoOne);
+							geoOne = geo;
 
-    	            	}    					
-    				}
-    				else if (tran_type.equals("Bounds") || tran_type.equals("Envelope") ){
-    	            	if (!start) {
-    	            		geoOne = geo;
-    	            		start = true;    	            		
-    	            	}
-    	            	else {
-    	            		geo = geo.union(geoOne);
-    	            		geoOne = geo;
+						}
+					} else if (tran_type.equals("Intersects")) {
+						if (!start) {
+							geoOne = geo;
+							start = true;
+						} else {
+							geo = geo.intersection(geoOne);
+							if (geo == null)
+								break;
+							else
+								geoOne = geo;
 
-    	            	}    					
-    				}
-    				else if (tran_type.equals("Differences")){
-    	            	if (!start) {
-    	            		geoOne = geo;
-    	            		start = true;    	            		
-    	            	}
-    	            	else {
-    	            		geo = geo.difference(geoOne);
-    	            		geoOne = geo;
+						}
+					} else if (tran_type.equals("Bounds") || tran_type.equals("Envelope")) {
+						if (!start) {
+							geoOne = geo;
+							start = true;
+						} else {
+							geo = geo.union(geoOne);
+							geoOne = geo;
 
-    	            	}    					
-    				}
-    			}
+						}
+					} else if (tran_type.equals("Differences")) {
+						if (!start) {
+							geoOne = geo;
+							start = true;
+						} else {
+							geo = geo.difference(geoOne);
+							geoOne = geo;
+
+						}
+					}
+				}
     			if (tran_type.equals("Bounds")) {
     				geoOne = geoOne.getBoundary();
     			}
