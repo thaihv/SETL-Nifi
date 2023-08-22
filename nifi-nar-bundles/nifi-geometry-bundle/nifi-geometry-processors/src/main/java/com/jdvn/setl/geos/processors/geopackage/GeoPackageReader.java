@@ -164,14 +164,18 @@ public class GeoPackageReader extends AbstractProcessor {
 			for (String name : names) {
 				SimpleFeatureSource featureSource = store.getFeatureSource(name);
 				// Center and envelope for all features, for fragments in to re-calculate
-				ReferencedEnvelope r = featureSource.getBounds();
-				String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
-				String envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
+				String center = null;
+				String envelope = null;
 				
 				SimpleFeatureCollection	selectedfeatures = featureSource.getFeatures();
 				String geofieldName = selectedfeatures.getSchema().getGeometryDescriptor().getLocalName();
 				
 				int maxRecord = featureSource.getFeatures().size();
+				if (maxRecord > 0) {
+					ReferencedEnvelope r = featureSource.getBounds();
+					center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+					envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";					
+				}				
 				final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
 				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
 					final String fragmentIdentifier = UUID.randomUUID().toString();

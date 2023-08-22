@@ -351,11 +351,14 @@ public class ShpReader extends AbstractProcessor {
 				String typeName = dataStore.getTypeNames()[0];
 				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
 				// Center and evnelope for all features, for fragments in to re-calculate
-				ReferencedEnvelope r = featureSource.getBounds();
-				String center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
-				String envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
-								
-				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?				
+				String center = null;
+				String envelope = null;								
+				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?	
+				if (maxRecord > 0) {
+					ReferencedEnvelope r = featureSource.getBounds();
+					center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+					envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";					
+				}
 				if (charset != null)
 					((ShapefileDataStore)dataStore).setCharset(Charset.forName(charset));
 				Charset charset_in = ((ShapefileDataStore)dataStore).getCharset();

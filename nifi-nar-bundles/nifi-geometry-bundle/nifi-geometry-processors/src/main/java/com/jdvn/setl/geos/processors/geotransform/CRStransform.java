@@ -60,6 +60,7 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.referencing.CRS;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -194,6 +195,17 @@ public class CRStransform extends AbstractProcessor {
 						}
 
 						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithCRSTransformed("crs_transformed", reader, crs_source, crs_target);
+						
+						// Center and envelope for all features
+						String center = null;
+						String envelope = null;								
+						int maxRecord = collection.size(); 
+						if (maxRecord > 0) {
+							ReferencedEnvelope r = collection.getBounds();
+							center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+							envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";					
+						}
+						
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(collection);
 
@@ -210,6 +222,8 @@ public class CRStransform extends AbstractProcessor {
 						});
 						if (crs_target != null) {
 							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), crs_target.toWKT());
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+							transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
 							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
 						}
 						session.getProvenanceReporter().receive(transformed, flowFile.getAttributes().get(GeoUtils.GEO_URL), stopWatch.getElapsed(TimeUnit.MILLISECONDS));

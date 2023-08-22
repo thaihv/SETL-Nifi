@@ -331,24 +331,26 @@ public class WPStransform extends AbstractProcessor {
         		gwps = (WPSService) this.getControllerServiceLookup().getControllerService(newValue);      
         		
         		listIdentifiers = gwps.getWPSCapabilities();
-    			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
-    			listIdentifiers.toArray(capabilitiesIdentifiers);
-    			String defaultdentifier = capabilitiesIdentifiers[0].getValue();
-    			
-    			P_IDENTIFIER = new PropertyDescriptor.Builder()
-    					.name("process-id")
-    					.displayName("Process Identifier")
-    					.description("The Identifier of WPS process that is used to query information of input data and response.")
-    					.required(true)
-    					.allowableValues(capabilitiesIdentifiers)
-    					.defaultValue(defaultdentifier)
-    					.dependsOn(WPS_STORE, newValue)
-    					.build();		
-    	        List<PropertyDescriptor> props = new ArrayList<>();
-    	        props.add(WPS_STORE);
-    	        props.add(P_IDENTIFIER);
-    	        props = fillInputDataParamaters(props, defaultdentifier);
-    			properties = Collections.unmodifiableList(props);    			
+        		if (listIdentifiers != null) {
+        			capabilitiesIdentifiers = new AllowableValue[listIdentifiers.size()];
+        			listIdentifiers.toArray(capabilitiesIdentifiers);
+        			String defaultdentifier = capabilitiesIdentifiers[0].getValue();
+        			
+        			P_IDENTIFIER = new PropertyDescriptor.Builder()
+        					.name("process-id")
+        					.displayName("Process Identifier")
+        					.description("The Identifier of WPS process that is used to query information of input data and response.")
+        					.required(true)
+        					.allowableValues(capabilitiesIdentifiers)
+        					.defaultValue(defaultdentifier)
+        					.dependsOn(WPS_STORE, newValue)
+        					.build();		
+        	        List<PropertyDescriptor> props = new ArrayList<>();
+        	        props.add(WPS_STORE);
+        	        props.add(P_IDENTIFIER);
+        	        props = fillInputDataParamaters(props, defaultdentifier);
+        			properties = Collections.unmodifiableList(props);        			
+        		}    			
     		}
     	}
     	if (descriptor.getName().equals("process-id") && newValue != null) {
