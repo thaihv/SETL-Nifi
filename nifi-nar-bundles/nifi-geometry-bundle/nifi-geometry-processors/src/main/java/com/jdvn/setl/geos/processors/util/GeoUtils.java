@@ -593,71 +593,169 @@ public class GeoUtils {
             		endCapStyle = Integer.valueOf((String) inputValue);
     			}    			
     		}
-			while ((record = avroReader.nextRecord()) != null) {				
-				geomFieldName = getGeometryFieldName(record);				
-				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
-				WKTReader reader = new WKTReader(geometryFactory);
-				// Add geometry
-				Geometry geo = reader.read(record.getAsString(geomFieldName));					
-	            if (tran_type.equals("Simplify")) {
-	            	geo = DouglasPeuckerSimplifier.simplify(geo, distance);
-	            }
-	            else if (tran_type.equals("Buffer")){
-	            	geo = geo.buffer(distance, quadrantSegments, endCapStyle);
-	            }
-	            else if (tran_type.equals("Centroid")){ 
-	            	geo = geo.getCentroid();
-	            }
-				if (!bCreatedSchema) {					
-					switch (geo.getGeometryType()) {
-					case "MultiLineString":
-						geometryClass = MultiLineString.class;
-						break;
-					case "LineString":
-						geometryClass = LineString.class;
-						break;
-					case "MultiPolygon":
-						geometryClass = MultiPolygon.class;
-						break;
-					case "Polygon":
-						geometryClass = Polygon.class;
-						break;
-					case "MultiPoint":
-						geometryClass = MultiPoint.class;
-						break;
-					case "Point":
-						geometryClass = Point.class;
-						break;
-					case "GeometryCollection":
-						geometryClass = GeometryCollection.class;
-						break;
-					default:
-						geometryClass = MultiLineString.class;
-					}
-					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
-					TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
-					featureBuilder = new SimpleFeatureBuilder(TYPE);
-					bCreatedSchema = true;
-				}								
-				// Add attributes
-				int size = record.getSchema().getFieldCount();
-				Object[] objs = new Object[size];
-				for (int i = 0; i < size; i++) {
-					String fName = record.getSchema().getFieldNames().get(i);
-					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
-						fName = SHP_GEO_COLUMN;
-					int index = featureBuilder.getFeatureType().indexOf(fName);
-					if (fName.equals(geomFieldName.toLowerCase()) || fName.equals(geomFieldName.toUpperCase()) || fName.equals(SHP_GEO_COLUMN))
-						objs[index] = geo;
-					else
-						objs[index] = record.getValue(fName);
+    		if (tran_type.equals("Union") || tran_type.equals("Intersects") || tran_type.equals("Bounds") || tran_type.equals("Differences") || tran_type.equals("Envelope")) {
+        		boolean start = false;
+        		Geometry geoOne = null;
+    			while ((record = avroReader.nextRecord()) != null) {				
+    				geomFieldName = getGeometryFieldName(record);				
+    				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+    				WKTReader reader = new WKTReader(geometryFactory);
+    				// Add geometry
+    				Geometry geo = reader.read(record.getAsString(geomFieldName));					
+    				if (tran_type.equals("Union")){ 
+    	            	if (!start) {
+    	            		geoOne = geo;
+    	            		start = true;    	            		
+    	            	}
+    	            	else {
+    	            		geo = geo.union(geoOne);
+    	            		geoOne = geo;
+    	            		
+    	            	}
+    				}
+    				else if (tran_type.equals("Intersects")){
+    	            	if (!start) {
+    	            		geoOne = geo;
+    	            		start = true;    	            		
+    	            	}
+    	            	else {
+    	            		geo = geo.intersection(geoOne);
+    	            		if (geo == null)
+    	            			break;
+    	            		else
+    	            			geoOne = geo;
 
-				}
-				featureBuilder.addAll(objs);
-				SimpleFeature feature = featureBuilder.buildFeature(null);
-				features.add(feature);
-			}
+    	            	}    					
+    				}
+    				else if (tran_type.equals("Bounds") || tran_type.equals("Envelope") ){
+    	            	if (!start) {
+    	            		geoOne = geo;
+    	            		start = true;    	            		
+    	            	}
+    	            	else {
+    	            		geo = geo.union(geoOne);
+    	            		geoOne = geo;
 
+    	            	}    					
+    				}
+    				else if (tran_type.equals("Differences")){
+    	            	if (!start) {
+    	            		geoOne = geo;
+    	            		start = true;    	            		
+    	            	}
+    	            	else {
+    	            		geo = geo.difference(geoOne);
+    	            		geoOne = geo;
+
+    	            	}    					
+    				}
+    			}
+    			if (tran_type.equals("Bounds")) {
+    				geoOne = geoOne.getBoundary();
+    			}
+    			if (tran_type.equals("Envelope")) {
+    				geoOne = geoOne.getEnvelope();
+    			}
+    			if (geoOne != null) {
+    				switch (geoOne.getGeometryType()) {
+    				case "MultiLineString":
+    					geometryClass = MultiLineString.class;
+    					break;
+    				case "LineString":
+    					geometryClass = LineString.class;
+    					break;
+    				case "MultiPolygon":
+    					geometryClass = MultiPolygon.class;
+    					break;
+    				case "Polygon":
+    					geometryClass = Polygon.class;
+    					break;
+    				case "MultiPoint":
+    					geometryClass = MultiPoint.class;
+    					break;
+    				case "Point":
+    					geometryClass = Point.class;
+    					break;
+    				case "GeometryCollection":
+    					geometryClass = GeometryCollection.class;
+    					break;
+    				default:
+    					geometryClass = MultiLineString.class;
+    				}
+    				Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+    				TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
+    				featureBuilder = new SimpleFeatureBuilder(TYPE);
+    				featureBuilder.addAll(geoOne);
+    				SimpleFeature feature = featureBuilder.buildFeature(null);
+    				features.add(feature);    				
+    			}    			    			
+    		}
+    		else {
+    			while ((record = avroReader.nextRecord()) != null) {				
+    				geomFieldName = getGeometryFieldName(record);				
+    				GeometryFactory geometryFactory = JTSFactoryFinder.getGeometryFactory();
+    				WKTReader reader = new WKTReader(geometryFactory);
+    				// Add geometry
+    				Geometry geo = reader.read(record.getAsString(geomFieldName));					
+    	            if (tran_type.equals("Simplify")) {
+    	            	geo = DouglasPeuckerSimplifier.simplify(geo, distance);
+    	            }
+    	            else if (tran_type.equals("Buffer")){
+    	            	geo = geo.buffer(distance, quadrantSegments, endCapStyle);
+    	            }
+    	            else if (tran_type.equals("Centroid")){ 
+    	            	geo = geo.getCentroid();
+    	            }
+    				if (!bCreatedSchema) {					
+    					switch (geo.getGeometryType()) {
+    					case "MultiLineString":
+    						geometryClass = MultiLineString.class;
+    						break;
+    					case "LineString":
+    						geometryClass = LineString.class;
+    						break;
+    					case "MultiPolygon":
+    						geometryClass = MultiPolygon.class;
+    						break;
+    					case "Polygon":
+    						geometryClass = Polygon.class;
+    						break;
+    					case "MultiPoint":
+    						geometryClass = MultiPoint.class;
+    						break;
+    					case "Point":
+    						geometryClass = Point.class;
+    						break;
+    					case "GeometryCollection":
+    						geometryClass = GeometryCollection.class;
+    						break;
+    					default:
+    						geometryClass = MultiLineString.class;
+    					}
+    					Map<String, Class<?>> attributes = createAttributeTableFromRecordSet(avroReader, geomFieldName);
+    					TYPE = generateFeatureType(collectionName, crs_source, SHP_GEO_COLUMN, geometryClass, attributes);
+    					featureBuilder = new SimpleFeatureBuilder(TYPE);
+    					bCreatedSchema = true;
+    				}								
+    				// Add attributes
+    				int size = record.getSchema().getFieldCount();
+    				Object[] objs = new Object[size];
+    				for (int i = 0; i < size; i++) {
+    					String fName = record.getSchema().getFieldNames().get(i);
+    					if ((fName == geomFieldName) && (geomFieldName != SHP_GEO_COLUMN))
+    						fName = SHP_GEO_COLUMN;
+    					int index = featureBuilder.getFeatureType().indexOf(fName);
+    					if (fName.equals(geomFieldName.toLowerCase()) || fName.equals(geomFieldName.toUpperCase()) || fName.equals(SHP_GEO_COLUMN))
+    						objs[index] = geo;
+    					else
+    						objs[index] = record.getValue(fName);
+
+    				}
+    				featureBuilder.addAll(objs);
+    				SimpleFeature feature = featureBuilder.buildFeature(null);
+    				features.add(feature);
+    			}    			
+    		}
 			return new ListFeatureCollection(TYPE, features);
 		} catch (IOException | MalformedRecordException | ParseException | MismatchedDimensionException e) {
 			logger.error("Could not create SimpleFeatureCollection because {}", new Object[] { e });

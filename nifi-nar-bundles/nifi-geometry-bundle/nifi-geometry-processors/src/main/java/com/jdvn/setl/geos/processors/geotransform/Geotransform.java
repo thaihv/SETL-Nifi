@@ -61,6 +61,7 @@ import org.apache.nifi.serialization.record.Record;
 import org.apache.nifi.serialization.record.RecordSchema;
 import org.apache.nifi.util.StopWatch;
 import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.geometry.jts.ReferencedEnvelope;
 import org.geotools.referencing.CRS;
 import org.opengis.referencing.FactoryException;
 import org.opengis.referencing.crs.CoordinateReferenceSystem;
@@ -77,6 +78,11 @@ public class Geotransform extends AbstractProcessor {
     public static final AllowableValue Simplify = new AllowableValue("Simplify", "Simplify", "Simplify all features in dataflow");
     public static final AllowableValue Buffer = new AllowableValue("Buffer", "Buffer", "Buffering for each features in dataflow");
     public static final AllowableValue Centroid = new AllowableValue("Centroid", "Centroid", "Calculate centroid for each features in dataflow");
+    public static final AllowableValue Union = new AllowableValue("Union", "Union", "Calculate union for all features in dataflow");
+    public static final AllowableValue Intersects = new AllowableValue("Intersects", "Intersects", "Calculate intersects for all features in dataflow");
+    public static final AllowableValue Bounds = new AllowableValue("Bounds", "Bounds", "Calculate bounds of all features in dataflow");
+    public static final AllowableValue Differences = new AllowableValue("Differences", "Differences", "Calculate differences of all features in dataflow");
+    public static final AllowableValue Envelope = new AllowableValue("Envelope", "Envelope", "Calculate bbox of all features in dataflow");
     
     public static final AllowableValue CAP_ROUND = new AllowableValue("1", "CAP_ROUND", "The ends of linestrings as round");
     public static final AllowableValue CAP_FLAT = new AllowableValue("2", "CAP_FLAT", "The ends of linestrings as flat");
@@ -87,7 +93,7 @@ public class Geotransform extends AbstractProcessor {
             .displayName("Tranformation Type")
             .description("Which type of transformation to execute for incomping datafile. It could be Simplify, Buffering or Centroid")
             .required(true)
-            .allowableValues(Simplify, Buffer, Centroid)
+            .allowableValues(Simplify, Buffer, Centroid, Union, Intersects, Bounds, Differences, Envelope)
             .defaultValue(Simplify.getValue())
             .build();
 	public static final PropertyDescriptor DISTANCE = new PropertyDescriptor.Builder()
@@ -188,7 +194,18 @@ public class Geotransform extends AbstractProcessor {
 						}
 						
 						
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithGeoTransform("featurecollection", reader, crs_source, transfrom_type, map);												
+						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithGeoTransform("featurecollection", reader, crs_source, transfrom_type, map);	
+						
+						// Center and evnelope for all features, for fragments in to re-calculate
+						String center = null;
+						String envelope = null;								
+						int maxRecord = collection.size(); // Call ones like this before getCharset function, why?	
+						if (maxRecord > 0) {
+							ReferencedEnvelope r = collection.getBounds();
+							center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+							envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";					
+						}
+												
 						final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(collection);
 						List<Record> records = GeoUtils.getNifiRecordsFromFeatureCollection(collection);
 
@@ -203,6 +220,10 @@ public class Geotransform extends AbstractProcessor {
 								writer.flush();
 							}
 						});
+						
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
 						session.getProvenanceReporter().receive(transformed, flowFile.getAttributes().get(GeoUtils.GEO_URL), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
 						session.transfer(transformed, REL_SUCCESS);
 						session.adjustCounter("Records Written", records.size(), false);
