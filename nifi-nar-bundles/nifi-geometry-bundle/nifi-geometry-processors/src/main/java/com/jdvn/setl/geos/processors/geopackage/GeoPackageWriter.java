@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashSet;
@@ -238,12 +239,15 @@ public class GeoPackageWriter extends AbstractSessionFactoryProcessor {
 	            							final String srs = flowFile.getAttributes().get(GeoAttributes.CRS.key());
 	            							final String len = flowFile.getAttributes().get(GeoUtils.GEO_TTLE_MATRIX_BYTES_LEN);
 	            							final String encodedTileMatrices = flowFile.getAttributes().get(GeoAttributes.GEO_TILE_MATRIX.key());
-	            							final String envelop = flowFile.getAttributes().get(GeoAttributes.GEO_ENVELOPE.key());
-	            							double x1 = Double.parseDouble(envelop.substring(1, envelop.indexOf(":")));
-	            							double x2 = Double.parseDouble(envelop.substring(envelop.indexOf(":") + 1, envelop.indexOf(",")));
-	            							double y1 = Double.parseDouble(envelop.substring(envelop.indexOf(",") + 1, envelop.lastIndexOf(":")));
-	            							double y2 = Double.parseDouble(envelop.substring(envelop.lastIndexOf(":") + 1, envelop.lastIndexOf("]")));
 	            							
+	            							String envelope = flowFile.getAttributes().get(GeoAttributes.GEO_ENVELOPE.key());	            							
+            								envelope = envelope.substring(1, envelope.length() - 1);
+            								List<String> xy = Arrays.asList(envelope.split(","));					
+            								double x1 = Double.valueOf(xy.get(0).trim().replace("[", ""));
+            								double x2 = Double.valueOf(xy.get(1).trim().replace("]", ""));
+            								double y1 = Double.valueOf(xy.get(2).trim().replace("[", ""));
+            								double y2 = Double.valueOf(xy.get(3).trim().replace("]", ""));
+            									            							
 	            							byte[] decodedListTileMatrices = Base64.getDecoder().decode(encodedTileMatrices);
 	            							
 	            							List<TileMatrix> listTileMatices= GeoUtils.unzipTileMatrixFromBytes(decodedListTileMatrices, Integer.valueOf(len));

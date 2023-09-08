@@ -281,8 +281,8 @@ public class GeoPackageReader extends AbstractProcessor {
                 TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
                 String imgType = GeoUtils.getImageFormat(r.next().getData());
                 int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
-                String szEnvelop = envelope.toString().substring(envelope.toString().indexOf("["));
-                String center  = "[" + envelope.centre().x + ", " + envelope.centre().y + "]";
+                String szEnvelop = "[[" + String.valueOf(envelope.getMinX()) + "," + String.valueOf(envelope.getMaxX()) + "]" +  ", [" + String.valueOf(envelope.getMinY()) + "," + String.valueOf(envelope.getMaxY()) + "]]";
+                String center  = "[" + String.valueOf(envelope.centre().getX()) + "," + String.valueOf(envelope.centre().getY()) + "]";
                 
                 final RecordSchema recordSchema = GeoUtils.createTileRecordSchema(t);
                 

@@ -108,17 +108,16 @@ public class GeometryViewerController extends HttpServlet {
 					final ObjectMapper mapper = new ObjectMapper();
 					final Object objectJson = mapper.readValue(json, Object.class);
 					formatted = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(objectJson);
-
+					if ("application/avro+geotiles".equals(contentType)) {
+						request.setAttribute("zoom_min", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN));
+						request.setAttribute("zoom_max", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX));							
+					}
 					
 					// defer to the jsp
 					contentType = "application/json";
 					request.setAttribute("mode", contentType);
 					request.setAttribute("content", formatted);
 					if (DisplayMode.Map.equals(content.getDisplayMode())) {
-						if ("application/avro+geotiles".equals(contentType)) {
-							request.setAttribute("zoom_min", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MIN));
-							request.setAttribute("zoom_max", request.getAttribute(ViewableContent.GEO_CONTENT_ZOOM_MAX));							
-						}
 						request.setAttribute("envelope", request.getAttribute(ViewableContent.GEO_CONTENT_ENVELOPE));
 						request.setAttribute("center", request.getAttribute(ViewableContent.GEO_CONTENT_CENTER));
 						request.setAttribute("crs", request.getAttribute(ViewableContent.GEO_CONTENT_CRS).toString().replaceAll("[\\r\\n\\t ]", ""));
