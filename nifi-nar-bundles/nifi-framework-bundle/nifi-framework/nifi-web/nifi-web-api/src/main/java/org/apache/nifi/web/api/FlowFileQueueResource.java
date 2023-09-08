@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.concurrent.TimeUnit;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -62,7 +63,13 @@ import org.apache.nifi.web.api.entity.FlowFileEntity;
 import org.apache.nifi.web.api.entity.ListingRequestEntity;
 import org.apache.nifi.web.api.request.ClientIdParameter;
 import org.apache.nifi.web.api.request.LongParameter;
+import org.apache.nifi.web.security.util.CacheKey;
 import org.apache.nifi.web.util.GeoUtils;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.feature.FeatureCollection;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -83,7 +90,8 @@ public class FlowFileQueueResource extends ApplicationResource {
 
     private NiFiServiceFacade serviceFacade;
     private Authorizer authorizer;
-
+    @SuppressWarnings("rawtypes")
+	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
     /**
      * Populate the URIs for the specified flowfile listing.
      *
@@ -364,13 +372,24 @@ public class FlowFileQueueResource extends ApplicationResource {
         // NOTE - deferred authorization so we can consider flowfile attributes in the access decision
 
         // get the uri of the request
-        final String uri = generateResourceUri("flowfile-queues", connectionId, "flowfiles", flowFileUuid, "content");
-
-        // get an input stream to the content
+        final String uri = generateResourceUri("flowfile-queues", connectionId, "flowfiles", flowFileUuid, "content");        
         final DownloadableContent content = serviceFacade.getContent(connectionId, flowFileUuid, uri);
-
-        System.out.println("This request with SessionID: " + request.getSession(true).getId());
-        ByteArrayInputStream bais = GeoUtils.getImageTileFromContent(content, z, x, y);
+        
+		ByteArrayInputStream bais = null;
+		if (content.getGeoType().equals("Features")) {
+			String mapKey = uri;
+			CacheKey key = new CacheKey(mapKey);
+			if (mapViewCache.getIfPresent(key) == null) {
+				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(content);
+				mapViewCache.put(key, drawablefc);
+				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
+				System.out.println(mapKey + ": " + drawablefc.getBounds());
+			} else {
+				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
+			}
+		} else if (content.getGeoType().equals("Tiles")){
+			bais = GeoUtils.getImageTileFromDownloadableContent(content, z, x, y);
+		}
 
 		return generateOkResponse(bais).build();
     }

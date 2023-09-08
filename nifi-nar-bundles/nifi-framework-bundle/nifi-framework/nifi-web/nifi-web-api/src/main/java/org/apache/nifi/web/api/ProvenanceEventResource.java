@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.concurrent.TimeUnit;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.Consumes;
@@ -48,7 +49,13 @@ import org.apache.nifi.web.api.dto.provenance.ProvenanceEventDTO;
 import org.apache.nifi.web.api.entity.ProvenanceEventEntity;
 import org.apache.nifi.web.api.entity.SubmitReplayRequestEntity;
 import org.apache.nifi.web.api.request.LongParameter;
+import org.apache.nifi.web.security.util.CacheKey;
 import org.apache.nifi.web.util.GeoUtils;
+import org.geotools.data.simple.SimpleFeatureCollection;
+import org.geotools.feature.FeatureCollection;
+
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -69,7 +76,8 @@ import io.swagger.annotations.Authorization;
 public class ProvenanceEventResource extends ApplicationResource {
 
     private NiFiServiceFacade serviceFacade;
-
+    @SuppressWarnings("rawtypes")
+	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
     /**
      * Gets the content for the input of the specified event.
      *
@@ -299,9 +307,22 @@ public class ProvenanceEventResource extends ApplicationResource {
         final String uri = generateResourceUri("provenance", "events", String.valueOf(id.getLong()), "content", "output");
 
         // get an input stream to the content
-        final DownloadableContent content = serviceFacade.getContent(id.getLong(), uri, ContentDirection.OUTPUT);
-        
-        ByteArrayInputStream bais = GeoUtils.getImageTileFromContent(content, z, x, y);
+        final DownloadableContent content = serviceFacade.getContent(id.getLong(), uri, ContentDirection.OUTPUT);        
+		ByteArrayInputStream bais = null;
+		if (content.getGeoType().equals("Features")) {
+			String mapKey = uri;
+			CacheKey key = new CacheKey(mapKey);
+			if (mapViewCache.getIfPresent(key) == null) {
+				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(content);
+				mapViewCache.put(key, drawablefc);
+				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
+				System.out.println(mapKey + ": " + drawablefc.getBounds());
+			} else {
+				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
+			}
+		} else if (content.getGeoType().equals("Tiles")){
+			bais = GeoUtils.getImageTileFromDownloadableContent(content, z, x, y);
+		}
 
 		return generateOkResponse(bais).build();
     }
