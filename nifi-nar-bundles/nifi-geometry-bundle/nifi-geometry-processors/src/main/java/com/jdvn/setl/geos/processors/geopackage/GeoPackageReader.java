@@ -280,9 +280,11 @@ public class GeoPackageReader extends AbstractProcessor {
                 CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromGeoPackageTilesTable(file,geoPackage.tiles().get(i));
                 TileReader r = geoPackage.reader(t, null, null, null, null, null, null);
                 String imgType = GeoUtils.getImageFormat(r.next().getData());
-                int minMax[] = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
+                int minMax[]   = GeoUtils.getMinMaxTilesZoomTileEntry(geoPackage, t);
+                int ceterXY[]  = GeoUtils.getCenterTileOfTileEntry(geoPackage, t);
+                
                 String szEnvelop = "[[" + String.valueOf(envelope.getMinX()) + "," + String.valueOf(envelope.getMaxX()) + "]" +  ", [" + String.valueOf(envelope.getMinY()) + "," + String.valueOf(envelope.getMaxY()) + "]]";
-                String center  = "[" + String.valueOf(envelope.centre().getX()) + "," + String.valueOf(envelope.centre().getY()) + "]";
+                String center  = "[" + String.valueOf(ceterXY[0]) + "," + String.valueOf(ceterXY[1]) + "]";
                 
                 final RecordSchema recordSchema = GeoUtils.createTileRecordSchema(t);
                 

@@ -15,6 +15,7 @@ import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -1045,6 +1046,35 @@ public class GeoUtils {
 		}
 		return minMax;
 	}
+	
+	public static int[] getCenterTileOfTileEntry(final GeoPackage geoPackage, TileEntry tileEntry) {
+
+		int zoom = getMinMaxTilesZoomTileEntry(geoPackage,tileEntry)[0];
+		int centerXY[] = { 1, 20};
+
+	    List<Integer> xArray = new ArrayList<Integer>();
+	    List<Integer> yArray = new ArrayList<Integer>();
+		try (TileReader r = geoPackage.reader(tileEntry, null, null, null, null, null, null)) {
+			
+			while (r.hasNext()) {
+				Tile tile = r.next();
+				if (tile.getZoom() == zoom) {
+					xArray.add(tile.getRow());
+					yArray.add(tile.getColumn());					
+				}
+			}
+			r.close();
+			Collections.sort(xArray);
+			Collections.sort(yArray);
+			
+			centerXY[0] = xArray.get((xArray.size() / 2));
+			centerXY[1] = yArray.get((yArray.size() / 2));
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return centerXY;
+	}	
 	public static boolean hasColumn(ResultSetMetaData rsmd, String columnName) throws SQLException {
 	    int columns = rsmd.getColumnCount();
 	    for (int x = 1; x <= columns; x++) {

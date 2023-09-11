@@ -43,7 +43,7 @@
 			this._resetView();
 			this._update();
 			// For first step, store the tile 0,0 boundary to fit in
-			myTileBound = this._tileCoordsToBounds(L.point({x: 0, y: 0, z: zoom_init}));
+			myTileBound = this._tileCoordsToBounds(L.point({x: center[0], y: center[1], z: zoom_init}));
 		}
 	    
 		var grid = new L.GridLayer();
@@ -75,10 +75,6 @@
 		  return tile;
 		}	    
 		var geocenter = [105.65287399291995,20.975032806396456];  // Ha Noi,  Vietnam as default location 
-		if (center !== null)
-			geocenter = proj4(crs,'EPSG:4326',center);		
-	    // Geopackage always set XY tiles at 0,0 as upper left
-	    // need upgrading for other geo tiles types
 		var map = L.map('map', {    
 			center: [geocenter[1],geocenter[0]], 
 		    zoom: zoom_init,
