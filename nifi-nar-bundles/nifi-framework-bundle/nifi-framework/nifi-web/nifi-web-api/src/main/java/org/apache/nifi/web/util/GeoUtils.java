@@ -186,7 +186,7 @@ public class GeoUtils {
 
 		return baos.toByteArray();
 	}
-    private static byte[] imageFromFeatures(SimpleFeatureCollection featurecollection, ReferencedEnvelope bounds, Style style, int w, int h) {
+    private static byte[] imageFromFeatureCollection(SimpleFeatureCollection featurecollection, ReferencedEnvelope bounds, Style style, int w, int h) {
     	ByteArrayOutputStream baos = new ByteArrayOutputStream();
         if (bounds != null) {
     		if (featurecollection != null) {
@@ -542,7 +542,7 @@ public class GeoUtils {
 			Style style = createStyle();
 			
 			if (env_0.intersects(new Coordinate(x_i1,y_i1), new Coordinate(x_i2,y_i2))) {
-				bais = new ByteArrayInputStream(imageFromFeatures(content, env_i, style, 256, 256));
+				bais = new ByteArrayInputStream(imageFromFeatureCollection(content, env_i, style, 256, 256));
 			}
 		} catch (NoSuchAuthorityCodeException e) {
 			// TODO Auto-generated catch block

@@ -77,7 +77,7 @@ public class ProvenanceEventResource extends ApplicationResource {
 
     private NiFiServiceFacade serviceFacade;
     @SuppressWarnings("rawtypes")
-	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
+	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     /**
      * Gets the content for the input of the specified event.
      *
@@ -316,7 +316,6 @@ public class ProvenanceEventResource extends ApplicationResource {
 				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(content);
 				mapViewCache.put(key, drawablefc);
 				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
-				System.out.println(mapKey + ": " + drawablefc.getBounds());
 			} else {
 				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
 			}

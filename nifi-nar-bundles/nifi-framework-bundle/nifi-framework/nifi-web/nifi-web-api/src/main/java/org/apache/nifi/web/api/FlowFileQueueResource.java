@@ -91,7 +91,7 @@ public class FlowFileQueueResource extends ApplicationResource {
     private NiFiServiceFacade serviceFacade;
     private Authorizer authorizer;
     @SuppressWarnings("rawtypes")
-	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
+	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     /**
      * Populate the URIs for the specified flowfile listing.
      *
@@ -383,7 +383,6 @@ public class FlowFileQueueResource extends ApplicationResource {
 				final SimpleFeatureCollection drawablefc = GeoUtils.drawableFeatureCollectionFromDownloadableContent(content);
 				mapViewCache.put(key, drawablefc);
 				bais = GeoUtils.getImageTileFromFeatureCollection(drawablefc, z, x, y);
-				System.out.println(mapKey + ": " + drawablefc.getBounds());
 			} else {
 				bais = GeoUtils.getImageTileFromFeatureCollection((SimpleFeatureCollection) mapViewCache.getIfPresent(key), z, x, y);
 			}
