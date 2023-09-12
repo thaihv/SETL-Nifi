@@ -173,7 +173,12 @@
             <groupId>org.geotools</groupId>
             <artifactId>gt-epsg-hsql</artifactId>
             <version>${geotools.version}</version>                 
-        </dependency>         		        
+        </dependency> 
+		<dependency>
+		   <groupId>org.geotools</groupId>
+		   <artifactId>gt-feature-pregeneralized</artifactId>
+		   <version>${geotools.version}</version>
+		 </dependency>                		        
         <dependency>
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-web-content-access</artifactId>
