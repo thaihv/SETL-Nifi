@@ -1,4 +1,4 @@
-package com.jdvn.setl.geos.processors.rasters;
+package com.jdvn.setl.geos.processors.mapviewer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 

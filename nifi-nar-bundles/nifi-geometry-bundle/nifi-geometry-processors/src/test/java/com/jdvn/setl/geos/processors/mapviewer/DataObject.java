@@ -1,4 +1,4 @@
-package com.jdvn.setl.geos.processors.rasters;
+package com.jdvn.setl.geos.processors.mapviewer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

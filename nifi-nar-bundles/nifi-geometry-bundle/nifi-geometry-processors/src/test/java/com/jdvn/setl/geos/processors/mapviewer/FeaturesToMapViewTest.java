@@ -1,5 +1,5 @@
 
-package com.jdvn.setl.geos.processors.rasters;
+package com.jdvn.setl.geos.processors.mapviewer;
 
 
 import static org.junit.Assert.assertEquals;
