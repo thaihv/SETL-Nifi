@@ -105,7 +105,6 @@ public class FetchGSS extends AbstractQueryGSSTable {
         pds.add(WHERE_CLAUSE);
         pds.add(SQL_QUERY);
         pds.add(RECORD_WRITER_FACTORY);
-        pds.add(FETCH_SIZE);
         pds.add(MAX_ROWS_PER_FLOW_FILE);
         pds.add(OUTPUT_BATCH_SIZE);
         pds.add(MAX_FRAGMENTS);

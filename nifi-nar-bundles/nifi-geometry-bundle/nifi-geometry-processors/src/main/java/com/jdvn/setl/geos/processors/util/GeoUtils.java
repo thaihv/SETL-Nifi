@@ -1266,12 +1266,14 @@ public class GeoUtils {
 
 			
 			rs.close();
-			
+			stmt.close();
 			return md;
 		}
 		finally {
 			if (rs != null && !rs.isClosed())
 				rs.close();
+			if (stmt != null && !stmt.isClosed())
+				stmt.close();
 		}
 	}
 	public static byte[] zipTileMatrixToBytes(final String jsonTileMatricies){

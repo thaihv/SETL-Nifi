@@ -39,7 +39,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
-import org.apache.nifi.components.AllowableValue;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.components.state.Scope;
 import org.apache.nifi.components.state.StateMap;
@@ -73,37 +72,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
     public static final String RESULT_URL = "source.url";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
     public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
-
-    private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
-            String.valueOf(Connection.TRANSACTION_READ_COMMITTED),
-            "TRANSACTION_READ_COMMITTED"
-    );
-    private static AllowableValue TRANSACTION_READ_UNCOMMITTED = new AllowableValue(
-            String.valueOf(Connection.TRANSACTION_READ_UNCOMMITTED),
-            "TRANSACTION_READ_UNCOMMITTED"
-    );
-    private static AllowableValue TRANSACTION_REPEATABLE_READ = new AllowableValue(
-            String.valueOf(Connection.TRANSACTION_REPEATABLE_READ),
-            "TRANSACTION_REPEATABLE_READ"
-    );
-    private static AllowableValue TRANSACTION_NONE =  new AllowableValue(
-            String.valueOf(Connection.TRANSACTION_NONE),
-            "TRANSACTION_NONE"
-    );
-    private static AllowableValue TRANSACTION_SERIALIZABLE = new AllowableValue(
-            String.valueOf(Connection.TRANSACTION_SERIALIZABLE),
-            "TRANSACTION_SERIALIZABLE"
-    );
-
-    public static final PropertyDescriptor FETCH_SIZE = new PropertyDescriptor.Builder()
-            .name("Fetch Size")
-            .description("The number of result rows to be fetched from the result set at a time. This is a hint to the database driver and may not be "
-                    + "honored and/or exact. If the value specified is zero, then the hint is ignored.")
-            .defaultValue("0")
-            .required(true)
-            .addValidator(StandardValidators.NON_NEGATIVE_INTEGER_VALIDATOR)
-            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
-            .build();
 
     public static final PropertyDescriptor MAX_ROWS_PER_FLOW_FILE = new PropertyDescriptor.Builder()
             .name("qdbt-max-rows")
@@ -142,13 +110,6 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
             .build();
 
-    public static final PropertyDescriptor TRANS_ISOLATION_LEVEL = new PropertyDescriptor.Builder()
-            .name("transaction-isolation-level")
-            .displayName("Transaction Isolation Level")
-            .description("This setting will set the transaction isolation level for the database connection for drivers that support this setting")
-            .required(false)
-            .allowableValues(TRANSACTION_NONE,TRANSACTION_READ_COMMITTED, TRANSACTION_READ_UNCOMMITTED, TRANSACTION_REPEATABLE_READ, TRANSACTION_SERIALIZABLE)
-            .build();
 
     @Override
     public Set<Relationship> getRelationships() {
@@ -432,11 +393,17 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 									Integer.toString(fragmentIndex)));
 						}
 					}
-				}
+				}				
+				resultSet.close();
+				st.close();												
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+				try { 
+					if (resultSet != null && !resultSet.isClosed()) 
+						resultSet.close(); 
+				} 
+				catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 			
@@ -454,7 +421,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			try { if (st != null) st.close(); } catch (Exception e) {};	
+			try { 
+				if (st != null && !st.isClosed()) 
+					st.close(); 
+			} 
+			catch (Exception e) {};	
 			session.commitAsync();
 		}
 	}
@@ -473,10 +444,15 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				}else
 					columns.add(fieldName + " AS " + GeoUtils.SETL_UUID);
 			}
+			stmt.close();
 		} catch (SQLException e) {
 			e.printStackTrace();
 		} finally{
-			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
+			try { 
+				if (stmt != null && !stmt.isClosed()) 
+					stmt.close(); 
+			} 
+			catch (Exception e) {};	
 		}
 		return columns;		
 	}
@@ -515,13 +491,18 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		LayerMetadata md = null;
 		Statement stmt = null;
+		String username = null;
 		try {
-			stmt = con.createStatement();
-			md = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, stmt);
-		} catch (SQLException e1) {
-			e1.printStackTrace();
+			stmt     = con.createStatement();
+			username = con.getMetaData().getUserName();
+			md = GeoUtils.getLayerMetadata(username, tableName, stmt);
+		} catch (SQLException e) {
+			e.printStackTrace();
 		} finally{
-			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
+			try { 
+				if (stmt != null && !stmt.isClosed()) 
+					stmt.close(); 
+			} catch (Exception e) {};	
 		}
 		
 		String srs_target = null;
@@ -704,11 +685,16 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 									Integer.toString(fragmentIndex)));
 						}
 					}
-				}
+				}				
+				resultSet.close();
+				st.close();				
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+				try { 
+					if (resultSet != null && !resultSet.isClosed()) 
+						resultSet.close(); 
+				} catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 
@@ -727,7 +713,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			try { if (st != null) st.close(); } catch (Exception e) {};
+			try { 
+				if (st != null && !st.isClosed()) 
+					st.close(); 
+			} 
+			catch (Exception e) {};
 			session.commitAsync();
 		}
 	}
@@ -889,11 +879,17 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 									Integer.toString(fragmentIndex)));
 						}
 					}
-				}
+				}				
+				resultSet.close();
+				st.close();				
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
-				try { if (resultSet != null) resultSet.close(); } catch (Exception e) {};
+				try { 
+					if (resultSet != null & !resultSet.isClosed()) 
+						resultSet.close();
+				} 
+				catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
 			
@@ -911,7 +907,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 				getLogger().error("{} failed to update State Manager, maximum observed values will not be recorded",
 						new Object[] { this, ioe });
 			}
-			try { if (st != null) st.close(); } catch (Exception e) {};
+			try { 
+				if (st != null && !st.isClosed()) 
+					st.close();
+			} 
+			catch (Exception e) {};
 			session.commitAsync();
 		}
 	}	

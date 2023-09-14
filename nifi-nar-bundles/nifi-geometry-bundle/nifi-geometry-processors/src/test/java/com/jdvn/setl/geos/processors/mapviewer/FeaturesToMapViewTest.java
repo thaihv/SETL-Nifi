@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.Nonnull;
 import javax.imageio.ImageIO;
 
+import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.geotools.TestData;
 import org.geotools.data.DefaultRepository;
@@ -572,7 +573,7 @@ public class FeaturesToMapViewTest {
         memDS.addFeature(feature_gen2);
     }
     
-    private static void createShapeFilePyramd() throws IOException {
+    private static void createShapeFilePyramdTestData() throws IOException {
 
         File baseDir = new File("target" + File.separator + "0");
         if (baseDir.exists() == false) baseDir.mkdir();
@@ -626,12 +627,63 @@ public class FeaturesToMapViewTest {
                     "5.0,10.0,20.0,50.0"
                 });
     }    
-    
-    @Test
-    public void pregeneralizedSHPFeatures() throws Exception {
+    private static void createShapeFilePyramd(File file) throws IOException {
 
-    	createShapeFilePyramd();
-    	
+    	String fileName = FilenameUtils.removeExtension(file.getName());
+  	
+        File baseDir = new File("target" + File.separator + "0");
+        if (baseDir.exists() == false) baseDir.mkdir();
+        else return; // already done
+
+        // ///////// create property file for streams
+        String propFileName =
+                "target" + File.separator + "0" + File.separator + fileName + ".properties";
+        File propFile = new File(propFileName);
+        try (FileOutputStream out = new FileOutputStream(propFile)) {
+            String line = ShapefileDataStoreFactory.URLP.key + "=" + "file:target/0/" + fileName + ".shp\n";
+            out.write(line.getBytes());
+        }
+
+        URL url = file.toURI().toURL();
+
+        ShapefileDataStore shapeDS =
+                (ShapefileDataStore) new ShapefileDataStoreFactory().createDataStore(url);
+
+        Map<String, Serializable> params = new HashMap<>();
+        FileDataStoreFactorySpi factory = new ShapefileDataStoreFactory();
+        params.put(
+                ShapefileDataStoreFactory.URLP.key,
+                new File("target/0/" + fileName + ".shp").toURI().toURL());
+        ShapefileDataStore ds = (ShapefileDataStore) factory.createNewDataStore(params);
+
+        SimpleFeatureSource fs = shapeDS.getFeatureSource(shapeDS.getTypeNames()[0]);
+
+        ds.createSchema(fs.getSchema());
+        ds.forceSchemaCRS(fs.getSchema().getCoordinateReferenceSystem());
+        try (FeatureWriter<SimpleFeatureType, SimpleFeature> writer =
+                        ds.getFeatureWriter(ds.getTypeNames()[0], Transaction.AUTO_COMMIT);
+                SimpleFeatureIterator it = fs.getFeatures().features()) {
+            while (it.hasNext()) {
+                SimpleFeature f = it.next();
+                SimpleFeature fNew = writer.next();
+                fNew.setAttributes(f.getAttributes());
+                writer.write();
+            }
+        }
+        ds.dispose();
+        shapeDS.dispose();
+
+        Toolbox tb = new Toolbox();
+        tb.parse(
+                new String[] {
+                    "generalize",
+                    "target" + File.separator + "0" + File.separator + fileName + ".shp",
+                    "target",
+                    "1000.0, 5000.0, 10000.0"
+                });
+    }    
+    @Test
+    public void pregeneralizedSHPFeatures() throws Exception {    	
     	POINTMAP = new HashMap<>();
         POINTMAP.put(0.0, new HashMap<>());
         POINTMAP.put(5.0, new HashMap<>());
@@ -689,7 +741,6 @@ public class FeaturesToMapViewTest {
                 }
             }
             
-
             Query qGeneralization = new  Query(typeName);
             qGeneralization.getHints().put(Hints.GEOMETRY_DISTANCE, 17.0);
             fCollection = (SimpleFeatureCollection) fs.getFeatures(qGeneralization);
@@ -701,25 +752,20 @@ public class FeaturesToMapViewTest {
                     System.out.println(simplified);                	
                 }
             }
-            
-            qGeneralization.getHints().put(Hints.GEOMETRY_DISTANCE, 22.0);
-            fCollection = (SimpleFeatureCollection) fs.getFeatures(qGeneralization);
-            
-            try (SimpleFeatureIterator iterator = (SimpleFeatureIterator) fCollection.features()) {
-                if (iterator.hasNext()) {
-                    simplified = (Geometry) iterator.next().getDefaultGeometry();
-                    System.out.println(simplified);                	
-                }
-            }            
-            
-            
+                           
         } catch (IOException ex) {
             java.util.logging.Logger.getGlobal().log(java.util.logging.Level.INFO, "", ex);
             Assert.fail();
         }
     }
     @Test
-    public void pregeneralizedFeatureCollection() throws Exception {
-    	
-    }    
+    public void createPregeneralizedSHPUsingToolBox() throws Exception {
+    	createShapeFilePyramdTestData();
+    }
+    @Test
+    public void pregeneralizedFromFeatureCollection() throws Exception {
+    	File file = new File("src/test/resources/admzone/SPC_CADAMAP.shp");
+    	createShapeFilePyramd(file);
+
+    }       
 }
