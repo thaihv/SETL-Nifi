@@ -235,6 +235,9 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		mConnectionPool.setMaxIdle(maxIdle);
 		mConnectionPool.setMinIdle(minIdle);
 		mConnectionPool.setMaxWaitMillis(maxWaitMillis);
+		
+		mConnectionPool.setBlockWhenExhausted(true);
+		
 		mConnectionPool.setTestOnBorrow(true);
 		mConnectionPool.setTestOnReturn(true);
 

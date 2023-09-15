@@ -91,6 +91,7 @@ import org.opengis.referencing.crs.CoordinateReferenceSystem;
 import org.opengis.referencing.operation.MathTransform;
 import org.opengis.referencing.operation.TransformException;
 
+import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.cci.gss.jdbc.driver.IGSSDatabaseMetaData;
 import com.cci.gss.jdbc.driver.IGSSPreparedStatement;
 import com.cci.gss.jdbc.driver.IGSSResultSetMetaData;
@@ -668,7 +669,7 @@ public class PutGSS extends AbstractProcessor {
         final String geo_src_type = flowFile.getAttribute(GeoUtils.GEO_DB_SRC_TYPE);
         final String geo_column = flowFile.getAttribute(GEO_COLUMN);
         final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-        final String srs_target = GeoUtils.getLayerMetadata(con.getMetaData().getUserName(), tableName, con.createStatement()).mCrs;
+        final String srs_target = GeoUtils.getLayerMetadata(tableName, (IGSSConnection)con).mCrs;
         
         CoordinateReferenceSystem sourceCRS = null;
         CoordinateReferenceSystem targetCRS = null;

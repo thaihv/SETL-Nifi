@@ -217,9 +217,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
-		IGSSStatement st = null;
+		IGSSStatement stmt = null;
 		try {
-			st = con.createStatement();
+			stmt = con.createStatement();
 			
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
@@ -237,7 +237,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
+			final IGSSResultSet rs = stmt.executeQuery(selectQuery);
 			try {
 				
 				int fragmentIndex = 0;
@@ -250,7 +250,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					try {
 						fileToProcess = session.write(fileToProcess, out -> {
 							try {
-								nrOfRows.set(sqlWriter.writeResultSet(resultSet, out, getLogger(), maxValCollector));
+								nrOfRows.set(sqlWriter.writeResultSet(rs, out, getLogger(), maxValCollector));
 							} catch (Exception e) {
 								throw new ProcessException("Error during database query or conversion of records.", e);
 							}
@@ -273,7 +273,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
 						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 
-						IGSSResultSetMetaData rsmd = resultSet.getMetaData();
+						IGSSResultSetMetaData rsmd = rs.getMetaData();
 						if (rsmd.hasGeometryColumn()) {
 							attributesToAdd.put(GeoAttributes.CRS.key(), rsmd.getWKTCoordinateReferenceSystem());
 							attributesToAdd.put(GEO_COLUMN, rsmd.getGeometryColumn());
@@ -394,14 +394,14 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}				
-				resultSet.close();
-				st.close();												
+				rs.close();
+				stmt.close();												
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
 				try { 
-					if (resultSet != null && !resultSet.isClosed()) 
-						resultSet.close(); 
+					if (rs != null && !rs.isClosed()) 
+						rs.close(); 
 				} 
 				catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
@@ -422,8 +422,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						new Object[] { this, ioe });
 			}
 			try { 
-				if (st != null && !st.isClosed()) 
-					st.close(); 
+				if (stmt != null && !stmt.isClosed()) 
+					stmt.close(); 
 			} 
 			catch (Exception e) {};	
 			session.commitAsync();
@@ -490,24 +490,15 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final Map<String, String> statePropertyMap = new HashMap<>(stateMap.toMap());
 
 		LayerMetadata md = null;
-		Statement stmt = null;
-		String username = null;
 		try {
-			stmt     = con.createStatement();
-			username = con.getMetaData().getUserName();
-			md = GeoUtils.getLayerMetadata(username, tableName, stmt);
-		} catch (SQLException e) {
-			e.printStackTrace();
-		} finally{
-			try { 
-				if (stmt != null && !stmt.isClosed()) 
-					stmt.close(); 
-			} catch (Exception e) {};	
+			md = GeoUtils.getLayerMetadata(tableName, con);
+		} catch (SQLException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
 		}
-		
+				
 		String srs_target = null;
-		String geo_table = null;
-		
+		String geo_table = null;		
 		if (md != null) {
 			srs_target = md.mCrs;
 			geo_table = "G" + Integer.toString(md.mThemeId);
@@ -521,10 +512,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQueryUpdate(dbAdapter, tableName, atrColumns, geo_table, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
-		IGSSStatement st = null;
+		IGSSStatement stmt = null;
 		try {
 
-			st = con.createStatement();
+			stmt = con.createStatement();
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
 			try {
@@ -539,7 +530,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
+			final IGSSResultSet rs = stmt.executeQuery(selectQuery);
 			try {
 				
 				int fragmentIndex = 0;
@@ -553,7 +544,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					try {
 						fileToProcess = session.write(fileToProcess, out -> {
 							try {
-								nrOfRows.set(sqlWriter.writeResultSet(resultSet, out, getLogger(), maxValCollector));
+								nrOfRows.set(sqlWriter.writeResultSet(rs, out, getLogger(), maxValCollector));
 							} catch (Exception e) {
 								throw new ProcessException("Error during database query or conversion of records.", e);
 							}
@@ -686,14 +677,14 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}				
-				resultSet.close();
-				st.close();				
+				rs.close();
+				stmt.close();				
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
 				try { 
-					if (resultSet != null && !resultSet.isClosed()) 
-						resultSet.close(); 
+					if (rs != null && !rs.isClosed()) 
+						rs.close(); 
 				} catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
 			}
@@ -714,8 +705,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						new Object[] { this, ioe });
 			}
 			try { 
-				if (st != null && !st.isClosed()) 
-					st.close(); 
+				if (stmt != null && !stmt.isClosed()) 
+					stmt.close(); 
 			} 
 			catch (Exception e) {};
 			session.commitAsync();
@@ -752,9 +743,9 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String selectQuery = getQueryDelete(dbAdapter, tableName, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
-		IGSSStatement st = null;
+		IGSSStatement stmt = null;
 		try {
-			st = con.createStatement();
+			stmt = con.createStatement();
 			
 			String jdbcURL = "GSSService";
 			String schemaName = "Unknown";
@@ -770,7 +761,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			if (logger.isDebugEnabled()) {
 				logger.debug("Executing query {}", new Object[] { selectQuery });
 			}
-			final IGSSResultSet resultSet = st.executeQuery(selectQuery);
+			final IGSSResultSet rs = stmt.executeQuery(selectQuery);
 			try {
 				int fragmentIndex = 0;
 				// Max values will be updated in the state property map by the callback
@@ -782,7 +773,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 					try {
 						fileToProcess = session.write(fileToProcess, out -> {
 							try {
-								nrOfRows.set(sqlWriter.writeResultSet(resultSet, out, getLogger(), maxValCollector));
+								nrOfRows.set(sqlWriter.writeResultSet(rs, out, getLogger(), maxValCollector));
 							} catch (Exception e) {
 								throw new ProcessException("Error during database query or conversion of records.", e);
 							}
@@ -880,14 +871,14 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						}
 					}
 				}				
-				resultSet.close();
-				st.close();				
+				rs.close();
+				stmt.close();				
 			} catch (final Exception e) {
 				logger.error("Way, we have an error when execute SQL select query {} due to {}", new Object[] { selectQuery, e });
 			} finally {
 				try { 
-					if (resultSet != null & !resultSet.isClosed()) 
-						resultSet.close();
+					if (rs != null & !rs.isClosed()) 
+						rs.close();
 				} 
 				catch (Exception e) {};
 				session.transfer(resultSetFlowFiles, REL_SUCCESS);
@@ -908,8 +899,8 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						new Object[] { this, ioe });
 			}
 			try { 
-				if (st != null && !st.isClosed()) 
-					st.close();
+				if (stmt != null && !stmt.isClosed()) 
+					stmt.close();
 			} 
 			catch (Exception e) {};
 			session.commitAsync();

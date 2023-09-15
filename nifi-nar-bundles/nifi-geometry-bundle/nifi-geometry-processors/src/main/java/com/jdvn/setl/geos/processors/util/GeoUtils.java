@@ -91,6 +91,7 @@ import org.opengis.referencing.operation.TransformException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.cci.gss.jdbc.driver.IGSSConnection;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jdvn.setl.geos.processors.db.LayerMetadata;
@@ -1193,25 +1194,23 @@ public class GeoUtils {
 		}
 		return cRS;
 	}
-	public static LayerMetadata getLayerMetadata(int layerId, Statement stmt) throws SQLException {
-		StringBuffer sb = new StringBuffer();
-		sb.append("SELECT * FROM GSS.THEMES ");
-		sb.append("WHERE THEME_ID=").append(layerId);
+	public static LayerMetadata getLayerMetadata(String name, final IGSSConnection con) throws SQLException {
 		
-		return getLayerMetadata(sb, stmt);
-	}
-	public static LayerMetadata getLayerMetadata(String username, String name, Statement stmt) throws SQLException {
+		String username = con.getMetaData().getUserName();
+		
 		StringBuffer sb = new StringBuffer();
 		sb.append("SELECT * FROM GSS.THEMES WHERE THEME_NAME='").append(name.toUpperCase());
 		sb.append("' AND OWNER='").append(username.toUpperCase()).append("'");
 		
-		return getLayerMetadata(sb, stmt);
+		return getLayerMetadata(sb, con);
 	}	
-	private static LayerMetadata getLayerMetadata(StringBuffer querySb, Statement stmt) throws SQLException {
+	private static LayerMetadata getLayerMetadata(StringBuffer querySb, final IGSSConnection con) throws SQLException {
 		LayerMetadata md = null;
 		ResultSet rs = null;
+		Statement stmt = null;
 		try {
-			rs = stmt.executeQuery(querySb.toString());
+			stmt = con.createStatement();
+			rs   = stmt.executeQuery(querySb.toString());
 			if (!rs.next()) {
 				return null;
 			}
