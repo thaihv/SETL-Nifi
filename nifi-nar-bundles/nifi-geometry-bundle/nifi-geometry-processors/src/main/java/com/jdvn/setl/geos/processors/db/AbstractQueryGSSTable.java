@@ -168,14 +168,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final String columnNames = context.getProperty(COLUMN_NAMES).evaluateAttributeExpressions().getValue();
 		final String sqlQuery = context.getProperty(SQL_QUERY).evaluateAttributeExpressions().getValue();
 		final String customWhereClause = context.getProperty(WHERE_CLAUSE).evaluateAttributeExpressions().getValue();
-		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions()
-				.asInteger();
-		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions()
-				.asInteger();
+		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
+		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
-		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet()
-				? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger()
-				: 0;
+		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet() ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger() : 0;
 
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
 

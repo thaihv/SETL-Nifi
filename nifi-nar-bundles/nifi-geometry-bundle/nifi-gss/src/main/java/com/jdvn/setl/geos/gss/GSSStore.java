@@ -27,12 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.dbcp2.BasicDataSource;
 import org.apache.commons.pool2.BasePooledObjectFactory;
 import org.apache.commons.pool2.PooledObject;
 import org.apache.commons.pool2.impl.DefaultPooledObject;
 import org.apache.commons.pool2.impl.GenericObjectPool;
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.apache.nifi.annotation.behavior.DynamicProperties;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.RequiresInstanceClassLoading;
@@ -63,20 +61,11 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	/** Property Name Prefix for Sensitive Dynamic Properties */
 	protected static final String SENSITIVE_PROPERTY_PREFIX = "SENSITIVE.";
 
-	/**
-	 * Copied from {@link GenericObjectPoolConfig.DEFAULT_MIN_IDLE} in Commons-DBCP
-	 * 2.7.0
-	 */
 	private static final String DEFAULT_MIN_IDLE = "0";
-	/**
-	 * Copied from {@link GenericObjectPoolConfig.DEFAULT_MAX_IDLE} in Commons-DBCP
-	 * 2.7.0
-	 */
 	private static final String DEFAULT_MAX_IDLE = "8";
-	/**
-	 * Copied from private variable {@link BasicDataSource.maxConnLifetimeMillis} in
-	 * Commons-DBCP 2.7.0
-	 */
+	private static final String DEFAULT_EVICTION_RUN_PERIOD = String.valueOf(-1L);
+    private static final String DEFAULT_MIN_EVICTABLE_IDLE_TIME = "30 mins";
+    private static final String DEFAULT_SOFT_MIN_EVICTABLE_IDLE_TIME = String.valueOf(-1L);
 
 	public static final PropertyDescriptor DATABASE_URL = new PropertyDescriptor.Builder()
 			.name("Database Connection URL")
@@ -108,7 +97,44 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 							+ " or negative for no limit.")
 			.defaultValue("64").required(true).addValidator(StandardValidators.INTEGER_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY).sensitive(false).build();
+	
+    public static final PropertyDescriptor EVICTION_RUN_PERIOD = new PropertyDescriptor.Builder()
+            .displayName("Time Between Eviction Runs")
+            .name("dbcp-time-between-eviction-runs")
+            .description("The number of milliseconds to sleep between runs of the idle connection evictor thread. When " +
+                    "non-positive, no idle connection evictor thread will be run.")
+            .defaultValue(DEFAULT_EVICTION_RUN_PERIOD)
+            .required(false)
+            .addValidator(DBCPValidator.CUSTOM_TIME_PERIOD_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .build();
+    public static final PropertyDescriptor MIN_EVICTABLE_IDLE_TIME = new PropertyDescriptor.Builder()
+            .displayName("Minimum Evictable Idle Time")
+            .name("dbcp-min-evictable-idle-time")
+            .description("The minimum amount of time a connection may sit idle in the pool before it is eligible for eviction.")
+            .defaultValue(DEFAULT_MIN_EVICTABLE_IDLE_TIME)
+            .required(false)
+            .addValidator(DBCPValidator.CUSTOM_TIME_PERIOD_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .build();
 
+    public static final PropertyDescriptor SOFT_MIN_EVICTABLE_IDLE_TIME = new PropertyDescriptor.Builder()
+            .displayName("Soft Minimum Evictable Idle Time")
+            .name("dbcp-soft-min-evictable-idle-time")
+            .description("The minimum amount of time a connection may sit idle in the pool before it is eligible for " +
+                    "eviction by the idle connection evictor, with the extra condition that at least a minimum number of" +
+                    " idle connections remain in the pool. When the not-soft version of this option is set to a positive" +
+                    " value, it is examined first by the idle connection evictor: when idle connections are visited by " +
+                    "the evictor, idle time is first compared against it (without considering the number of idle " +
+                    "connections in the pool) and then against this soft option, including the minimum idle connections " +
+                    "constraint.")
+            .defaultValue(DEFAULT_SOFT_MIN_EVICTABLE_IDLE_TIME)
+            .required(false)
+            .addValidator(DBCPValidator.CUSTOM_TIME_PERIOD_VALIDATOR)
+            .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .build();
+    
+    
 	public static final PropertyDescriptor MIN_IDLE = new PropertyDescriptor.Builder()
 			.displayName("Minimum Idle Connections").name("dbcp-min-idle-conns")
 			.description("The minimum number of connections that can remain idle in the pool, without extra ones being "
@@ -135,6 +161,9 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		props.add(MAX_TOTAL_CONNECTIONS);
 		props.add(MIN_IDLE);
 		props.add(MAX_IDLE);
+        props.add(EVICTION_RUN_PERIOD);
+        props.add(MIN_EVICTABLE_IDLE_TIME);
+        props.add(SOFT_MIN_EVICTABLE_IDLE_TIME);
 		properties = Collections.unmodifiableList(props);
 	}
 
@@ -143,7 +172,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	private String m_userName;
 	private String m_password;
 
-	private GenericObjectPool<Connection> mConnectionPool;
+	private volatile GenericObjectPool<Connection> mConnectionPool;
 	protected Map<String, Connection> mTxConnections = new HashMap<String, Connection>();
 
 	protected boolean validateConnection(Connection connection) throws SQLException {
@@ -189,6 +218,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		return builder.build();
 	}
 
+	@SuppressWarnings("deprecation")
 	@OnEnabled
 	public void onConfigured(final ConfigurationContext context) throws InitializationException {
 
@@ -197,8 +227,12 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		final String passw = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
 		final String dburl = context.getProperty(DATABASE_URL).evaluateAttributeExpressions().getValue();
 		final Integer maxTotal = context.getProperty(MAX_TOTAL_CONNECTIONS).evaluateAttributeExpressions().asInteger();
-		final Long maxWaitMillis = extractMillisWithInfinite(
-				context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
+		final Long maxWaitMillis = extractMillisWithInfinite(context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
+		
+		final Long timeBetweenEvictionRunsMillis = extractMillisWithInfinite(context.getProperty(EVICTION_RUN_PERIOD).evaluateAttributeExpressions());
+        final Long minEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
+        final Long softMinEvictableIdleTimeMillis = extractMillisWithInfinite(context.getProperty(SOFT_MIN_EVICTABLE_IDLE_TIME).evaluateAttributeExpressions());
+		
 		final Integer minIdle = context.getProperty(MIN_IDLE).evaluateAttributeExpressions().asInteger();
 		final Integer maxIdle = context.getProperty(MAX_IDLE).evaluateAttributeExpressions().asInteger();
 
@@ -236,7 +270,9 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		mConnectionPool.setMinIdle(minIdle);
 		mConnectionPool.setMaxWaitMillis(maxWaitMillis);
 		
-		mConnectionPool.setBlockWhenExhausted(true);
+		mConnectionPool.setTimeBetweenEvictionRunsMillis(timeBetweenEvictionRunsMillis);
+		mConnectionPool.setMinEvictableIdleTimeMillis(minEvictableIdleTimeMillis);
+		mConnectionPool.setSoftMinEvictableIdleTimeMillis(softMinEvictableIdleTimeMillis);
 		
 		mConnectionPool.setTestOnBorrow(true);
 		mConnectionPool.setTestOnReturn(true);
