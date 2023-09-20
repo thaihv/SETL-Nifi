@@ -392,6 +392,77 @@ public class FlowFileQueueResource extends ApplicationResource {
 
 		return generateOkResponse(bais).build();
     }
+    
+    /**
+     * Gets the vector tiles content for the specified flowfile in the specified connection.
+     */
+    @GET
+    @Consumes(MediaType.WILDCARD)
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    @Path("{id}/flowfiles/{flowfile-uuid}/content/{z}/{x}/{y}.mvt")
+    @ApiOperation(
+            value = "Gets the vector tiles format of content for a FlowFile in a Connection.",
+            response = StreamingOutput.class,
+            authorizations = {
+                    @Authorization(value = "Read Source Data - /data/{component-type}/{uuid}")
+            }
+    )
+    @ApiResponses(
+            value = {
+                    @ApiResponse(code = 400, message = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(code = 401, message = "Client could not be authenticated."),
+                    @ApiResponse(code = 403, message = "Client is not authorized to make this request."),
+                    @ApiResponse(code = 404, message = "The specified resource could not be found."),
+                    @ApiResponse(code = 409, message = "The request was valid but NiFi was not in the appropriate state to process it. Retrying the same request later may be successful.")
+            }
+    )
+    public Response downloadVectorTilesFlowFileContent(
+            @ApiParam(
+                    value = "If the client id is not specified, new one will be generated. This value (whether specified or generated) is included in the response.",
+                    required = false
+            )
+            @Context HttpServletRequest request,
+            @QueryParam(CLIENT_ID) @DefaultValue(StringUtils.EMPTY) final ClientIdParameter clientId,
+            @ApiParam(
+                    value = "The connection id.",
+                    required = true
+            )
+            @PathParam("id") final String connectionId,
+            @ApiParam(
+                    value = "The flowfile uuid.",
+                    required = true
+            )
+            @PathParam("flowfile-uuid") final String flowFileUuid,
+    		@PathParam("z") final LongParameter z,
+			@PathParam("x") final LongParameter x,
+			@PathParam("y") final LongParameter y,
+            @ApiParam(
+                    value = "The id of the node where the content exists if clustered.",
+                    required = false
+            )
+            @QueryParam("clusterNodeId") final String clusterNodeId) throws InterruptedException {
+
+        // replicate if cluster manager
+        if (isReplicateRequest()) {
+            // determine where this request should be sent
+            if (clusterNodeId == null) {
+                throw new IllegalArgumentException("The id of the node in the cluster is required.");
+            } else {
+                // get the target node and ensure it exists
+                final NodeIdentifier targetNode = getClusterCoordinator().getNodeIdentifier(clusterNodeId);
+                if (targetNode == null) {
+                    throw new UnknownNodeException("The specified cluster node does not exist.");
+                }
+
+                return replicate(HttpMethod.GET, targetNode);
+            }
+        }
+        
+        final String uri = generateResourceUri("flowfile-queues", connectionId, "flowfiles", flowFileUuid, "content");        
+        final DownloadableContent content = serviceFacade.getContent(connectionId, flowFileUuid, uri);
+		byte[] bais = GeoUtils.getVectorTileFromDownloadableContent(content, z, x, y);
+		return generateOkResponse(bais).build();
+    }    
     /**
      * Creates a request to list the flowfiles in the queue of the specified connection.
      *

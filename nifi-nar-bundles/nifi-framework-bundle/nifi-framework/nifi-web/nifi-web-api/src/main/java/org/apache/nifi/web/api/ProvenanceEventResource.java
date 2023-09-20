@@ -325,6 +325,69 @@ public class ProvenanceEventResource extends ApplicationResource {
 
 		return generateOkResponse(bais).build();
     }
+    
+    /**
+     * Gets the vector tiles content for the output of the specified event.
+     */
+    @GET
+    @Consumes(MediaType.WILDCARD)
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
+    @Path("{id}/content/output/{z}/{x}/{y}.mvt")
+    @ApiOperation(
+            value = "Gets the vector tiles format of content for a provenance event",
+            response = StreamingOutput.class,
+            authorizations = {
+                    @Authorization(value = "Read Component Provenance Data - /provenance-data/{component-type}/{uuid}"),
+                    @Authorization(value = "Read Component Data - /data/{component-type}/{uuid}")
+            }
+    )
+    @ApiResponses(
+            value = {
+                    @ApiResponse(code = 400, message = "NiFi was unable to complete the request because it was invalid. The request should not be retried without modification."),
+                    @ApiResponse(code = 401, message = "Client could not be authenticated."),
+                    @ApiResponse(code = 403, message = "Client is not authorized to make this request."),
+                    @ApiResponse(code = 404, message = "The specified resource could not be found."),
+                    @ApiResponse(code = 409, message = "The request was valid but NiFi was not in the appropriate state to process it. Retrying the same request later may be successful.")
+            }
+    )
+    public Response getVectorTilesOutputContent(
+            @ApiParam(
+                    value = "The id of the node where the content exists if clustered.",
+                    required = false
+            )
+            @QueryParam("clusterNodeId") final String clusterNodeId,
+            @ApiParam(
+                    value = "The provenance event id.",
+                    required = true
+            )
+            @PathParam("id") final LongParameter id,
+    		@PathParam("z") final LongParameter z,
+			@PathParam("x") final LongParameter x,
+			@PathParam("y") final LongParameter y){
+
+        // ensure proper input
+        if (id == null) {
+            throw new IllegalArgumentException("The event id must be specified.");
+        }
+
+        // replicate if cluster manager
+        if (isReplicateRequest()) {
+            // determine where this request should be sent
+            if (clusterNodeId == null) {
+                throw new IllegalArgumentException("The id of the node in the cluster is required.");
+            } else {
+                return replicate(HttpMethod.GET, clusterNodeId);
+            }
+        }
+
+        // get the uri of the request
+        final String uri = generateResourceUri("provenance", "events", String.valueOf(id.getLong()), "content", "output");
+
+        // get an input stream to the content
+        final DownloadableContent content = serviceFacade.getContent(id.getLong(), uri, ContentDirection.OUTPUT);        
+        byte[] bais = GeoUtils.getVectorTileFromDownloadableContent(content, z, x, y);
+		return generateOkResponse(bais).build();
+    }    
     /**
      * Gets the details for a provenance event.
      *
