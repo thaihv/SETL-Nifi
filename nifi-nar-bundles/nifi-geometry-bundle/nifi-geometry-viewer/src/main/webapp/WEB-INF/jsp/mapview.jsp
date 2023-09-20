@@ -166,7 +166,40 @@
 			  ctx.stroke();
 			  return tile;
 			}
-			var mapboxTileLayer = L.vectorGrid.protobuf(urlGeoTiles);
+			
+			var vectorTileStyling = {
+					polygons: {
+						fill: true,
+						weight: 1,
+						fillColor: '#e5b404',
+						color: '#261f21',
+						fillOpacity: 0.2
+					},
+					lines: {	
+						weight: 1.5,
+						fillColor: '#091091',
+						color: '#091091',
+						fillOpacity: 0.2
+					},
+					points: {
+						weight: 1,
+						fillColor: '#3bb50a',
+						color: '#3bb50a',
+						fillOpacity: 0.2,
+						opacity: 0.5
+					}
+				};
+			
+			var myStyle = {};
+			myStyle["myPolygons"] = vectorTileStyling.polygons;
+			myStyle["myLines"   ] = vectorTileStyling.lines;
+			myStyle["myPoints"   ] = vectorTileStyling.points;
+			
+			var mapboxVectorTileOptions = {
+					rendererFactory: L.canvas.tile,
+					vectorTileLayerStyles: myStyle
+				};
+			var mapboxTileLayer = L.vectorGrid.protobuf(urlGeoTiles, mapboxVectorTileOptions);
 			var overlayMaps = {
 					"Features": mapboxTileLayer,
 					"Grid Cells":  grid

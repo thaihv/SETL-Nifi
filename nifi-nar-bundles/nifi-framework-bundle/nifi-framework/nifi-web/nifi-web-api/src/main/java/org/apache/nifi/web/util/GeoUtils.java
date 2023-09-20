@@ -122,7 +122,7 @@ public class GeoUtils {
 	
     private static final IGeometryFilter ACCEPT_ALL_FILTER = geometry -> true;
     private static final MvtLayerParams DEFAULT_MVT_PARAMS = new MvtLayerParams();
-    private static String TEST_LAYER_NAME = "myFeatures";
+    private static String TEST_LAYER_NAME = "myPolygons";
 
 	public static String getTileZXYFromLatLon(final double lat, final double lon, final int zoom) {
 		int xtile = (int) Math.floor((lon + 180) / 360 * (1 << zoom));
@@ -526,34 +526,51 @@ public class GeoUtils {
 	}
 	private static byte[] generateMapBoxVectorTiles(final DataFileStream<GenericData.Record> dataFileReader, ReferencedEnvelope envelopeTile) {
 		String geokey = null;		
+		boolean bGetType = false;
+		String layerName = TEST_LAYER_NAME;
 		WKTReader wktRdr = new WKTReader();		 
 		List<Geometry> g_list = new ArrayList<Geometry>();
+		Envelope env_t = new Envelope(envelopeTile.getMinX(),envelopeTile.getMaxX(),envelopeTile.getMinY(),envelopeTile.getMaxY());
 		while (dataFileReader.hasNext()) {
 			final GenericData.Record record = dataFileReader.next();
 			geokey = getGeometryFieldName(record);
+			if (bGetType == false) {				
+				@SuppressWarnings("rawtypes")
+				Class geometryClass = getTypeGeometry(record);
+				if (geometryClass == MultiLineString.class || geometryClass == LineString.class) {
+					layerName = "myLines";
+				} 
+				else if (geometryClass == MultiPoint.class || geometryClass == Point.class) {
+					layerName = "myPoints";
+				}
+				else if (geometryClass == MultiPolygon.class || geometryClass == Polygon.class) {
+					layerName = "myPolygons";
+				}
+				bGetType = true;
+			}
 			String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
 			if (wktGeo != null)
 				if (!wktGeo.contains("EMPTY")) {  // not found case of EMPTY geometry from WKT
 					try {
-						g_list.add(wktRdr.read(wktGeo));
+						Geometry g = wktRdr.read(wktGeo);						
+						if (env_t.intersects(g.getEnvelopeInternal()))
+							g_list.add(g);
 					} catch (com.vividsolutions.jts.io.ParseException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
 					}
 				}			
 		}
-		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();
-		Envelope tileEnvelope = new Envelope(envelopeTile.getMinX(),envelopeTile.getMaxX(),envelopeTile.getMinY(),envelopeTile.getMaxY());
-        TileGeomResult tileGeom = JtsAdapter.createTileGeom(g_list, tileEnvelope, geomFactory,DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
-        // Create MVT layer
-        VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, tileGeom);        
+		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();		
+        TileGeomResult tileGeom = JtsAdapter.createTileGeom(g_list, env_t, geomFactory,DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
+        VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, tileGeom, layerName);        
 		return mvt.toByteArray();		
 	}   
-    private static VectorTile.Tile encodeMvt(MvtLayerParams mvtParams, TileGeomResult tileGeom) {
+    private static VectorTile.Tile encodeMvt(MvtLayerParams mvtParams, TileGeomResult tileGeom, String layerName) {
         // Build MVT
         final VectorTile.Tile.Builder tileBuilder = VectorTile.Tile.newBuilder();
         // Create MVT layer
-        final VectorTile.Tile.Layer.Builder layerBuilder = MvtLayerBuild.newLayerBuilder(TEST_LAYER_NAME, mvtParams);
+        final VectorTile.Tile.Layer.Builder layerBuilder = MvtLayerBuild.newLayerBuilder(layerName, mvtParams);
         final MvtLayerProps layerProps = new MvtLayerProps();
         final UserDataIgnoreConverter ignoreUserData = new UserDataIgnoreConverter();
         // MVT tile geometry to MVT features
@@ -575,7 +592,7 @@ public class GeoUtils {
 		int z0 = z.getLong().intValue();					
 		BoundingBox bb = tile2boundingBox(x0,y0,z0);
 		MathTransform transform;
-		System.out.println("From Tile: " + String.valueOf(x0) + "/" + String.valueOf(y0) + "/" + String.valueOf(z0));
+		System.out.println("Generating Tile: " + String.valueOf(x0) + "/" + String.valueOf(y0) + "/" + String.valueOf(z0));
 		final GenericData genericData = new GenericData() {
 			@Override
 			protected void toString(Object datum, StringBuilder buffer) {
