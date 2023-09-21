@@ -55,11 +55,11 @@ import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProcessor {
 
-    public static final String RESULT_TABLENAME = "source.tablename";
+    public static final String SOURCE_TABLENAME = "source.tablename";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
-    public static final String RESULT_SCHEMANAME = "source.schemaname";
-    public static final String RESULT_PKLIST = "source.pks";
-    public static final String RESULT_URL = "source.url";
+    public static final String SOURCE_SCHEMANAME = "source.schemaname";
+    public static final String SOURCE_PKLIST = "source.pks";
+    public static final String SOURCE_URL = "source.url";
     public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
     private static AllowableValue TRANSACTION_READ_COMMITTED = new AllowableValue(
@@ -397,11 +397,11 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
-                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-                        attributesToAdd.put(RESULT_TABLENAME, tableName);
-                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
+                        attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+                        attributesToAdd.put(SOURCE_TABLENAME, tableName);
+                        attributesToAdd.put(SOURCE_PKLIST, String.join(",", Ids));
                                                 
-						attributesToAdd.put(RESULT_URL, jdbcURL);
+						attributesToAdd.put(SOURCE_URL, jdbcURL);
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
                         
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
@@ -786,10 +786,10 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
-                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-                        attributesToAdd.put(RESULT_TABLENAME, tableName);
-                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
-						attributesToAdd.put(RESULT_URL, jdbcURL);                    
+                        attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+                        attributesToAdd.put(SOURCE_TABLENAME, tableName);
+                        attributesToAdd.put(SOURCE_PKLIST, String.join(",", Ids));
+						attributesToAdd.put(SOURCE_URL, jdbcURL);                    
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
                         
 						attributesToAdd.put(GeoAttributes.CRS.key(), crs);
@@ -1008,10 +1008,10 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
                         // set attributes
                         final Map<String, String> attributesToAdd = new HashMap<>();
                         attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
-                        attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-                        attributesToAdd.put(RESULT_TABLENAME, tableName);
-                        attributesToAdd.put(RESULT_PKLIST, String.join(",", Ids));
-                        attributesToAdd.put(RESULT_URL, jdbcURL);   
+                        attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+                        attributesToAdd.put(SOURCE_TABLENAME, tableName);
+                        attributesToAdd.put(SOURCE_PKLIST, String.join(",", Ids));
+                        attributesToAdd.put(SOURCE_URL, jdbcURL);   
                         attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
                         attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "PostGIS");
 

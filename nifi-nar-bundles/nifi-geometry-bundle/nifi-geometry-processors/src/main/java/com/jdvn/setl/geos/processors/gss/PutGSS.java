@@ -121,7 +121,7 @@ public class PutGSS extends AbstractProcessor {
     public static final String SQL_TYPE = "SQL";   // Not an allowable value in the Statement Type property, must be set by attribute
     public static final String USE_ATTR_TYPE = "Use statement.type Attribute";
     public static final String USE_RECORD_PATH = "Use Record Path";
-    public static final String RESULT_PKLIST = "source.pks";
+    public static final String SOURCE_PKLIST = "source.pks";
     
     static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
@@ -678,7 +678,7 @@ public class PutGSS extends AbstractProcessor {
         	targetCRS = CRS.parseWKT(srs_target);
         }
 
-        final String src_PK_list = flowFile.getAttribute(RESULT_PKLIST);
+        final String src_PK_list = flowFile.getAttribute(SOURCE_PKLIST);
         final List<String> listPkeys_source = src_PK_list == null ? null: new ArrayList<String>(Arrays.asList(src_PK_list.split(",")));
         String nifiuid = null;
         final String src_url = flowFile.getAttribute(SOURCE_URL);

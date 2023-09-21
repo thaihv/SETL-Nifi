@@ -67,9 +67,10 @@ import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
-    public static final String RESULT_TABLENAME = "source.tablename";
-    public static final String RESULT_SCHEMANAME = "source.schemaname";
-    public static final String RESULT_URL = "source.url";
+    public static final String SOURCE_TABLENAME = "source.tablename";
+    public static final String SOURCE_SCHEMANAME = "source.schemaname";
+    public static final String SOURCE_PKLIST = "source.pks";
+    public static final String SOURCE_URL = "source.url";
     public static final String RESULT_ROW_COUNT = "querydbtable.row.count";
     public static final String STATEMENT_TYPE_ATTRIBUTE = "statement.type";
 
@@ -263,11 +264,13 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						final Map<String, String> attributesToAdd = new HashMap<>();
 						attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
 
-						attributesToAdd.put(RESULT_URL, jdbcURL);
-						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-						attributesToAdd.put(RESULT_TABLENAME, tableName);						
+						attributesToAdd.put(SOURCE_URL, jdbcURL);
+						attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+						attributesToAdd.put(SOURCE_TABLENAME, tableName);						
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "INSERT");
 						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
+						attributesToAdd.put(SOURCE_PKLIST, GeoUtils.SETL_UUID);
+						
 
 						IGSSResultSetMetaData rsmd = rs.getMetaData();
 						if (rsmd.hasGeometryColumn()) {
@@ -463,14 +466,10 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		final DatabaseAdapter dbAdapter = dbAdapters.get(context.getProperty(DB_TYPE).getValue());
 		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
-		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions()
-				.asInteger();
-		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions()
-				.asInteger();
+		final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
+		final Integer outputBatchSizeField = context.getProperty(OUTPUT_BATCH_SIZE).evaluateAttributeExpressions().asInteger();
 		final int outputBatchSize = outputBatchSizeField == null ? 0 : outputBatchSizeField;
-		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet()
-				? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger()
-				: 0;
+		final Integer maxFragments = context.getProperty(MAX_FRAGMENTS).isSet() ? context.getProperty(MAX_FRAGMENTS).evaluateAttributeExpressions().asInteger() : 0;
 
 		SqlWriter sqlWriter = configureSqlWriter(session, context);
 		final StateMap stateMap;
@@ -555,12 +554,13 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						final Map<String, String> attributesToAdd = new HashMap<>();
 						attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
 
-						attributesToAdd.put(RESULT_URL, jdbcURL);
-						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-						attributesToAdd.put(RESULT_TABLENAME, tableName);
+						attributesToAdd.put(SOURCE_URL, jdbcURL);
+						attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+						attributesToAdd.put(SOURCE_TABLENAME, tableName);
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "UPDATE");
 						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);
+						attributesToAdd.put(SOURCE_PKLIST, GeoUtils.SETL_UUID);
 
 						if (srs_target != null) {
 							attributesToAdd.put(GeoAttributes.CRS.key(), srs_target);
@@ -786,11 +786,12 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						final Map<String, String> attributesToAdd = new HashMap<>();
 						attributesToAdd.put(RESULT_ROW_COUNT, String.valueOf(nrOfRows.get()));
 
-						attributesToAdd.put(RESULT_URL, jdbcURL);
-						attributesToAdd.put(RESULT_SCHEMANAME, schemaName);
-						attributesToAdd.put(RESULT_TABLENAME, tableName);						
+						attributesToAdd.put(SOURCE_URL, jdbcURL);
+						attributesToAdd.put(SOURCE_SCHEMANAME, schemaName);
+						attributesToAdd.put(SOURCE_TABLENAME, tableName);						
 						attributesToAdd.put(STATEMENT_TYPE_ATTRIBUTE, "DELETE");
 						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
+						attributesToAdd.put(SOURCE_PKLIST, GeoUtils.SETL_UUID);
 
 						if (maxRowsPerFlowFile > 0) {
 							attributesToAdd.put(FRAGMENT_ID, fragmentIdentifier);
