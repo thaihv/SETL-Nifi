@@ -170,23 +170,24 @@
 			var vectorTileStyling = {
 					polygons: {
 						fill: true,
-						weight: 1,
+						weight: 1.5,
 						fillColor: '#e5b404',
-						color: '#261f21',
-						fillOpacity: 0.2
+						color: '#1f7d1f',
+						fillOpacity: 0.5
 					},
 					lines: {	
 						weight: 1.5,
-						fillColor: '#091091',
-						color: '#091091',
+						fillColor: '#1f7d1f',
+						color: '#1f7d1f',
 						fillOpacity: 0.2
 					},
 					points: {
-						weight: 1,
-						fillColor: '#3bb50a',
-						color: '#3bb50a',
-						fillOpacity: 0.2,
-						opacity: 0.5
+						radius: 3,
+						weight: 1.5,
+						fillColor: '#e5b404',
+						color: '#1f7d1f',
+					    opacity: 1,
+					    fillOpacity: 0.8
 					}
 				};
 			
@@ -214,6 +215,7 @@
 						var lng = coord[1].split(')');
 						console.log("You clicked the map at latitude: " + lat[1] + " and longitude:" + lng[0]);
 					});
+			mapboxTileLayer.addTo(map);
 			if (bounds !== null)
 				map.fitBounds(bounds);
 	}
