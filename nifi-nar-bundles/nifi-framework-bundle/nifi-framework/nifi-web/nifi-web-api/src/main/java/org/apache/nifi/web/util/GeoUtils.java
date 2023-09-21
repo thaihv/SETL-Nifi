@@ -550,7 +550,7 @@ public class GeoUtils {
 			}
 			String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
 			if (wktGeo != null)
-				if (!wktGeo.contains("EMPTY")) {  // not found case of EMPTY geometry from WKT
+				if (!wktGeo.contains("EMPTY")) {
 					try {
 						Geometry g = wktRdr.read(wktGeo);						
 						if (env_t.intersects(g.getEnvelopeInternal()))
@@ -561,9 +561,22 @@ public class GeoUtils {
 					}
 				}			
 		}
-		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();		
-        TileGeomResult tileGeom = JtsAdapter.createTileGeom(g_list, env_t, geomFactory,DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
-        VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, tileGeom, layerName);        
+		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();
+		// Use no buffer will give tile rectangle in TileGeom with geometries outside tile
+        //TileGeomResult tileGeom = JtsAdapter.createTileGeom(g_list, env_t, geomFactory,DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);        
+        //VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, tileGeom, layerName);
+		
+		// Use buffer with clip envelope - (10 * 2)% buffered area of the tile envelope
+		// to display well geometries belongs many tiles
+		double tileWidth  = env_t.getWidth();
+		double tileHeight = env_t.getHeight();
+		Envelope clipEnvelope = new Envelope(env_t);
+        double bufferWidth = tileWidth * .1f;
+        double bufferHeight = tileHeight * .1f;
+        
+        clipEnvelope.expandBy(bufferWidth, bufferHeight);		
+        TileGeomResult bufferedTileGeom = JtsAdapter.createTileGeom(g_list, env_t, clipEnvelope, geomFactory, DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
+        VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, bufferedTileGeom, layerName);
 		return mvt.toByteArray();		
 	}   
     private static VectorTile.Tile encodeMvt(MvtLayerParams mvtParams, TileGeomResult tileGeom, String layerName) {
