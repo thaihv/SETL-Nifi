@@ -211,7 +211,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			}
 		}
 
-		final String selectQuery = getQuery(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
+		final String selectQuery = getQueryInsert(dbAdapter, tableName, sqlQuery, columnNames, null, customWhereClause, statePropertyMap);
 		final StopWatch stopWatch = new StopWatch(true);
 		final String fragmentIdentifier = UUID.randomUUID().toString();
 		IGSSStatement stmt = null;
@@ -904,13 +904,13 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		}
 	}	
 	
-    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String columnNames, List<String> maxValColumnNames,
+    protected String getQueryInsert(DatabaseAdapter dbAdapter, String tableName, String columnNames, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
 
-        return getQuery(dbAdapter, tableName, null, columnNames, maxValColumnNames, customWhereClause, stateMap);
+        return getQueryInsert(dbAdapter, tableName, null, columnNames, maxValColumnNames, customWhereClause, stateMap);
     }
 
-    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String sqlQuery, String columnNames, List<String> maxValColumnNames,
+	protected String getQueryInsert(DatabaseAdapter dbAdapter, String tableName, String sqlQuery, String columnNames, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
         if (StringUtils.isEmpty(tableName)) {
             throw new IllegalArgumentException("Table name must be specified");

@@ -693,7 +693,10 @@ public class GeoUtils {
     				// Add geometry
     				Geometry geo = reader.read(record.getAsString(geomFieldName));					
     	            if (tran_type.equals("Simplify")) {
+    	            	// To simplify geometry while preserving topology use.
+    	            	// However, using D-P is significantly faster 
     	            	geo = DouglasPeuckerSimplifier.simplify(geo, distance);
+    	            	//geo = TopologyPreservingSimplifier.simplify(geo, distance);
     	            }
     	            else if (tran_type.equals("Buffer")){
     	            	geo = geo.buffer(distance, quadrantSegments, endCapStyle);

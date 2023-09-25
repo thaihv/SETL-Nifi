@@ -1106,7 +1106,7 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         }
     }    
     
-    protected String getQuery(DatabaseAdapter dbAdapter, String tableName, String columnNames, String geoColumn, List<String> maxValColumnNames,
+    protected String getQueryInsert(DatabaseAdapter dbAdapter, String tableName, String columnNames, String geoColumn, List<String> maxValColumnNames,
                               String customWhereClause, Map<String, String> stateMap) {
 
         return getQuery(dbAdapter, tableName, null, columnNames, geoColumn, maxValColumnNames, customWhereClause, stateMap);
@@ -1144,7 +1144,6 @@ public abstract class AbstractQueryPostGISTable extends AbstractPostGISFetchProc
         final StringBuilder query;
 
         if (StringUtils.isEmpty(sqlQuery)) {
-            //query = new StringBuilder(dbAdapter.getSelectStatement(tableName, columnNames, null, null, null, null));
             query = new StringBuilder(getSelectStatement(tableName, columnNames, geoColumn));
             
         } else {
