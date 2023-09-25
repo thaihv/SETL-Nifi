@@ -36,6 +36,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -111,7 +112,7 @@ import com.wdtinc.mapbox_vector_tile.VectorTile;
 import com.wdtinc.mapbox_vector_tile.adapt.jts.IGeometryFilter;
 import com.wdtinc.mapbox_vector_tile.adapt.jts.JtsAdapter;
 import com.wdtinc.mapbox_vector_tile.adapt.jts.TileGeomResult;
-import com.wdtinc.mapbox_vector_tile.adapt.jts.UserDataIgnoreConverter;
+import com.wdtinc.mapbox_vector_tile.adapt.jts.UserDataKeyValueMapConverter;
 import com.wdtinc.mapbox_vector_tile.build.MvtLayerBuild;
 import com.wdtinc.mapbox_vector_tile.build.MvtLayerParams;
 import com.wdtinc.mapbox_vector_tile.build.MvtLayerProps;
@@ -553,8 +554,20 @@ public class GeoUtils {
 				if (!wktGeo.contains("EMPTY")) {
 					try {
 						Geometry g = wktRdr.read(wktGeo);						
-						if (env_t.intersects(g.getEnvelopeInternal()))
+						if (env_t.intersects(g.getEnvelopeInternal())) {
 							g_list.add(g);
+					        Map<String, Object> attributes = new LinkedHashMap<>();					 
+							for (int i = 0; i < record.getSchema().getFields().size(); i++) {
+								Field f = record.getSchema().getFields().get(i);
+								String value = record.get(f.name()) == null ? null: record.get(f.name()).toString();
+								if ((f.name() != geokey && value != null)) {
+									attributes.put(f.name(), value);
+									
+								}
+							}
+							attributes.put("feature_id", attributes.hashCode());
+							g.setUserData(attributes);
+						}							
 					} catch (com.vividsolutions.jts.io.ParseException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
@@ -577,6 +590,7 @@ public class GeoUtils {
         clipEnvelope.expandBy(bufferWidth, bufferHeight);		
         TileGeomResult bufferedTileGeom = JtsAdapter.createTileGeom(g_list, env_t, clipEnvelope, geomFactory, DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
         VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, bufferedTileGeom, layerName);
+        
 		return mvt.toByteArray();		
 	}   
     private static VectorTile.Tile encodeMvt(MvtLayerParams mvtParams, TileGeomResult tileGeom, String layerName) {
@@ -585,9 +599,12 @@ public class GeoUtils {
         // Create MVT layer
         final VectorTile.Tile.Layer.Builder layerBuilder = MvtLayerBuild.newLayerBuilder(layerName, mvtParams);
         final MvtLayerProps layerProps = new MvtLayerProps();
-        final UserDataIgnoreConverter ignoreUserData = new UserDataIgnoreConverter();
+        //final UserDataIgnoreConverter ignoreUserData = new UserDataIgnoreConverter();
+        //final List<VectorTile.Tile.Feature> features = JtsAdapter.toFeatures(tileGeom.mvtGeoms, layerProps, ignoreUserData);
+        
+        final UserDataKeyValueMapConverter getUserData = new UserDataKeyValueMapConverter();
         // MVT tile geometry to MVT features
-        final List<VectorTile.Tile.Feature> features = JtsAdapter.toFeatures(tileGeom.mvtGeoms, layerProps, ignoreUserData);
+        final List<VectorTile.Tile.Feature> features = JtsAdapter.toFeatures(tileGeom.mvtGeoms, layerProps, getUserData);
         layerBuilder.addAllFeatures(features);
         MvtLayerBuild.writeProps(layerBuilder, layerProps);
         // Build MVT layer
