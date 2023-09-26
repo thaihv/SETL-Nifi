@@ -193,7 +193,7 @@
 						fillOpacity: 0.2
 					},
 					points: {
-						radius: 3,
+						radius: 12,
 						weight: 1.5,
 						fillColor: '#e5b404',
 						color: '#1f7d1f',
@@ -231,7 +231,7 @@
 				if (properties !== null){
 					for (const [key, value] of Object.entries(properties)) {
 					  if (key.localeCompare("feature_id") !== 0){
-						i = "<b>" + key + ": </b>" + value + "</br>";
+						i = "<strong>" + key + ": </strong>" + value + "<br />";
 						content = content + i;
 					  }
 					}
@@ -246,12 +246,12 @@
 				mapboxTileLayer.setFeatureStyle(highlight, {
 					weight: 2,
 					color: 'red',
-					opacity: 0.8,
-					fillColor: '#1f7d1f',
+					opacity: 1,
+					fillColor: '#e5b404',
 					fill: true,
-					radius: 6,
-					fillOpacity: 0.5
-				})
+					radius: 12,
+					fillOpacity: 0.8
+				});
 				L.DomEvent.stop(e);
 			 });
 			var overlayMaps = {
