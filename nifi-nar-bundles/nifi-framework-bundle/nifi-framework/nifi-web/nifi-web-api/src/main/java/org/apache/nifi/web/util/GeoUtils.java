@@ -565,7 +565,7 @@ public class GeoUtils {
 									
 								}
 							}
-							attributes.put("feature_id", attributes.hashCode());
+							attributes.put("feature_id", String.valueOf(attributes.hashCode()));
 							g.setUserData(attributes);
 						}							
 					} catch (com.vividsolutions.jts.io.ParseException e) {

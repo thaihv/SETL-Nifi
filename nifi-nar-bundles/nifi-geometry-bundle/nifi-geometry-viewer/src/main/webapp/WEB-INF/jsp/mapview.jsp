@@ -1,14 +1,25 @@
-<%@ page contentType="text/html" pageEncoding="UTF-8" session="false" %>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" type="text/css"/>
-<script type="text/javascript" src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script type="text/javascript" src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket-leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.css" type="text/css"/>
-<div id="map" style="height: 800px; width:800px; position: relative; padding: 0px; margin: 0 auto 0 auto;"></div>
+<%@ page contentType="text/html" pageEncoding="UTF-8" session="false"%>
+<link rel="stylesheet"
+	href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" type="text/css" />
+<script type="text/javascript"
+	src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script type="text/javascript"
+	src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket.min.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket-leaflet.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script
+	src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
+<script
+	src="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.min.js"></script>
+<link rel="stylesheet"
+	href="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.css"
+	type="text/css" />
+<div id="map"
+	style="height: 800px; width: 800px; position: relative; padding: 0px; margin: 0 auto 0 auto;"></div>
 
 <script> 
 	var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -17,16 +28,16 @@
 	var baseMaps = {
 		    "OSM": osm
 		};
-	var geoType = "<%= request.getAttribute("geoType")%>";
-	var crs = '<%= request.getAttribute("crs")%>';
+	var geoType = "<%=request.getAttribute("geoType")%>";
+	var crs = '<%=request.getAttribute("crs")%>';
 	if (geoType == "Tiles"){
 		
-		var resourceUri = "<%= request.getAttribute("resourceUri")%>";
+		var resourceUri = "<%=request.getAttribute("resourceUri")%>";
 		var urlGeoTiles = resourceUri + "/{z}/{x}/{y}";
-		var envelope    = <%= request.getAttribute("envelope")%>;
-		var center      = <%= request.getAttribute("center")%>;
-		var zoom_init   = <%= request.getAttribute("zoom_min")%>;
-		var zoom_max    = <%= request.getAttribute("zoom_max")%>;
+		var envelope    = <%=request.getAttribute("envelope")%>;
+		var center      = <%=request.getAttribute("center")%>;
+		var zoom_init   = <%=request.getAttribute("zoom_min")%>;
+		var zoom_max    = <%=request.getAttribute("zoom_max")%>;
 		
 	    var myTiles = new L.tileLayer(urlGeoTiles, {
 	        minZoom: zoom_init,
@@ -103,10 +114,10 @@
 		});		
 	}
 	else{	
-			var resourceUri = "<%= request.getAttribute("resourceUri")%>";
+			var resourceUri = "<%=request.getAttribute("resourceUri")%>";
 			var urlGeoTiles = resourceUri + "/{z}/{x}/{y}.mvt";
-			var envelope    = <%= request.getAttribute("envelope")%>;
-			var center      = <%= request.getAttribute("center")%>;
+			var envelope    = <%=request.getAttribute("envelope")%>;
+			var center      = <%=request.getAttribute("center")%>;
 			
 			var geocenter = [105.65287399291995,20.975032806396456];  // Ha Noi,  Vietnam as default location 
 			if (center !== null)
@@ -212,14 +223,22 @@
 					mapboxTileLayer.resetFeatureStyle(highlight);
 				}
 				highlight = null;
-			};
-			
+			};			
 			var mapboxTileLayer = L.vectorGrid.protobuf(urlGeoTiles, mapboxVectorTileOptions)
 			.on('click', function(e) {
-				console.log(e.layer);
-				console.log(e.layer.properties.feature_id);
+				var properties = e.layer.properties;
+				var content = "<p>";
+				if (properties !== null){
+					for (const [key, value] of Object.entries(properties)) {
+					  if (key.localeCompare("feature_id") !== 0){
+						i = "<b>" + key + ": </b>" + value + "</br>";
+						content = content + i;
+					  }
+					}
+				}
+				content = content + "</p>";
 				L.popup()
-				.setContent(e.layer.properties.feature_id)
+				.setContent(content)
 				.setLatLng(e.latlng)
 				.openOn(map);
 				clearHighlight();
