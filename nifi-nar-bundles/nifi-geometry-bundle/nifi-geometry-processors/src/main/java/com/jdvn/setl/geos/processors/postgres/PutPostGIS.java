@@ -83,6 +83,7 @@ import org.apache.nifi.serialization.record.util.IllegalTypeConversionException;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.jdvn.setl.geos.processors.db.DatabaseAdapter;
+import com.jdvn.setl.geos.processors.util.GeoUtils;
 
 @EventDriven
 @InputRequirement(Requirement.INPUT_REQUIRED)
@@ -880,7 +881,7 @@ public class PutPostGIS extends AbstractProcessor {
                             setParameter(ps, i + 1, currentValue, fieldSqlType, sqlType);
                         }
                     }
-                    // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
+                    // Adjust values for field NIFIUID in case of INSERT/ UPDATE / DELETE
                     List<String> fieldNames = recordSchema.getFieldNames();
                     if (!(fieldNames.contains(SETL_UUID.toUpperCase()) || fieldNames.contains(SETL_UUID.toLowerCase()))) {
                     	if (INSERT_TYPE.equalsIgnoreCase(statementType) || UPDATE_TYPE.equalsIgnoreCase(statementType) || DELETE_TYPE.equalsIgnoreCase(statementType)) {
@@ -1288,7 +1289,7 @@ public class PutPostGIS extends AbstractProcessor {
 
                 // Check if this column is an Update Key. If so, skip it for now. We will come
                 // back to it after we finish the SET clause
-                if (!normalizedKeyColumnNames.contains(normalizedColName)) {
+                if (!(normalizedKeyColumnNames.contains(normalizedColName.toLowerCase()) || normalizedKeyColumnNames.contains(normalizedColName.toUpperCase()))) {
                     if (fieldsFound.getAndIncrement() > 0) {
                         sqlBuilder.append(", ");
                     }
@@ -1309,14 +1310,19 @@ public class PutPostGIS extends AbstractProcessor {
             // Set the WHERE clause based on the Update Key values
             sqlBuilder.append(" WHERE ");
             AtomicInteger whereFieldCount = new AtomicInteger(0);
-            
-            for (String name : normalizedKeyColumnNames) {
+            // Case of GSS as source NIFIUID case-sensitive
+            if (fieldNames.contains(GeoUtils.SETL_UUID)) {
+            	sqlBuilder.append(GeoUtils.SETL_UUID).append(" = ?");            	
+            	includedColumns.add(fieldNames.indexOf(GeoUtils.SETL_UUID));
+            }
+            else { // if not GSS, must be PostGIS source, include primary keys
+                for (String name : normalizedKeyColumnNames) {
 
-                if (whereFieldCount.getAndIncrement() > 0) {
-                    sqlBuilder.append(" AND ");
-                }
-                sqlBuilder.append(name).append(" = ?");
-
+                    if (whereFieldCount.getAndIncrement() > 0) {
+                        sqlBuilder.append(" AND ");
+                    }
+                    sqlBuilder.append(name).append(" = ?");
+                }            	
             }
         }
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
@@ -1334,7 +1340,7 @@ public class PutPostGIS extends AbstractProcessor {
         // iterate over all of the fields in the record, building the SQL statement by adding the column names
         List<String> fieldNames = recordSchema.getFieldNames();
         final List<Integer> includedColumns = new ArrayList<>();
-        if (fieldNames != null) {
+        if (fieldNames != null && !fieldNames.contains(GeoUtils.SETL_UUID)) {
             sqlBuilder.append(" WHERE ");
             int fieldCount = fieldNames.size();
             AtomicInteger fieldsFound = new AtomicInteger(0);
@@ -1375,29 +1381,34 @@ public class PutPostGIS extends AbstractProcessor {
                         sqlBuilder.append(")");
                     }
                     includedColumns.add(i);
+
                 } else {
                     // User is ignoring unmapped fields, but log at debug level just in case
                     getLogger().debug("Did not map field '" + fieldName + "' to any column in the database\n"
                             + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
                 }
             }
-
             if (fieldsFound.get() == 0) {
                 throw new SQLDataException("None of the fields in the record map to the columns defined by the " + tableName + " table\n"
                         + (settings.translateFieldNames ? "Normalized " : "") + "Columns: " + String.join(",", tableSchema.getColumns().keySet()));
             }
-        }
-        // Concat with NIFIUID generated from code
-        sqlBuilder.append(" AND ");
-        AtomicInteger whereFieldCount = new AtomicInteger(0);
-        for (String name : normalizedKeyColumnNames) {
+            // Concat with NIFIUID generated from code
+            sqlBuilder.append(" AND ");
+            AtomicInteger whereFieldCount = new AtomicInteger(0);
+            for (String name : normalizedKeyColumnNames) {
 
-            if (whereFieldCount.getAndIncrement() > 0) {
-                sqlBuilder.append(" AND ");
-            }
-            sqlBuilder.append(name).append(" = ?");
+                if (whereFieldCount.getAndIncrement() > 0) {
+                    sqlBuilder.append(" AND ");
+                }
+                sqlBuilder.append(name).append(" = ?");
+            } 
         }
-
+        else {
+        	sqlBuilder.append(" WHERE ");
+        	sqlBuilder.append(GeoUtils.SETL_UUID).append(" = ?");            	
+        	includedColumns.add(fieldNames.indexOf(GeoUtils.SETL_UUID));       	
+        }        
+        
         return new SqlAndIncludedColumns(sqlBuilder.toString(), includedColumns);
     }
 
