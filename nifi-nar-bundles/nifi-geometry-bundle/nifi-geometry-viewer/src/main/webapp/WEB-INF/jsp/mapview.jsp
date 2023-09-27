@@ -1,25 +1,36 @@
 <%@ page contentType="text/html" pageEncoding="UTF-8" session="false"%>
-<link rel="stylesheet"
-	href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" type="text/css" />
-<script type="text/javascript"
-	src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script type="text/javascript"
-	src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
-<script
-	src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket.min.js"></script>
-<script
-	src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.6/wicket-leaflet.js"></script>
-<script
-	src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
-<script
-	src="https://cdnjs.cloudflare.com/ajax/libs/proj4leaflet/1.0.2/proj4leaflet.min.js"></script>
-<script
-	src="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.min.js"></script>
-<link rel="stylesheet"
-	href="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.css"
-	type="text/css" />
-<div id="map"
-	style="height: 800px; width: 800px; position: relative; padding: 0px; margin: 0 auto 0 auto;"></div>
+<script type="text/javascript" src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script type="text/javascript" src="https://unpkg.com/leaflet.vectorgrid@latest/dist/Leaflet.VectorGrid.bundled.js"></script>
+<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>	
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.css" />
+
+<style>
+.nifi-map-popup .leaflet-popup-content-wrapper {
+  background:#2c3e50;
+  color:#fff;
+  font-size:12px;
+  line-height:24px;
+  }
+.nifi-map-popup .leaflet-popup-content-wrapper a {
+  color:rgba(255,255,255,0.5);
+  }
+.nifi-map-popup .leaflet-popup-tip-container {
+  width:30px;
+  height:15px;
+  }
+.nifi-map-popup .leaflet-popup-tip {
+  border-left:15px solid transparent;
+  border-right:15px solid transparent;
+  border-top:15px solid #2c3e50;
+  }  
+.nifi-map-popup .leaflet-popup-content {
+	font:auto !important;
+  }    
+</style>
+
+<div class='nifi-map-popup' id="map" style="height: 800px; width: 800px; position: relative; padding: 0px; margin: 0 auto 0 auto;"></div>
 
 <script> 
 	var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -231,16 +242,13 @@
 				if (properties !== null){
 					for (const [key, value] of Object.entries(properties)) {
 					  if (key.localeCompare("feature_id") !== 0){
-						i = "<strong>" + key + ": </strong>" + value + "<br />";
+						i = "<b>" + key + ": </b>" + value + "<br />";
 						content = content + i;
 					  }
 					}
 				}
 				content = content + "</p>";
-				L.popup()
-				.setContent(content)
-				.setLatLng(e.latlng)
-				.openOn(map);
+				L.popup().setContent(content).setLatLng(e.latlng).openOn(map);
 				clearHighlight();
 				highlight = e.layer.properties.feature_id;
 				mapboxTileLayer.setFeatureStyle(highlight, {
