@@ -863,6 +863,7 @@ public class PutGSS extends AbstractProcessor {
 											currentValue = ((Number) currentValue).intValue();
 										}
 									}
+									// For case the value is marked as String but geometry column need store as Bytes 
 									if (currentValue instanceof java.lang.String && checkHex((String)currentValue)) {
 										try {
 											Geometry geom = new WKBReader().read(WKBReader.hexToBytes((String)currentValue));
@@ -872,7 +873,7 @@ public class PutGSS extends AbstractProcessor {
 											};
 											break;
 										} catch (ParseException e) {
-											e.printStackTrace();
+											System.out.println("Have checked the value of String type and it is not WKB type, Skip on!");
 										}
 
 									}
@@ -887,9 +888,7 @@ public class PutGSS extends AbstractProcessor {
 							} else
 								stmt.setObject(i + 1, currentValue);							
 						}                                              
-                    }
-                    
-
+                    }                    
                     if (geo_src_type.toLowerCase().contains("postgis")) {
                         // Add value for field NIFIUID in case of INSERT/ UPDATE / DELETE
                     	nifiuid = createGUIDfromFkeyString(idbase.toString() + nifiuid).toString();

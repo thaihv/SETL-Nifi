@@ -275,7 +275,7 @@ public class ShpWriter extends AbstractProcessor {
         
         final File srcFile = new File(context.getProperty(DIRECTORY) + "/" + filename);
         String charset_in = context.getProperty(CHARSET).evaluateAttributeExpressions(flowFile).getValue();
-        String charset_flow = flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET);
+        String charset_flow = flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET) == null ? "UTF-8" : flowFile.getAttributes().get(GeoUtils.GEO_CHAR_SET);
         final String charset = charset_in == null ? charset_flow : charset_in;
         final String srs_wkt = context.getProperty(CRS_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
 		try {
@@ -284,8 +284,10 @@ public class ShpWriter extends AbstractProcessor {
 				public void process(final InputStream in) {
 					try {
 						AvroRecordReader reader = new AvroReaderWithEmbeddedSchema(in);
-						final String srs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key());
-						final CoordinateReferenceSystem crs_source = CRS.parseWKT(srs_source);
+						// Set CRS to "EPSG:4326" if the attribute missed
+						CoordinateReferenceSystem crs_source = flowFile.getAttributes().get(GeoAttributes.CRS.key()) == null ? 
+								CRS.decode("EPSG:4326", true) : CRS.parseWKT(flowFile.getAttributes().get(GeoAttributes.CRS.key()));
+						
 						CoordinateReferenceSystem crs_target = crs_source;
 						if (!srs_wkt.equals("0")) {
 							try {
@@ -294,7 +296,13 @@ public class ShpWriter extends AbstractProcessor {
 								logger.error("Unable to create the CRS from {}, We will use CRS from flowfile. Verify your CRS Well-Known Text!", new Object[]{srs_wkt});
 								crs_target = crs_source;
 							}
-						}				
+						}
+						// Eventually have no CRS at source at all and keeping "EPSG:4326" as default
+						// then get the target one back. 
+						if (flowFile.getAttributes().get(GeoAttributes.CRS.key()) == null) {
+							crs_source = crs_target;
+						}
+						
 						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionFromNifiRecords(fragmentIdentifier, reader, crs_source, crs_target);
 						if (createShapeFileFromGeoDataFlowfile(srcFile, charset, collection))
 							logger.info("Saved {} to file {}", new Object[]{flowFile, srcFile.toURI().toString()});

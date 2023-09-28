@@ -253,7 +253,7 @@
 
 				}
 				if (i > 7){
-					content = content + "<tr><td><b> And: </b></td><td>.....</td></tr></table>";
+					content = content + "<tr><td><b>.....</b></td><td>.....</td></tr></table>";
 				}
 				else{
 					content = content + "</table>";

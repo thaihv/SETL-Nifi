@@ -125,7 +125,7 @@ public class ShpReader extends AbstractProcessor {
             .name("File Filter")
             .description("Only files whose names match the given regular expression will be picked up")
             .required(true)
-            .defaultValue("[^\\.].*")
+            .defaultValue(".*\\.shp")
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
             .build();
     public static final PropertyDescriptor PATH_FILTER = new PropertyDescriptor.Builder()
