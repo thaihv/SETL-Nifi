@@ -7,27 +7,27 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-loading@0.1.24/src/Control.Loading.css" />
 
 <style>
+.nifi-map-popup .leaflet-popup-tip, 
 .nifi-map-popup .leaflet-popup-content-wrapper {
-  background:#2c3e50;
-  color:#fff;
-  font-size:12px;
-  line-height:24px;
-  }
-.nifi-map-popup .leaflet-popup-content-wrapper a {
-  color:rgba(255,255,255,0.5);
-  }
-.nifi-map-popup .leaflet-popup-tip-container {
-  width:30px;
-  height:15px;
-  }
-.nifi-map-popup .leaflet-popup-tip {
-  border-left:15px solid transparent;
-  border-right:15px solid transparent;
-  border-top:15px solid #2c3e50;
-  }  
-.nifi-map-popup .leaflet-popup-content {
-	font:auto !important;
-  }    
+	background: #8f9fb0;
+	color: #fff;
+	font-size: 12px;
+}
+.nifi-map-popup b {
+	font: 12px Arial, sans-serif;
+	font-weight: bold;
+}
+.nifi-map-popup table {
+	border-collapse: separate;
+	border-spacing: 2px;
+}
+.nifi-map-popup table, td {
+	border: 1px solid black;
+	border-radius: 3px;
+}
+.nifi-map-popup td {
+	background-color: #8f9fc3;
+}
 </style>
 
 <div class='nifi-map-popup' id="map" style="height: 800px; width: 800px; position: relative; padding: 0px; margin: 0 auto 0 auto;"></div>
@@ -238,16 +238,26 @@
 			var mapboxTileLayer = L.vectorGrid.protobuf(urlGeoTiles, mapboxVectorTileOptions)
 			.on('click', function(e) {
 				var properties = e.layer.properties;
-				var content = "<p>";
+				var content = "<table>";
+				var i = 0;
 				if (properties !== null){
 					for (const [key, value] of Object.entries(properties)) {
-					  if (key.localeCompare("feature_id") !== 0){
-						i = "<b>" + key + ": </b>" + value + "<br />";
-						content = content + i;
-					  }
+						if (i <= 7) { //display only 8
+							if (key.localeCompare("feature_id") !== 0){
+								attr = "<tr><td><b>" + key + ": </b></td><td>" + value + "</td></tr>";
+								content = content + attr;
+							}
+						}
+						i = i + 1;
 					}
+
 				}
-				content = content + "</p>";
+				if (i > 7){
+					content = content + "<tr><td><b> And: </b></td><td>.....</td></tr></table>";
+				}
+				else{
+					content = content + "</table>";
+				}				
 				L.popup().setContent(content).setLatLng(e.latlng).openOn(map);
 				clearHighlight();
 				highlight = e.layer.properties.feature_id;
