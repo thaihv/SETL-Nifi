@@ -561,14 +561,11 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						attributesToAdd.put(GeoUtils.GEO_DB_SRC_TYPE, "GSS");
 						attributesToAdd.put(GEO_COLUMN, GeoUtils.GSS_GEO_COLUMN);
 						attributesToAdd.put(SOURCE_PKLIST, GeoUtils.SETL_UUID);
-
-						IGSSResultSetMetaData rsmd = rs.getMetaData();
 						
-						if (rsmd.hasGeometryColumn()) {
-							double[] bbox = rsmd.getBounds();
-							String envelop = "[[" + Double.toString(bbox[0]) + "," + Double.toString(bbox[2]) + "]"
-									+ ", [" + Double.toString(bbox[1]) + "," + Double.toString(bbox[3]) + "]]";
-							String center = "[" + Double.toString((bbox[0] + bbox[2]) / 2 ) + "," + Double.toString((bbox[1] + bbox[3]) / 2) + "]";
+						if (md != null) {
+							String envelop = "[[" + Double.toString(md.mMinX) + "," + Double.toString(md.mMaxX) + "]"
+									+ ", [" + Double.toString(md.mMinY) + "," + Double.toString(md.mMaxY) + "]]";
+							String center = "[" + Double.toString((md.mMinX + md.mMaxX) / 2 ) + "," + Double.toString((md.mMinY + md.mMaxY) / 2) + "]";
 							attributesToAdd.put(GeoAttributes.GEO_ENVELOPE.key(), envelop);
 							attributesToAdd.put(GeoAttributes.GEO_CENTER.key(), center);							
 						}						

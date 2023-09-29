@@ -680,7 +680,8 @@ public class StandardConnectionDAO extends ComponentDAO implements ConnectionDAO
             DownloadableContent result = new DownloadableContent(filename, type, content);
             if (attributes.get(GeoAttributes.CRS.key()) != null) {
             	result.setCrs(attributes.get(GeoAttributes.CRS.key()));
-            	result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
+            	if (attributes.get(GeoAttributes.GEO_TYPE.key()) != null)
+            		result.setGeoType(attributes.get(GeoAttributes.GEO_TYPE.key()));
         		if (attributes.get(GeoAttributes.GEO_CENTER.key()) != null)
         			result.setCenter(attributes.get(GeoAttributes.GEO_CENTER.key()));
         		if (attributes.get(GeoAttributes.GEO_ENVELOPE.key()) != null)
