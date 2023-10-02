@@ -528,6 +528,7 @@ public class GeoUtils {
 	private static byte[] generateMapBoxVectorTiles(final DataFileStream<GenericData.Record> dataFileReader, ReferencedEnvelope envelopeTile) {
 		String geokey = null;		
 		boolean bGetType = false;
+		boolean bGeometryCollection = false;
 		String layerName = TEST_LAYER_NAME;
 		WKTReader wktRdr = new WKTReader();		 
 		List<Geometry> g_list = new ArrayList<Geometry>();
@@ -547,6 +548,10 @@ public class GeoUtils {
 				else if (geometryClass == MultiPolygon.class || geometryClass == Polygon.class) {
 					layerName = "myPolygons";
 				}
+				else if (geometryClass == GeometryCollection.class) {
+					layerName = "myPolygons"; // just for client style
+					bGeometryCollection = true;
+				}
 				bGetType = true;
 			}
 			String wktGeo = record.get(geokey) == null ? null : record.get(geokey) .toString();
@@ -555,18 +560,38 @@ public class GeoUtils {
 					try {
 						Geometry g = wktRdr.read(wktGeo);						
 						if (env_t.intersects(g.getEnvelopeInternal())) {
-							g_list.add(g);
-					        Map<String, Object> attributes = new LinkedHashMap<>();					 
-							for (int i = 0; i < record.getSchema().getFields().size(); i++) {
-								Field f = record.getSchema().getFields().get(i);
-								String value = record.get(f.name()) == null ? null: record.get(f.name()).toString();
-								if ((f.name() != geokey && value != null)) {
-									attributes.put(f.name(), value);
-									
+							if (bGeometryCollection == true) {
+						        Map<String, Object> attributes = new LinkedHashMap<>();					 
+								for (int j = 0; j < record.getSchema().getFields().size(); j++) {
+									Field f = record.getSchema().getFields().get(j);
+									String value = record.get(f.name()) == null ? null: record.get(f.name()).toString();
+									if ((f.name() != geokey && value != null)) {
+										attributes.put(f.name(), value);
+										
+									}
 								}
+								attributes.put("feature_id", String.valueOf(attributes.hashCode()));
+								
+								List<Geometry> gc = JtsAdapter.flatFeatureList(g);
+								for (int i = 0; i < gc.size(); i++) {
+									g_list.add(gc.get(i));
+									gc.get(i).setUserData(attributes);
+								}																
 							}
-							attributes.put("feature_id", String.valueOf(attributes.hashCode()));
-							g.setUserData(attributes);
+							else {
+								g_list.add(g);
+						        Map<String, Object> attributes = new LinkedHashMap<>();					 
+								for (int i = 0; i < record.getSchema().getFields().size(); i++) {
+									Field f = record.getSchema().getFields().get(i);
+									String value = record.get(f.name()) == null ? null: record.get(f.name()).toString();
+									if ((f.name() != geokey && value != null)) {
+										attributes.put(f.name(), value);
+										
+									}
+								}
+								attributes.put("feature_id", String.valueOf(attributes.hashCode()));
+								g.setUserData(attributes);
+							}
 						}							
 					} catch (com.vividsolutions.jts.io.ParseException e) {
 						// TODO Auto-generated catch block
@@ -574,11 +599,7 @@ public class GeoUtils {
 					}
 				}			
 		}
-		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();
-		// Use no buffer will give tile rectangle in TileGeom with geometries outside tile
-        //TileGeomResult tileGeom = JtsAdapter.createTileGeom(g_list, env_t, geomFactory,DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);        
-        //VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, tileGeom, layerName);
-		
+		com.vividsolutions.jts.geom.GeometryFactory geomFactory = new com.vividsolutions.jts.geom.GeometryFactory();		
 		// Use buffer with clip envelope - (10 * 2)% buffered area of the tile envelope
 		// to display well geometries belongs many tiles
 		double tileWidth  = env_t.getWidth();
@@ -587,7 +608,8 @@ public class GeoUtils {
         double bufferWidth = tileWidth * .1f;
         double bufferHeight = tileHeight * .1f;
         
-        clipEnvelope.expandBy(bufferWidth, bufferHeight);		
+        clipEnvelope.expandBy(bufferWidth, bufferHeight);	
+        
         TileGeomResult bufferedTileGeom = JtsAdapter.createTileGeom(g_list, env_t, clipEnvelope, geomFactory, DEFAULT_MVT_PARAMS, ACCEPT_ALL_FILTER);
         VectorTile.Tile mvt = encodeMvt(DEFAULT_MVT_PARAMS, bufferedTileGeom, layerName);
         
