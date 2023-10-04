@@ -546,7 +546,7 @@ public class ShpReader extends AbstractProcessor {
 									}
 								}
 					        }
-					        final File shpFile = new File(TEMP_UNZIP_DIR.toPath() + ".shp");
+					        final File shpFile = new File(TEMP_UNZIP_DIR.toPath() + "/" + geoName + ".shp");
 					        writeShpFileToAvroRecordSet(session, shpFile, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
 					        // Clean temp unzip files
 					        Files.deleteIfExists(TEMP_UNZIP_DIR.toPath());
