@@ -18,7 +18,9 @@ package com.jdvn.setl.geos.processors.shapefile;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.file.FileStore;
@@ -52,9 +54,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
+import org.apache.commons.io.IOUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -77,6 +82,7 @@ import org.apache.nifi.processor.ProcessContext;
 import org.apache.nifi.processor.ProcessSession;
 import org.apache.nifi.processor.ProcessorInitializationContext;
 import org.apache.nifi.processor.Relationship;
+import org.apache.nifi.processor.io.InputStreamCallback;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.serialization.RecordSetWriter;
@@ -107,12 +113,21 @@ public class ShpReader extends AbstractProcessor {
     public static final String FRAGMENT_ID = FragmentAttributes.FRAGMENT_ID.key();
     public static final String FRAGMENT_INDEX = FragmentAttributes.FRAGMENT_INDEX.key();
     public static final String FRAGMENT_COUNT = FragmentAttributes.FRAGMENT_COUNT.key();
+    
+	public static final PropertyDescriptor B_FROM_DIRECTORY = new PropertyDescriptor.Builder()
+			.name("Data From Directory")
+			.description("If true, then use the given directory to detect data. If not, use source flowfile to process.")
+			.required(true)
+			.allowableValues("true", "false")
+			.defaultValue("true")
+			.build();	
     public static final PropertyDescriptor DIRECTORY = new PropertyDescriptor.Builder()
             .name("Input Directory")
             .description("The input directory from which to pull files")
             .required(true)
             .addValidator(StandardValidators.createDirectoryExistsValidator(true, false))
             .expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY)
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor RECURSE = new PropertyDescriptor.Builder()
             .name("Recurse Subdirectories")
@@ -120,6 +135,7 @@ public class ShpReader extends AbstractProcessor {
             .required(true)
             .allowableValues("true", "false")
             .defaultValue("true")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor FILE_FILTER = new PropertyDescriptor.Builder()
             .name("File Filter")
@@ -127,23 +143,15 @@ public class ShpReader extends AbstractProcessor {
             .required(true)
             .defaultValue(".*\\.shp")
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor PATH_FILTER = new PropertyDescriptor.Builder()
             .name("Path Filter")
             .description("When " + RECURSE.getName() + " is true, then only subdirectories whose path matches the given regular expression will be scanned")
             .required(false)
             .addValidator(StandardValidators.REGULAR_EXPRESSION_VALIDATOR)
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
-    public static final PropertyDescriptor KEEP_SOURCE_FILE = new PropertyDescriptor.Builder()
-            .name("Keep Source File")
-            .description("If true, the file is not deleted after it has been copied to the Content Repository; "
-                    + "this causes the file to be picked up continually and is useful for testing purposes.  "
-                    + "If not keeping original NiFi will need write permissions on the directory it is pulling "
-                    + "from otherwise it will ignore the file.")
-            .required(true)
-            .allowableValues("true", "false")
-            .defaultValue("true")
-            .build();  
     public static final PropertyDescriptor DELETE_EMPTY_FLOWFILE = new PropertyDescriptor.Builder()
             .name("Delete Zero-Record FlowFiles")
             .description("If true, the FlowFile with zero records is deleted.")
@@ -164,6 +172,7 @@ public class ShpReader extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .defaultValue("10")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final PropertyDescriptor MAX_ROWS_PER_FLOW_FILE = new PropertyDescriptor.Builder()
             .name("shapefile-max-rows")
@@ -191,6 +200,7 @@ public class ShpReader extends AbstractProcessor {
             .allowableValues("true", "false")
             .defaultValue("true")
             .required(true)
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();
     public static final PropertyDescriptor POLLING_INTERVAL = new PropertyDescriptor.Builder()
             .name("Polling Interval")
@@ -198,6 +208,7 @@ public class ShpReader extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.TIME_PERIOD_VALIDATOR)
             .defaultValue("0 sec")
+            .dependsOn(B_FROM_DIRECTORY, "true")
             .build();    
     public static final String FILE_CREATION_TIME_ATTRIBUTE = "file.creationTime";
     public static final String FILE_LAST_MODIFY_TIME_ATTRIBUTE = "file.lastModifiedTime";
@@ -225,12 +236,12 @@ public class ShpReader extends AbstractProcessor {
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> properties = new ArrayList<>();
+        properties.add(B_FROM_DIRECTORY);
         properties.add(DIRECTORY);
         properties.add(FILE_FILTER);
         properties.add(PATH_FILTER);
         properties.add(BATCH_SIZE);
         properties.add(MAX_ROWS_PER_FLOW_FILE);
-        properties.add(KEEP_SOURCE_FILE);
         properties.add(DELETE_EMPTY_FLOWFILE);  
         properties.add(CHARSET);        
         properties.add(RECURSE);
@@ -259,175 +270,59 @@ public class ShpReader extends AbstractProcessor {
         fileQueue.clear();
     }
 
-	@Override
-	public void onTrigger(final ProcessContext context, final ProcessSession session) {
-
-        final File directory = new File(context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue());
-        final boolean keepingSourceFile = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
-        final boolean deleteZeroFlowFile = context.getProperty(DELETE_EMPTY_FLOWFILE).asBoolean();
-        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions().getValue();
-        
-        final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
-        final ComponentLog logger = getLogger();
-
-        if (fileQueue.size() < 100) {
-            final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
-            if ((queueLastUpdated.get() < System.currentTimeMillis() - pollingMillis) && listingLock.tryLock()) {
-                try {
-                    final Set<File> listing = performListing(directory, fileFilterRef.get(), context.getProperty(RECURSE).asBoolean().booleanValue());
-
-                    queueLock.lock();
-                    try {
-                        listing.removeAll(inProcess);
-                        if (!keepingSourceFile) {
-                            listing.removeAll(recentlyProcessed);
-                        }
-
-                        fileQueue.clear();
-                        fileQueue.addAll(listing);
-
-                        queueLastUpdated.set(System.currentTimeMillis());
-                        recentlyProcessed.clear();
-
-                        if (listing.isEmpty()) {
-                            context.yield();
-                        }
-                    } finally {
-                        queueLock.unlock();
-                    }
-                } finally {
-                    listingLock.unlock();
-                }
-            }
+	private void writeShpFileToAvroRecordSet(final ProcessSession session, final File Shpfile, final String charset,
+			final Integer maxRowsPerFlowFile, boolean deleteZeroFlowFile, final ComponentLog logger) {
+		
+		String geoName = Shpfile.getName().substring(0, Shpfile.getName().lastIndexOf('.'));
+		final Path filePath = Shpfile.toPath();
+		FlowFile flowFile = session.create();                
+        flowFile = session.importFrom(filePath, true, flowFile);
+        flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), Shpfile.getName());
+        flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), Shpfile.getPath());
+        flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), Shpfile.getAbsolutePath());
+        Map<String, String> attributes = getAttributesFromFile(filePath);
+        if (attributes.size() > 0) {
+            flowFile = session.putAllAttributes(flowFile, attributes);
         }
+		
+		Map<String, Object> mapAttrs = new HashMap<>();
+		try {
+			mapAttrs.put("url", Shpfile.toURI().toURL());
+			DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
+			String typeName = dataStore.getTypeNames()[0];
+			SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
+			// Center and envelope for all features, for fragments in to re-calculate
+			String center = null;
+			String envelope = null;
+			int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?
+			if (maxRecord > 0) {
+				ReferencedEnvelope r = featureSource.getBounds();
+				center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
+				envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" + ", ["
+						+ String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";
+			}
+			if (charset != null)
+				((ShapefileDataStore) dataStore).setCharset(Charset.forName(charset));
+			Charset charset_in = ((ShapefileDataStore) dataStore).getCharset();
+			if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
+				int from = 0;
+				int to = 0;
+				final String fragmentIdentifier = UUID.randomUUID().toString();
+				int fragmentIndex = 0;
+				final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
+				List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
 
-        final int batchSize = context.getProperty(BATCH_SIZE).asInteger();
-        final List<File> files = new ArrayList<>(batchSize);
-        queueLock.lock();
-        try {
-            fileQueue.drainTo(files, batchSize);
-            if (files.isEmpty()) {
-                return;
-            } else {
-                inProcess.addAll(files);
-            }
-        } finally {
-            queueLock.unlock();
-        }
-
-        final ListIterator<File> itr = files.listIterator();
-        FlowFile flowFile = null;
-        File currentfile = null;
-        try {
-            final Path directoryPath = directory.toPath();
-            while (itr.hasNext()) {
-                final File file = itr.next();
-                currentfile = file;
-                final Path filePath = file.toPath();
-                final Path relativePath = directoryPath.relativize(filePath.getParent());
-                String relativePathString = relativePath.toString() + "/";
-                if (relativePathString.isEmpty()) {
-                    relativePathString = "./";
-                }
-                final Path absPath = filePath.toAbsolutePath();
-                final String absPathString = absPath.getParent().toString() + "/";
-
-                flowFile = session.create();
-                
-                flowFile = session.importFrom(filePath, keepingSourceFile, flowFile);
-                String geoName = file.getName().substring(0, file.getName().lastIndexOf('.'));
-                
-                flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), file.getName());
-                flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), relativePathString);
-                flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), absPathString);
-                Map<String, String> attributes = getAttributesFromFile(filePath);
-                if (attributes.size() > 0) {
-                    flowFile = session.putAllAttributes(flowFile, attributes);
-                }
-
-				Map<String, Object> mapAttrs = new HashMap<>();
-				mapAttrs.put("url", file.toURI().toURL());
-				DataStore dataStore = DataStoreFinder.getDataStore(mapAttrs);
-				String typeName = dataStore.getTypeNames()[0];
-				SimpleFeatureSource featureSource = dataStore.getFeatureSource(typeName);
-				// Center and evnelope for all features, for fragments in to re-calculate
-				String center = null;
-				String envelope = null;								
-				int maxRecord = featureSource.getFeatures().size(); // Call ones like this before getCharset function, why?	
-				if (maxRecord > 0) {
-					ReferencedEnvelope r = featureSource.getBounds();
-					center = "[" + String.valueOf(r.centre().getX()) + "," + String.valueOf(r.centre().getY()) + "]";
-					envelope = "[[" + String.valueOf(r.getMinX()) + "," + String.valueOf(r.getMaxX()) + "]" +  ", [" + String.valueOf(r.getMinY()) + "," + String.valueOf(r.getMaxY()) + "]]";					
-				}
-				if (charset != null)
-					((ShapefileDataStore)dataStore).setCharset(Charset.forName(charset));
-				Charset charset_in = ((ShapefileDataStore)dataStore).getCharset();
-				if (maxRowsPerFlowFile > 0 && maxRowsPerFlowFile < maxRecord) {
-					int from = 0;
-					int to = 0;
-					final String fragmentIdentifier = UUID.randomUUID().toString();
-					int fragmentIndex = 0;
-					final RecordSchema recordSchema = GeoUtils.createFeatureRecordSchema(featureSource);
-					List<FeatureId> featureIds = GeoUtils.getFeatureIds(featureSource.getFeatures());
-
-					while (from < maxRecord) {
-						final StopWatch stopWatch = new StopWatch(true);
-						to = from + maxRowsPerFlowFile;
-						if (to > maxRecord)
-							to = maxRecord;
-						Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
-						List<Record> records = GeoUtils.getNifiRecordSegmentsFromFeatureSource(featureSource, recordSchema, selectedIds, charset_in);
-						if (records.size() > 0) {
-							FlowFile transformed = session.create(flowFile);
-							CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
-							transformed = session.write(transformed, new OutputStreamCallback() {
-								@Override
-								public void process(final OutputStream out) throws IOException {
-									final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
-									@SuppressWarnings("resource")
-									final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
-											CodecFactory.bzip2Codec());
-									writer.write(new ListRecordSet(recordSchema, records));
-									writer.flush();
-								}
-							});
-
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
-									geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
-							transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
-							transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());							
-							transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
-							transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
-							transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
-							if (myCrs != null) {
-								transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-								transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
-							}
-
-							session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-							logger.info("added {} to flow", new Object[] { transformed });
-							session.adjustCounter("Records Read", records.size(), false);
-							session.transfer(transformed, REL_SUCCESS);
-						}
-						from = to;
-						fragmentIndex++;
-						
-					}
-					dataStore.dispose();
-					session.remove(flowFile);
-					
-				} else {
-					final StopWatch stopWatch = new StopWatch(true);					
-					final List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset_in);
-					FlowFile transformed = session.create(flowFile);
-					CoordinateReferenceSystem myCrs = GeoUtils.getCRSFromShapeFile(file);
+				while (from < maxRecord) {
+					final StopWatch stopWatch = new StopWatch(true);
+					to = from + maxRowsPerFlowFile;
+					if (to > maxRecord)
+						to = maxRecord;
+					Set<FeatureId> selectedIds = new LinkedHashSet<FeatureId>(featureIds.subList(from, to));
+					List<Record> records = GeoUtils.getNifiRecordSegmentsFromFeatureSource(featureSource, recordSchema,
+							selectedIds, charset_in);
 					if (records.size() > 0) {
-						RecordSchema recordSchema = records.get(0).getSchema();
+						FlowFile transformed = session.create(flowFile);
+						CoordinateReferenceSystem myCrs = featureSource.getSchema().getCoordinateReferenceSystem();
 						transformed = session.write(transformed, new OutputStreamCallback() {
 							@Override
 							public void process(final OutputStream out) throws IOException {
@@ -439,64 +334,235 @@ public class ShpReader extends AbstractProcessor {
 								writer.flush();
 							}
 						});
-					}
-					if (records.size() == 0 && deleteZeroFlowFile == true) {
-						session.remove(flowFile);
-						logger.info("deleted {} from flow", new Object[] { transformed });
-						dataStore.dispose();
-						session.remove(transformed);
-					}
-					else {	
-						session.remove(flowFile);																		
+
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(),
+								geoName + ":" + fragmentIdentifier + ":" + String.valueOf(fragmentIndex));
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, file.toURI().toString());
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, Shpfile.toURI().toString());
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
-						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(), String.valueOf(records.size()));
+						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
+								String.valueOf(records.size()));
+						transformed = session.putAttribute(transformed, FRAGMENT_ID, fragmentIdentifier);
+						transformed = session.putAttribute(transformed, FRAGMENT_INDEX, String.valueOf(fragmentIndex));
 						if (myCrs != null) {
 							transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
-							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),"application/avro+geowkt");								
+							transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
+									"application/avro+geowkt");
 						}
-						session.getProvenanceReporter().receive(transformed, file.toURI().toString(), stopWatch.getElapsed(TimeUnit.MILLISECONDS));
-						logger.info("added {} to flow", new Object[] { transformed });
-						dataStore.dispose();
-						session.adjustCounter("Records Read", records.size(), false);
-						session.transfer(transformed, REL_SUCCESS);						
-					}
-					
-				}
-                if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
-                    queueLock.lock();
-                    try {
-                        while (itr.hasNext()) {
-                            final File nextFile = itr.next();
-                            fileQueue.add(nextFile);
-                            inProcess.remove(nextFile);
-                        }
-                    } finally {
-                        queueLock.unlock();
-                    }
-                }
-            }
-        } catch (final Exception e) {
-            logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
 
-            // anything that we've not already processed needs to be put back on the queue
+						session.getProvenanceReporter().receive(transformed, Shpfile.toURI().toString(),
+								stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+						logger.info("added {} to flow", new Object[] { transformed });
+						session.adjustCounter("Records Read", records.size(), false);
+						session.transfer(transformed, REL_SUCCESS);
+					}
+					from = to;
+					fragmentIndex++;
+
+				}
+				dataStore.dispose();
+				session.remove(flowFile);
+
+			} else {
+				final StopWatch stopWatch = new StopWatch(true);
+				final List<Record> records = GeoUtils.getNifiRecordsFromFeatureSource(featureSource, charset_in);
+				FlowFile transformed = session.create(flowFile);
+				CoordinateReferenceSystem myCrs = featureSource.getSchema().getCoordinateReferenceSystem();
+				if (records.size() > 0) {
+					RecordSchema recordSchema = records.get(0).getSchema();
+					transformed = session.write(transformed, new OutputStreamCallback() {
+						@Override
+						public void process(final OutputStream out) throws IOException {
+							final Schema avroSchema = AvroTypeUtil.extractAvroSchema(recordSchema);
+							@SuppressWarnings("resource")
+							final RecordSetWriter writer = new WriteAvroResultWithSchema(avroSchema, out,
+									CodecFactory.bzip2Codec());
+							writer.write(new ListRecordSet(recordSchema, records));
+							writer.flush();
+						}
+					});
+				}
+				if (records.size() == 0 && deleteZeroFlowFile == true) {
+					session.remove(flowFile);
+					logger.info("deleted {} from flow", new Object[] { transformed });
+					dataStore.dispose();
+					session.remove(transformed);
+				} else {
+					session.remove(flowFile);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_TYPE.key(), "Features");
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_DB_SRC_TYPE, "Shape file");
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_NAME.key(), geoName);
+					transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, Shpfile.toURI().toString());
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
+					transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
+							String.valueOf(records.size()));
+					if (myCrs != null) {
+						transformed = session.putAttribute(transformed, GeoAttributes.CRS.key(), myCrs.toWKT());
+						transformed = session.putAttribute(transformed, CoreAttributes.MIME_TYPE.key(),
+								"application/avro+geowkt");
+					}
+					session.getProvenanceReporter().receive(transformed, Shpfile.toURI().toString(),
+							stopWatch.getElapsed(TimeUnit.MILLISECONDS));
+					logger.info("added {} to flow", new Object[] { transformed });
+					dataStore.dispose();
+					session.adjustCounter("Records Read", records.size(), false);
+					session.transfer(transformed, REL_SUCCESS);
+				}
+
+			}			
+		} catch (IOException e) {
+			logger.error("Failed to retrieve file {} due to {}",  new Object[] { Shpfile, e });
             if (flowFile != null) {
                 session.remove(flowFile);
             }
-        } finally {
+		}
+	}	
+	@Override
+	public void onTrigger(final ProcessContext context, final ProcessSession session) {
+
+		final boolean b_fromflow = context.getProperty(B_FROM_DIRECTORY).asBoolean();        
+        final boolean deleteZeroFlowFile = context.getProperty(DELETE_EMPTY_FLOWFILE).asBoolean();
+        final String charset = context.getProperty(CHARSET).evaluateAttributeExpressions().getValue();
+        
+        final Integer maxRowsPerFlowFile = context.getProperty(MAX_ROWS_PER_FLOW_FILE).evaluateAttributeExpressions().asInteger();
+        final ComponentLog logger = getLogger();
+        if (b_fromflow) {
+        	final File directory = new File(context.getProperty(DIRECTORY).evaluateAttributeExpressions().getValue());
+            if (fileQueue.size() < 100) {
+                final long pollingMillis = context.getProperty(POLLING_INTERVAL).asTimePeriod(TimeUnit.MILLISECONDS);
+                if ((queueLastUpdated.get() < System.currentTimeMillis() - pollingMillis) && listingLock.tryLock()) {
+                    try {
+                        final Set<File> listing = performListing(directory, fileFilterRef.get(), context.getProperty(RECURSE).asBoolean().booleanValue());
+
+                        queueLock.lock();
+                        try {
+                            listing.removeAll(inProcess);
+                            fileQueue.clear();
+                            fileQueue.addAll(listing);
+
+                            queueLastUpdated.set(System.currentTimeMillis());
+                            recentlyProcessed.clear();
+
+                            if (listing.isEmpty()) {
+                                context.yield();
+                            }
+                        } finally {
+                            queueLock.unlock();
+                        }
+                    } finally {
+                        listingLock.unlock();
+                    }
+                }
+            }
+
+            final int batchSize = context.getProperty(BATCH_SIZE).asInteger();
+            final List<File> files = new ArrayList<>(batchSize);
             queueLock.lock();
             try {
-                inProcess.removeAll(files);
-                recentlyProcessed.addAll(files);
+                fileQueue.drainTo(files, batchSize);
+                if (files.isEmpty()) {
+                    return;
+                } else {
+                    inProcess.addAll(files);
+                }
             } finally {
                 queueLock.unlock();
             }
+
+            final ListIterator<File> itr = files.listIterator();
+            File currentfile = null;
+            try {
+                while (itr.hasNext()) {
+                    final File file = itr.next();
+                    currentfile = file;
+                    writeShpFileToAvroRecordSet(session, file, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);                    
+                    if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
+                        queueLock.lock();
+                        try {
+                            while (itr.hasNext()) {
+                                final File nextFile = itr.next();
+                                fileQueue.add(nextFile);
+                                inProcess.remove(nextFile);
+                            }
+                        } finally {
+                            queueLock.unlock();
+                        }
+                    }
+                }
+            } catch (final Exception e) {
+                logger.error("Failed to retrieve file {} due to {}",  new Object[] { currentfile, e });
+            } finally {
+                queueLock.lock();
+                try {
+                    inProcess.removeAll(files);
+                    recentlyProcessed.addAll(files);
+                } finally {
+                    queueLock.unlock();
+                }
+            }        	
+        }
+        else {        	
+			FlowFile flowFile = session.get();
+			if (flowFile == null) {
+				return;
+			}
+			try {
+				session.read(flowFile, new InputStreamCallback() {
+					@Override
+					public void process(final InputStream in) {
+						String geoName = flowFile.getAttributes().get("composed.key");
+					    File TEMP_UNZIP_DIR = new File(System.getProperty("java.io.tmpdir") + File.separator + geoName);
+						try {
+						    System.out.println(System.getProperty("java.io.tmpdir"));
+						    System.out.println("Unzip at : " + TEMP_UNZIP_DIR.getPath());
+						    
+						    Path destPath = TEMP_UNZIP_DIR.toPath();
+						    
+					        ZipInputStream zis = new ZipInputStream(in);
+					        ZipEntry zipEntry;
+					        // while there are entries I process them
+					        while ((zipEntry = zis.getNextEntry()) != null)
+					        {
+								Path resolvedPath = destPath.resolve(zipEntry.getName().substring(zipEntry.getName().lastIndexOf("/")+1)).normalize();
+								if (!resolvedPath.startsWith(destPath)) {
+									throw new IOException("The requested zip-entry '" + zipEntry.getName()
+											+ "' does not belong to the requested destination");
+								}
+								if (zipEntry.isDirectory()) {
+									Files.createDirectories(resolvedPath);
+								} else {
+									if (!Files.isDirectory(resolvedPath.getParent())) {
+										Files.createDirectories(resolvedPath.getParent());
+									}
+									try (FileOutputStream outStream = new FileOutputStream(resolvedPath.toFile())) {
+										IOUtils.copy(zis, outStream);
+									}
+								}
+					        }
+					        final File shpFile = new File(TEMP_UNZIP_DIR.toPath() + ".shp");
+					        writeShpFileToAvroRecordSet(session, shpFile, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
+					        // Clean temp unzip files
+					        Files.deleteIfExists(TEMP_UNZIP_DIR.toPath());
+						} catch (IOException e) {
+							logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
+						}
+						finally {
+							
+						}
+					}
+				});
+				session.remove(flowFile);
+
+			} catch (Exception e) {
+				logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
+			}
         }
     }        
 
@@ -508,7 +574,6 @@ public class ShpReader extends AbstractProcessor {
         final boolean recurseDirs = context.getProperty(RECURSE).asBoolean();
         final String pathPatternStr = context.getProperty(PATH_FILTER).getValue();
         final Pattern pathPattern = (!recurseDirs || pathPatternStr == null) ? null : Pattern.compile(pathPatternStr);
-        final boolean keepOriginal = context.getProperty(KEEP_SOURCE_FILE).asBoolean();
 
         return new FileFilter() {
             @Override
@@ -526,11 +591,6 @@ public class ShpReader extends AbstractProcessor {
                 }
                 //Verify that we have at least read permissions on the file we're considering grabbing
                 if (!Files.isReadable(file.toPath())) {
-                    return false;
-                }
-
-                //Verify that if we're not keeping original that we have write permissions on the directory the file is in
-                if (keepOriginal == false && !Files.isWritable(file.toPath().getParent())) {
                     return false;
                 }
                 return filePattern.matcher(file.getName()).matches();

@@ -18,11 +18,12 @@
 	font-weight: bold;
 }
 .nifi-map-popup table {
+	border: 1px solid black;
 	border-collapse: separate;
 	border-spacing: 2px;
 }
-.nifi-map-popup table, td {
-	border: 1px solid black;
+.nifi-map-popup td {
+	border: 1px solid black;	
 	border-radius: 3px;
 }
 .nifi-map-popup td {
