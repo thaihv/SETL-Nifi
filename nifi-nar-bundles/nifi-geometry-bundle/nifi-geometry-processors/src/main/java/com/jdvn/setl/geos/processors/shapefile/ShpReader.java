@@ -276,15 +276,15 @@ public class ShpReader extends AbstractProcessor {
 		
 		String geoName  = Shpfile.getName().substring(0, Shpfile.getName().lastIndexOf('.'));
 		String geo_url  = dirLocation == null ? Shpfile.toURI().toString() : dirLocation + "/" + Shpfile.getName();
-		String path     = dirLocation == null ? Shpfile.getPath() : dirLocation + "/" + Shpfile.getName();
-		String abs_path = dirLocation == null ? Shpfile.getAbsolutePath() : dirLocation + "/" + Shpfile.getName();
+//		String path     = dirLocation == null ? Shpfile.getPath() : dirLocation + "/" + Shpfile.getName();
+//		String abs_path = dirLocation == null ? Shpfile.getAbsolutePath() : dirLocation + "/" + Shpfile.getName();
 		
 		final Path filePath = Shpfile.toPath();
 		FlowFile flowFile = session.create();                
         flowFile = session.importFrom(filePath, true, flowFile);
         flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), Shpfile.getName());
-        flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), path);
-        flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), abs_path);
+        flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), Shpfile.getPath());
+        flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), Shpfile.getAbsolutePath());
         Map<String, String> attributes = getAttributesFromFile(filePath);
         if (attributes.size() > 0) {
             flowFile = session.putAllAttributes(flowFile, attributes);
