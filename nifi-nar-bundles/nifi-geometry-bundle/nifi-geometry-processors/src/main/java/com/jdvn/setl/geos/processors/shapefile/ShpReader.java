@@ -59,6 +59,7 @@ import java.util.zip.ZipInputStream;
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.CodecFactory;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
@@ -270,16 +271,20 @@ public class ShpReader extends AbstractProcessor {
         fileQueue.clear();
     }
 
-	private void writeShpFileToAvroRecordSet(final ProcessSession session, final File Shpfile, final String charset,
+	private void writeShpFileToAvroRecordSet(final ProcessSession session, final File Shpfile, final String dirLocation, final String charset,
 			final Integer maxRowsPerFlowFile, boolean deleteZeroFlowFile, final ComponentLog logger) {
 		
-		String geoName = Shpfile.getName().substring(0, Shpfile.getName().lastIndexOf('.'));
+		String geoName  = Shpfile.getName().substring(0, Shpfile.getName().lastIndexOf('.'));
+		String geo_url  = dirLocation == null ? Shpfile.toURI().toString() : dirLocation + "/" + Shpfile.getName();
+		String path     = dirLocation == null ? Shpfile.getPath() : dirLocation + "/" + Shpfile.getName();
+		String abs_path = dirLocation == null ? Shpfile.getAbsolutePath() : dirLocation + "/" + Shpfile.getName();
+		
 		final Path filePath = Shpfile.toPath();
 		FlowFile flowFile = session.create();                
         flowFile = session.importFrom(filePath, true, flowFile);
         flowFile = session.putAttribute(flowFile, CoreAttributes.FILENAME.key(), Shpfile.getName());
-        flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), Shpfile.getPath());
-        flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), Shpfile.getAbsolutePath());
+        flowFile = session.putAttribute(flowFile, CoreAttributes.PATH.key(), path);
+        flowFile = session.putAttribute(flowFile, CoreAttributes.ABSOLUTE_PATH.key(), abs_path);
         Map<String, String> attributes = getAttributesFromFile(filePath);
         if (attributes.size() > 0) {
             flowFile = session.putAllAttributes(flowFile, attributes);
@@ -342,7 +347,7 @@ public class ShpReader extends AbstractProcessor {
 						transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
-						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, Shpfile.toURI().toString());
+						transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, geo_url);
 						transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
 						transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
 								String.valueOf(records.size()));
@@ -399,7 +404,7 @@ public class ShpReader extends AbstractProcessor {
 					transformed = session.putAttribute(transformed, GEO_COLUMN, GeoUtils.SHP_GEO_COLUMN);
 					transformed = session.putAttribute(transformed, GeoAttributes.GEO_CENTER.key(), center);
 					transformed = session.putAttribute(transformed, GeoAttributes.GEO_ENVELOPE.key(), envelope);
-					transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, Shpfile.toURI().toString());
+					transformed = session.putAttribute(transformed, GeoUtils.GEO_URL, geo_url);
 					transformed = session.putAttribute(transformed, GeoUtils.GEO_CHAR_SET, charset_in.name());
 					transformed = session.putAttribute(transformed, GeoAttributes.GEO_RECORD_NUM.key(),
 							String.valueOf(records.size()));
@@ -482,7 +487,7 @@ public class ShpReader extends AbstractProcessor {
                 while (itr.hasNext()) {
                     final File file = itr.next();
                     currentfile = file;
-                    writeShpFileToAvroRecordSet(session, file, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);                    
+                    writeShpFileToAvroRecordSet(session, file, null, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);                    
                     if (!isScheduled()) {  // if processor stopped, put the rest of the files back on the queue.
                         queueLock.lock();
                         try {
@@ -516,15 +521,19 @@ public class ShpReader extends AbstractProcessor {
 			try {
 				session.read(flowFile, new InputStreamCallback() {
 					@Override
-					public void process(final InputStream in) {
-						String geoName = flowFile.getAttributes().get("composed.key");
-					    File TEMP_UNZIP_DIR = new File(System.getProperty("java.io.tmpdir") + File.separator + geoName);
+					public void process(final InputStream in) {						
+						String targetDir = flowFile.getAttributes().get("filename");
+						targetDir = targetDir.substring(0, targetDir.length() - 4); // remove .zip extension
+						
+						String geoName = flowFile.getAttributes().get(GeoUtils.SHP_ZIP_MARK);
+						String dirLocation = flowFile.getAttributes().get(GeoUtils.SHP_ZIP_LOCATION);
+						
+					    File TEMP_UNZIP_DIR = new File(System.getProperty("java.io.tmpdir") + File.separator + targetDir);
 						try {
 						    System.out.println(System.getProperty("java.io.tmpdir"));
 						    System.out.println("Unzip at : " + TEMP_UNZIP_DIR.getPath());
 						    
-						    Path destPath = TEMP_UNZIP_DIR.toPath();
-						    
+						    Path destPath = TEMP_UNZIP_DIR.toPath();						    
 					        ZipInputStream zis = new ZipInputStream(in);
 					        ZipEntry zipEntry;
 					        // while there are entries I process them
@@ -547,9 +556,9 @@ public class ShpReader extends AbstractProcessor {
 								}
 					        }
 					        final File shpFile = new File(TEMP_UNZIP_DIR.toPath() + "/" + geoName + ".shp");
-					        writeShpFileToAvroRecordSet(session, shpFile, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
-					        // Clean temp unzip files
-					        Files.deleteIfExists(TEMP_UNZIP_DIR.toPath());
+					        writeShpFileToAvroRecordSet(session, shpFile, dirLocation, charset, maxRowsPerFlowFile, deleteZeroFlowFile, logger);
+					        // Clean files in temp folder
+					        FileUtils.deleteDirectory(TEMP_UNZIP_DIR);
 						} catch (IOException e) {
 							logger.error("Could not transformed {} because {}", new Object[] { flowFile, e });
 						}

@@ -113,6 +113,9 @@ public class GeoUtils {
     public static final String GPKG_TILE_DATA = "tile_data";
     public static final String GEO_DB_SRC_TYPE = "geo.source.type";
     
+    public static final String SHP_ZIP_MARK = "composed.key";
+    public static final String SHP_ZIP_LOCATION = "source.shp.dir";
+    
     public static final String DATA_COLUMNS = "gpkg_data_columns";
     protected static final int GENERIC_GEOGRAPHIC_SRID = 0;
     protected static final int GENERIC_PROJECTED_SRID = -1;
