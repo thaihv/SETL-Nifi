@@ -33,12 +33,15 @@ BEGIN
 	JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
 	WHERE  i.indrelid = table_name_main::regclass
 	AND    i.indisprimary));
+
+	RAISE NOTICE 'I want to print keys %, %', allkey[1], allkey[2];
 	
-	fpos = false;
+	fpos = 'f';
 	FOR k, v IN SELECT * FROM json_each_text(row_to_json(OLD))
 	LOOP
 		b = (SELECT k = ANY (allkey));
 		IF (b = 't') THEN
+			RAISE NOTICE 'datatype = %', pg_typeof(v);
 			IF (fpos = 'f') THEN
 				key_columns  = k;
 				key_values   = '''' || v || '''';
@@ -51,14 +54,17 @@ BEGIN
 			END IF;
 		END IF;	
 	END LOOP;
+	RAISE NOTICE '% = %', key_columns, key_values;
+	RAISE NOTICE 'where_clause: %', where_clause;
 
 	EXECUTE 'SELECT ' || key_columns || ' FROM ' || table_name_events || ' WHERE ' || where_clause INTO key_to_in USING OLD;
+	
     IF (TG_OP = 'DELETE') THEN
         values_event := 'd';
 		IF (key_to_in is NULL) THEN
 			EXECUTE 'INSERT INTO ' || table_name_events || '(' || key_columns || ',event) VALUES (' || key_values || ',''' || values_event || ''');' USING OLD;
 		ELSE
-			EXECUTE 'UPDATE ' || table_name_events || ' SET event = ''' || values_event || ''', changed = ''' || CURRENT_TIMESTAMP || ''' WHERE ' || where_clause || ''';' USING OLD;
+			EXECUTE 'UPDATE ' || table_name_events || ' SET event = ''' || values_event || ''', changed = ''' || CURRENT_TIMESTAMP || ''' WHERE ' || where_clause || ';' USING OLD;
 		END IF;
     END IF;
 	
@@ -67,7 +73,7 @@ BEGIN
 		IF (key_to_in is NULL) THEN
 			EXECUTE 'INSERT INTO ' || table_name_events || '(' || key_columns || ',event) VALUES (' || key_values || ',''' || values_event || ''');' USING OLD;
 		ELSE
-			EXECUTE 'UPDATE ' || table_name_events || ' SET changed = ''' || CURRENT_TIMESTAMP || ''' WHERE ' || where_clause || ''';' USING OLD;
+			EXECUTE 'UPDATE ' || table_name_events || ' SET changed = ''' || CURRENT_TIMESTAMP || ''' WHERE ' || where_clause || ';' USING OLD;
 		END IF;
     END IF;
 	
