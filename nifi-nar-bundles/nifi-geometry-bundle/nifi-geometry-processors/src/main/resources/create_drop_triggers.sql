@@ -4,7 +4,8 @@ CREATE TRIGGER _nifi_track_events
     ON public.src_geo
     FOR EACH ROW
     EXECUTE FUNCTION public.f_for_nifi_event_track();
-
+	/*EXECUTE FUNCTION public.f_for_nifi_event_track2();*/
+    
 /* Create event tracker table with prefix nifi_ */    
 CREATE TABLE public.nifi_src_geo
 (

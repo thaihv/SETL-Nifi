@@ -546,7 +546,8 @@ public class ShpReader extends AbstractProcessor {
 								}
 								if (zipEntry.isDirectory()) {
 									Files.createDirectories(resolvedPath);
-								} else {
+								} 
+								else {
 									if (!Files.isDirectory(resolvedPath.getParent())) {
 										Files.createDirectories(resolvedPath.getParent());
 									}

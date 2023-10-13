@@ -1,6 +1,7 @@
 -- FUNCTION: public.f_for_nifi_event_track()
 
 -- DROP FUNCTION public.f_for_nifi_event_track();
+-- Tested for handling primary key is single column with data type as INT
 
 CREATE FUNCTION public.f_for_nifi_event_track()
     RETURNS trigger
