@@ -18,9 +18,9 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>NiFi</title>
+        <title>SETL</title>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-        <link rel="shortcut icon" href="images/nifi16.ico"/>
+        <link rel="shortcut icon" href="images/setl16.ico"/>
         <link rel="stylesheet" href="assets/reset.css/reset.css" type="text/css" />
         ${nf.canvas.style.tags}
         <link rel="stylesheet" href="js/codemirror/lib/codemirror.css" type="text/css" />

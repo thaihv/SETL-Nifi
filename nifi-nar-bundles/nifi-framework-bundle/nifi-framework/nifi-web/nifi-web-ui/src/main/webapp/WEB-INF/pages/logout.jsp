@@ -18,9 +18,9 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>NiFi Logout</title>
+        <title>SETL Logout</title>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-        <link rel="shortcut icon" href="images/nifi16.ico"/>
+        <link rel="shortcut icon" href="images/setl16.ico"/>
         <link rel="stylesheet" href="assets/reset.css/reset.css" type="text/css" />
         <link rel="stylesheet" href="fonts/flowfont/flowfont.css" type="text/css" />
         ${nf.logout.style.tags}

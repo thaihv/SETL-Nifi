@@ -91,7 +91,10 @@ public class FlowFileQueueResource extends ApplicationResource {
     private NiFiServiceFacade serviceFacade;
     private Authorizer authorizer;
     @SuppressWarnings("rawtypes")
+    // For raster tiles caching
 	private static final Cache<CacheKey, FeatureCollection> mapViewCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
+    // For vector tiles caching
+    private static final Cache<CacheKey, byte[]> mapVectorCache = Caffeine.newBuilder().expireAfterAccess(30, TimeUnit.MINUTES).build();
     /**
      * Populate the URIs for the specified flowfile listing.
      *
@@ -460,7 +463,22 @@ public class FlowFileQueueResource extends ApplicationResource {
         
         final String uri = generateResourceUri("flowfile-queues", connectionId, "flowfiles", flowFileUuid, "content");        
         final DownloadableContent content = serviceFacade.getContent(connectionId, flowFileUuid, uri);
-		byte[] bais = GeoUtils.getVectorTileFromDownloadableContent(content, z, x, y);
+        
+        String _x = x.getLong().toString();
+        String _y = y.getLong().toString();
+        String _z = z.getLong().toString();
+		String mapKey = uri + _x + _y + _z;
+		
+		byte[] bais = null;
+		CacheKey key = new CacheKey(mapKey);
+		if (mapVectorCache.getIfPresent(key) == null) {
+			bais = GeoUtils.getVectorTileFromDownloadableContent(content, z, x, y);
+			if (bais != null) 
+				mapVectorCache.put(key, bais);				
+		} else {
+			bais = mapVectorCache.getIfPresent(key);
+		}		
+		//byte[] bais = GeoUtils.getVectorTileFromDownloadableContent(content, z, x, y);
 		return generateOkResponse(bais).build();
     }    
     /**

@@ -34,6 +34,7 @@
         //Enable production mode, to re-enable debug mode open up a
         //console and call 'angular.reloadWithDebugInfo();'
         $compileProvider.debugInfoEnabled(false);
+             
         //Define app palettes
         $mdThemingProvider.definePalette('basePalette', {
             '50': '728E9B',
@@ -105,5 +106,8 @@
         }).warnPalette("warnPalette", {
             "default": "500"
         });
+        
+        
+        
     }
 }));

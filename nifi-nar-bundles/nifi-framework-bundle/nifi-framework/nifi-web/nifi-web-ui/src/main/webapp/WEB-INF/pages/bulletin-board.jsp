@@ -18,9 +18,9 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <title>NiFi Bulletin Board</title>
+        <title>SETL Bulletin Board</title>
         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
-        <link rel="shortcut icon" href="images/nifi16.ico"/>
+        <link rel="shortcut icon" href="images/setl16.ico"/>
         <link rel="stylesheet" href="assets/reset.css/reset.css" type="text/css" />
         ${nf.bulletin.board.style.tags}
         <link rel="stylesheet" href="js/jquery/combo/jquery.combo.css?${project.version}" type="text/css" />

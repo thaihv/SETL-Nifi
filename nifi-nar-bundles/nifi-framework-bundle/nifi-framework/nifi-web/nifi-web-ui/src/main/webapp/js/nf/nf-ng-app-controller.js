@@ -66,7 +66,6 @@
 
         var appCtrl = new AppCtrl(serviceProvider);
         $scope.appCtrl = appCtrl;
-
         //For production angular applications .scope() is unavailable so we set
         //the root scope of the bootstrapped app on the bridge
         nfNgBridge.rootScope = $scope;
