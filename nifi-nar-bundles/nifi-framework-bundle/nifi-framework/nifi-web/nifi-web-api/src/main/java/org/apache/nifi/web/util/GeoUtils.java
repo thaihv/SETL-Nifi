@@ -672,7 +672,7 @@ public class GeoUtils {
 			if (content.getCrs() != null) {
     			CoordinateReferenceSystem crs_source = CRS.parseWKT(content.getCrs());
     			
-    			transform = CRS.findMathTransform(CRS.decode("EPSG:4326"),crs_source);
+    			transform = CRS.findMathTransform(CRS.decode("EPSG:4326"),crs_source, true); // true for Lenient? to void Bursa-Wolf Parameters Required 
     	        GeometryFactory gf = new GeometryFactory();
     	        Point nw1 = gf.createPoint(new Coordinate(bb.north, bb.west));
     	        Point se1 = gf.createPoint(new Coordinate(bb.south, bb.east));
