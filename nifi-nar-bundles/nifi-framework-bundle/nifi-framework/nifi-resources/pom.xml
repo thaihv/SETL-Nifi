@@ -160,7 +160,7 @@
         <nifi.listener.bootstrap.port>0</nifi.listener.bootstrap.port>
 
         <!-- nifi.properties: openid connect -->
-        <nifi.security.user.oidc.discovery.url>http://174.138.25.165:8080/auth/realms/Smartcity/.well-known/openid-configuration</nifi.security.user.oidc.discovery.url>
+        <nifi.security.user.oidc.discovery.url>http://174.138.25.165:8080/realms/mydev/.well-known/openid-configuration</nifi.security.user.oidc.discovery.url>
         <nifi.security.user.oidc.connect.timeout>5 secs</nifi.security.user.oidc.connect.timeout>
         <nifi.security.user.oidc.read.timeout>5 secs</nifi.security.user.oidc.read.timeout>
         <nifi.security.user.oidc.client.id>setl-nifi</nifi.security.user.oidc.client.id>
