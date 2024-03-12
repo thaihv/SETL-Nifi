@@ -837,7 +837,7 @@ public class GeoUtils {
 		return null;
 	}	
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	public static SimpleFeatureCollection createSimpleFeatureCollectionWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target) {
+	public static SimpleFeatureCollection createSimpleFeatureCollectionWithCRSTransformed(String collectionName, RecordReader avroReader, CoordinateReferenceSystem crs_source, CoordinateReferenceSystem crs_target, boolean bLenient) {
 		List<SimpleFeature> features = new ArrayList<>();
 		String geomFieldName = SHP_GEO_COLUMN;
 		Record record;
@@ -891,7 +891,7 @@ public class GeoUtils {
 				// Add geometry
 				Geometry geo = reader.read(record.getAsString(geomFieldName));
 				if (crs_target != null && crs_target != crs_source) {
-			        MathTransform transform = CRS.findMathTransform(crs_source, crs_target);
+			        MathTransform transform = CRS.findMathTransform(crs_source, crs_target, bLenient);
 			        geo = JTS.transform(geo, transform);									
 				}
 				// Add attributes

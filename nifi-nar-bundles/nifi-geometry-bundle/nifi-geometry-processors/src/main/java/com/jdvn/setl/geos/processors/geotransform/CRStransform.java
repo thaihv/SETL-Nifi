@@ -91,6 +91,14 @@ public class CRStransform extends AbstractProcessor {
 			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
 			.dependsOn(USER_DEFINED, "true")
 			.build();
+	public static final PropertyDescriptor LENIENT = new PropertyDescriptor.Builder()
+			.name("Lenient Datum Shift")
+			.description("It can optionally tolerate lenient datum shift. If the lenient argument is true, then this method will not throw a "
+					+ "Bursa-Wolf parameters required exception during datum shifts if the Bursa-Wolf paramaters are not specified")
+			.required(true)
+			.defaultValue("false")
+			.allowableValues("true", "false")
+			.build();
 	private static AllowableValue[] capabilitiesCrsIdentifiers;
 	private static String crsDefault;
 
@@ -146,6 +154,7 @@ public class CRStransform extends AbstractProcessor {
 				.build();
 		supDescriptors.add(CRS_TARGET);
 		supDescriptors.add(CRS_TARGET_WKT);
+		supDescriptors.add(LENIENT);		
 		properties = Collections.unmodifiableList(supDescriptors);
 	}
 
@@ -185,6 +194,7 @@ public class CRStransform extends AbstractProcessor {
 						final CoordinateReferenceSystem crs_target;
 
 						final boolean bUserCRS = context.getProperty(USER_DEFINED).asBoolean();
+						final boolean bLenient = context.getProperty(LENIENT).asBoolean();
 						final String srs_target;
 						if (bUserCRS) {
 							srs_target = context.getProperty(CRS_TARGET_WKT).evaluateAttributeExpressions(flowFile).getValue().replaceAll("[\\r\\n\\t ]", "");
@@ -194,7 +204,7 @@ public class CRStransform extends AbstractProcessor {
 							crs_target = CRS.decode(srs_target);
 						}
 
-						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithCRSTransformed("crs_transformed", reader, crs_source, crs_target);
+						SimpleFeatureCollection collection = GeoUtils.createSimpleFeatureCollectionWithCRSTransformed("crs_transformed", reader, crs_source, crs_target, bLenient);
 						
 						// Center and envelope for all features
 						String center = null;
