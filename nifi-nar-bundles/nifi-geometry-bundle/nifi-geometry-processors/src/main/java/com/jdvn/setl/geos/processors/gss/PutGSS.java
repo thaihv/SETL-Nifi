@@ -494,11 +494,19 @@ public class PutGSS extends AbstractProcessor {
 		return false;
 		
     }
-	private boolean checkAndFillSETLCondition(final ProcessContext context) {
+	private boolean checkAndFillSETLCondition(final ProcessContext context, FlowFile flowFile) {
 
 		final GSSService gssService = context.getProperty(GSS_SERVICE).asControllerService(GSSService.class);
 		final Connection connection = gssService.getConnection();
-		final String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+		
+		String tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions().getValue();
+		// If table name is setting to get from attribute of flow file
+		if (tableName == null || tableName.isEmpty())
+			tableName = context.getProperty(TABLE_NAME).evaluateAttributeExpressions(flowFile).getValue();
+		// if get table name is not okay, then exit
+		if (tableName == null || tableName.isEmpty()) {
+			return false;
+		}
 		Statement stmt = null;
 		try {
 			
@@ -535,7 +543,7 @@ public class PutGSS extends AbstractProcessor {
             return;
         }
 
-        boolean capableToPut = checkAndFillSETLCondition(context);
+        boolean capableToPut = checkAndFillSETLCondition(context, flowFile);
         if (!capableToPut) {
         	return;
         } 
