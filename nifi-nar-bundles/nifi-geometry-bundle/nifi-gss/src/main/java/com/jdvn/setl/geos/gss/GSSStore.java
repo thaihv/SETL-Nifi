@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.pool2.BasePooledObjectFactory;
@@ -150,6 +151,15 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 			.defaultValue(DEFAULT_MAX_IDLE).required(false).addValidator(StandardValidators.INTEGER_VALIDATOR)
 			.expressionLanguageSupported(ExpressionLanguageScope.VARIABLE_REGISTRY).build();
 
+	public static final PropertyDescriptor ENCODING = new PropertyDescriptor.Builder()
+			.name("Character Set")
+			.description("The character set used for each connection, the default value is UTF-8.")
+			.defaultValue("UTF-8")
+			.required(true)
+			.addValidator(StandardValidators.CHARACTER_SET_VALIDATOR)
+			.expressionLanguageSupported(ExpressionLanguageScope.FLOWFILE_ATTRIBUTES)
+			.build();
+	
 	private static final List<PropertyDescriptor> properties;
 
 	static {
@@ -157,6 +167,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		props.add(DATABASE_URL);
 		props.add(DB_USER);
 		props.add(DB_PASSWORD);
+		props.add(ENCODING);
 		props.add(MAX_WAIT_TIME);
 		props.add(MAX_TOTAL_CONNECTIONS);
 		props.add(MIN_IDLE);
@@ -171,6 +182,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	private String m_connectionURL;
 	private String m_userName;
 	private String m_password;
+	private String m_encoding;
 
 	private volatile GenericObjectPool<Connection> mConnectionPool;
 	protected Map<String, Connection> mTxConnections = new HashMap<String, Connection>();
@@ -180,7 +192,12 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	}
 
 	protected Connection createConnection() throws SQLException {
-		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, m_userName, m_password);
+		
+		Properties props = new Properties();
+		props.setProperty("user", m_userName);
+		props.setProperty("password", m_password);
+		props.setProperty("encoding", m_encoding);
+		IGSSConnection connection = (IGSSConnection) DriverManager.getConnection(m_connectionURL, props);
 		if (dbmsType == null) {
 			try {
 				dbmsType = DbmsType.valueOf(connection.getProperty(PropertyConstants.GSS_DBMS_TYPE));
@@ -222,11 +239,12 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	@OnEnabled
 	public void onConfigured(final ConfigurationContext context) throws InitializationException {
 
-		final String driverName = "com.cci.gss.driver.GSSDriver";
-		final String user = context.getProperty(DB_USER).evaluateAttributeExpressions().getValue();
-		final String passw = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
-		final String dburl = context.getProperty(DATABASE_URL).evaluateAttributeExpressions().getValue();
-		final Integer maxTotal = context.getProperty(MAX_TOTAL_CONNECTIONS).evaluateAttributeExpressions().asInteger();
+		final String driverName  = "com.cci.gss.driver.GSSDriver";
+		final String user        = context.getProperty(DB_USER).evaluateAttributeExpressions().getValue();
+		final String passw       = context.getProperty(DB_PASSWORD).evaluateAttributeExpressions().getValue();
+		final String dburl       = context.getProperty(DATABASE_URL).evaluateAttributeExpressions().getValue();
+		final String encoding    = context.getProperty(ENCODING).evaluateAttributeExpressions().getValue();
+		final Integer maxTotal   = context.getProperty(MAX_TOTAL_CONNECTIONS).evaluateAttributeExpressions().asInteger();
 		final Long maxWaitMillis = extractMillisWithInfinite(context.getProperty(MAX_WAIT_TIME).evaluateAttributeExpressions());
 		
 		final Long timeBetweenEvictionRunsMillis = extractMillisWithInfinite(context.getProperty(EVICTION_RUN_PERIOD).evaluateAttributeExpressions());
@@ -239,6 +257,7 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 		this.m_connectionURL = dburl;
 		this.m_userName = user;
 		this.m_password = passw;
+		this.m_encoding = encoding;
 
 		getDriver(driverName, dburl);
 
@@ -395,7 +414,9 @@ public class GSSStore extends AbstractControllerService implements GSSService {
 	public DbmsType getBackendDBMSType() {
 		return dbmsType;
 	}
-
+	public String getEncoding() {
+		return m_encoding;
+	}
 	@Override
 	public IGSSConnection getConnection() throws ProcessException {
 		return getConnection(null);

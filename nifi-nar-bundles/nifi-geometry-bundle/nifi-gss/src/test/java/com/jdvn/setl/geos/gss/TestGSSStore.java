@@ -67,6 +67,100 @@ public class TestGSSStore {
         conn.close();
         
     }
+    /* Using GSS to create a layer for example
+     * 
+		CREATE LAYER TEST0 (SHAPE POLYGON CRS('PROJCS["Korea 2000 / Unified CS", 
+		  GEOGCS["Korea 2000", 
+		    DATUM["Geocentric datum of Korea", 
+		      SPHEROID["GRS 1980", 6378137.0, 298.257222101, AUTHORITY["EPSG","7019"]], 
+		      TOWGS84[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 
+		      AUTHORITY["EPSG","6737"]], 
+		    PRIMEM["Greenwich", 0.0], 
+		    UNIT["degree", 0.017453292519943295], 
+		    AXIS["Longitude", EAST], 
+		    AXIS["Latitude", NORTH], 
+		    AUTHORITY["EPSG","4737"]], 
+		  PROJECTION["Transverse_Mercator"], 
+		  PARAMETER["central_meridian", 127.5], 
+		  PARAMETER["latitude_of_origin", 38.0], 
+		  PARAMETER["scale_factor", 0.9996], 
+		  PARAMETER["false_easting", 1000000.0], 
+		  PARAMETER["false_northing", 2000000.0], 
+		  UNIT["m", 1.0], 
+		  AXIS["x", EAST], 
+		  AXIS["y", NORTH], 
+		  AUTHORITY["EPSG","5179"]]'),mynum NUMBER(38, 8),myvar VARCHAR(48),mydate DATE,myvar2 VARCHAR(10))
+     * 
+     */
+    
+    @Test
+    public void testCreateLayerAndCheckEncoding() throws SQLException, InitializationException{           
+        final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
+        final GSSStore service = new GSSStore();
+
+        runner.addControllerService(SERVICE_ID, service);
+        final String url = "jdbc:gss://localhost:8844";
+        runner.setProperty(service, GSSStore.DATABASE_URL, url);
+        runner.setProperty(service, GSSStore.DB_USER, "GSS");
+        runner.setProperty(service, GSSStore.DB_PASSWORD, "GSS");
+        runner.setProperty(service, GSSStore.ENCODING, "UTF-8");
+        runner.enableControllerService(service);
+        IGSSConnection conn = service.getConnection();
+        
+        System.out.println(conn.getProperty(PropertyConstants.GSS_DBMS_TYPE));
+        System.out.println(conn.getCurrentDriverVersion());
+        System.out.println(conn.getMetaData().getUserName());
+        // Print out encoding
+        System.out.println(service.getEncoding());
+        assertTrue(service.isWorkingWell());
+        
+        
+        String wkt = "PROJCS[\"Korea 2000 / Unified CS\", \r\n" + 
+        		"  GEOGCS[\"Korea 2000\", \r\n" + 
+        		"    DATUM[\"Geocentric datum of Korea\", \r\n" + 
+        		"      SPHEROID[\"GRS 1980\", 6378137.0, 298.257222101, AUTHORITY[\"EPSG\",\"7019\"]], \r\n" + 
+        		"      TOWGS84[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], \r\n" + 
+        		"      AUTHORITY[\"EPSG\",\"6737\"]], \r\n" + 
+        		"    PRIMEM[\"Greenwich\", 0.0], \r\n" + 
+        		"    UNIT[\"degree\", 0.017453292519943295], \r\n" + 
+        		"    AXIS[\"Longitude\", EAST], \r\n" + 
+        		"    AXIS[\"Latitude\", NORTH], \r\n" + 
+        		"    AUTHORITY[\"EPSG\",\"4737\"]], \r\n" + 
+        		"  PROJECTION[\"Transverse_Mercator\"], \r\n" + 
+        		"  PARAMETER[\"central_meridian\", 127.5], \r\n" + 
+        		"  PARAMETER[\"latitude_of_origin\", 38.0], \r\n" + 
+        		"  PARAMETER[\"scale_factor\", 0.9996], \r\n" + 
+        		"  PARAMETER[\"false_easting\", 1000000.0], \r\n" + 
+        		"  PARAMETER[\"false_northing\", 2000000.0], \r\n" + 
+        		"  UNIT[\"m\", 1.0], \r\n" + 
+        		"  AXIS[\"x\", EAST], \r\n" + 
+        		"  AXIS[\"y\", NORTH], \r\n" + 
+        		"  AUTHORITY[\"EPSG\",\"5179\"]]";        
+		Statement stmt = null;
+		try {
+			
+			stmt = conn.createStatement();
+			final StringBuilder sb = new StringBuilder();
+			sb.append("CREATE LAYER TEST0 (SHAPE POLYGON");
+			sb.append(" CRS('").append(wkt).append("')");
+			sb.append(',');
+			sb.append("mynum NUMBER(").append(38).append(", ").append(8).append(")");
+			sb.append(',');
+			sb.append("myvar VARCHAR(").append(48).append(")");
+			sb.append(',');
+			sb.append("mydate DATE");
+			sb.append(',');
+			sb.append("myvar2 VARCHAR(10)");
+			sb.append(")");
+			stmt.execute(sb.toString());
+
+		} catch (SQLException e) {
+		}finally {
+			try { if (stmt != null) stmt.close(); } catch (Exception e) {};	
+			service.returnConnection(conn);
+		}        
+		conn.close();        
+    }    
     @Test
     public void setGSSService() throws InitializationException {
         final TestRunner runner = TestRunners.newTestRunner(TestProcessor.class);
