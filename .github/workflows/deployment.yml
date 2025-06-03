@@ -51,7 +51,7 @@ jobs:
         docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
     - name: Docker Build SETL-Nifi Image
       working-directory: ./nifi-docker/dockermaven
-      run: mvn -P docker clean install -DskipDockerTests=true      
+      run: mvn -P docker clean install      
 
     - name: Docker Push SETL-Nifi Image to Docker Hub    
       run: docker push thaihv/setl-nifi:$VERSION
