@@ -15,8 +15,8 @@
 # specific language governing permissions and limitations
 # under the License.
 #
-ARG IMAGE_NAME=openjdk
-ARG IMAGE_TAG=8-jre
+ARG IMAGE_NAME=eclipse-temurin
+ARG IMAGE_TAG=8-jre-focal
 FROM ${IMAGE_NAME}:${IMAGE_TAG}
 ARG MAINTAINER="Apache NiFi <dev@nifi.apache.org>"
 LABEL maintainer="${MAINTAINER}"
