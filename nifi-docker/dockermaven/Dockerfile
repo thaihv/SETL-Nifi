@@ -18,9 +18,12 @@
 
 ARG IMAGE_NAME=eclipse-temurin
 ARG IMAGE_TAG=8-jre-focal
+
+# --- STAGE 1: Extract Artifacts ---
 FROM ${IMAGE_NAME}:${IMAGE_TAG} AS artifactbase
-ARG MAINTAINER="Apache NiFi <dev@nifi.apache.org>"
-LABEL maintainer="${MAINTAINER}"
+
+# FIX: Install unzip in this stage so we can extract NiFi and the Toolkit
+RUN apt-get update && apt-get install -y unzip
 
 ARG NIFI_VERSION
 ARG NIFI_BINARY
