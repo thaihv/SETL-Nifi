@@ -23,11 +23,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -947,7 +943,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 
 		String eventTable = getEventTableFromLayer(tableName);
 		query = new StringBuilder("SELECT DISTINCT FKEY");
-		query.append(" AS ").append(GeoUtils.SETL_UUID).append(", to_char(CHANGED,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM ");
+		query.append(" AS ").append(GeoUtils.SETL_UUID).append(", to_char(CHANGED,'YYYY-MM-DD HH24.MI.SS.FF9') AS Changed FROM ");
 		query.append(eventTable);
 		query.append(" WHERE EVENT='d'");
 		
@@ -955,7 +951,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			String maxValueKey = getStateKey(eventTable, GSS_DELETE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" AND Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF3'").append(")");
+				query.append(" AND Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF9'").append(")");
 		}
 		return query.toString();
 	}
@@ -973,7 +969,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 		final StringBuilder query;
 		String eventTable = getEventTableFromLayer(tableName);
 		
-		query = new StringBuilder("SELECT S.*, to_char(V.Changed,'YYYY-MM-DD HH24.MI.SS.FF3') AS Changed FROM (");
+		query = new StringBuilder("SELECT S.*, to_char(V.Changed,'YYYY-MM-DD HH24.MI.SS.FF9') AS Changed FROM (");
 		query.append(fieldsQuery.toString());
 		query.append("WHERE A.SHAPE=G.GID AND A.SHAPE IN (SELECT DISTINCT FKEY FROM ");
 		query.append(eventTable);
@@ -982,7 +978,7 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 			String maxValueKey = getStateKey(eventTable, GSS_UPDATE_DATETIME, dbAdapter);
 			String maxValue = stateMap.get(maxValueKey);
 			if (maxValue != null)
-				query.append(" WHERE Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF3'").append("))) S, ");
+				query.append(" WHERE Changed > to_timestamp(").append("'").append(maxValue).append("',").append("'YYYY-MM-DD HH24.MI.SS.FF9'").append("))) S, ");
 			else
 				query.append(")) S, ");
 		}
@@ -1051,21 +1047,27 @@ public abstract class AbstractQueryGSSTable extends AbstractGSSFetchProcessor {
 						fullyQualifiedMaxValueKey = getStateKey(setl_table, GSS_DELETE_DATETIME, dbAdapter);
 			        	maxValueString = newColMap.get(fullyQualifiedMaxValueKey);	            		
 	            	}
-	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");
-	            	Date maxTimestampValue = null;
-		            if (maxValueString != null) {
-		            	maxTimestampValue = dateFormat.parse(maxValueString);
-		            }
-		        	String latestTime = gssResultSet.getString(GSS_EVENT_DATETIME);
-		        	Date colTimestampValue = dateFormat.parse(latestTime);
-		        	
-		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
-		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
-		            }  	            	
+	            	
+//	            	DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH.mm.ss.S");	            		            	
+//	            	Date maxTimestampValue = null;
+//		            if (maxValueString != null) {
+//		            	maxTimestampValue = dateFormat.parse(maxValueString);
+//		            }
+//		        	String latestTime = gssResultSet.getString(GSS_EVENT_DATETIME);
+//		        	Date colTimestampValue = dateFormat.parse(latestTime);		        		        	
+//		            if (maxTimestampValue == null || colTimestampValue.compareTo(maxTimestampValue) > 0) {
+//		            	newColMap.put(fullyQualifiedMaxValueKey, dateFormat.format(colTimestampValue));
+//		            } 
+	            	
+	            	String latestTime = gssResultSet.getString(GSS_EVENT_DATETIME).trim();
+	            	if (maxValueString == null || latestTime.compareTo(maxValueString) > 0) {
+	            	    newColMap.put(fullyQualifiedMaxValueKey, latestTime);
+	            	}
+		            
 	            }
   	            
 	                     
-			} catch (SQLException | ParseException e) {
+			} catch (SQLException e) {
 				e.printStackTrace();
 			}
         }
