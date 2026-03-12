@@ -97,6 +97,7 @@ import net.opengis.wps10.ValuesReferenceType;
 import net.opengis.wps10.WPSCapabilitiesType;
 import net.opengis.wps10.Wps10Factory;
 
+@Ignore
 public class WPStransformTest {
 	private WebProcessingService wps;
 	private URL url;

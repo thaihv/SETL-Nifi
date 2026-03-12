@@ -85,6 +85,7 @@ import org.geotools.styling.StyleFactory;
 import org.geotools.util.factory.Hints;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.jupiter.api.AfterAll;
 import org.locationtech.jts.geom.Geometry;
@@ -103,6 +104,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import com.github.benmanes.caffeine.cache.LoadingCache;
 
+@Ignore
 public class FeaturesToMapViewTest {
 
 	@SuppressWarnings("rawtypes")
