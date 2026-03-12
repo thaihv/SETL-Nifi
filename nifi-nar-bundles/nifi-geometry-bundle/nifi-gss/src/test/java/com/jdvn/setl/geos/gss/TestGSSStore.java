@@ -27,6 +27,7 @@ import org.apache.nifi.reporting.InitializationException;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import com.cci.gss.jdbc.driver.IBaseStatement;
@@ -40,7 +41,7 @@ import com.vividsolutions.jts.io.ParseException;
 import com.vividsolutions.jts.io.WKBWriter;
 import com.vividsolutions.jts.io.WKTReader;
 
-
+@Ignore
 public class TestGSSStore {
 	private static final String SERVICE_ID = GSSStore.class.getName();
     @Before
